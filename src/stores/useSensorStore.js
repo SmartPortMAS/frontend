@@ -10,9 +10,16 @@ const initialTanks = [
   { id: 'T-106', type: 'Tank', status: 'active', level: 60, temperature: 20.0, pressure: 1.1, cargoType: 'Gasoline' },
 ];
 
+// berth 는 geoUtils BERTHS 의 키와 일치해야 3D 장면에서 해당 선석에 계류된다.
+// status: 'operating'(하역 중) | 'mooring'(계류) | 'arriving'(입항) | 'departing'(출항)
+// berth 는 geoUtils ONSAN_BERTHS_3D 의 키(온산 berth_id) — 대시보드 mock 배정과 일치
 const initialShips = [
-  { id: 'S-BlueWhale', type: 'Ship', status: 'docked', berth: 'B-1', cargoAmount: 50000 },
-  { id: 'S-OceanStar', type: 'Ship', status: 'arriving', berth: 'B-2', cargoAmount: 35000 },
+  { id: 'HMM GOODWILL', type: 'Ship', status: 'operating', berth: 'CY-OTK1', cargoAmount: 32000, cargoType: '에탄올' },
+  { id: 'WOOYANG CHEMI', type: 'Ship', status: 'operating', berth: 'SA-JI1', cargoAmount: 18000, cargoType: '자일렌' },
+  { id: 'PACIFIC GLORY', type: 'Ship', status: 'mooring', berth: 'SA-SO1', cargoAmount: 24000, cargoType: '등유' },
+  { id: 'GAS UTOPIA', type: 'Ship', status: 'arriving', berth: 'CY-OTK2', cargoAmount: 15000, cargoType: '부타디엔' },
+  { id: 'ULSAN PIONEER', type: 'Ship', status: 'departing', berth: 'SA-SO2', cargoAmount: 0, cargoType: '가솔린' },
+  { id: 'SUN VENUS', type: 'Ship', status: 'anchored', berth: null, anchorage: 'E2', cargoAmount: 21000, cargoType: '톨루엔' },
 ];
 
 const initialPipes = [
@@ -22,7 +29,7 @@ const initialPipes = [
 ];
 
 const initialSystemStatus = {
-  activeShips: 2,
+  activeShips: 6,
   safetyScore: 98,
   safetyGrade: 'A',
 };
@@ -49,8 +56,30 @@ const useSensorStore = create((set, get) => ({
   })),
 
   setConnected: (val) => set({ connected: val }),
-  
+
   setSelectedObject: (obj) => set({ selectedObject: obj }),
+
+  // 온산 MVP 에이전트 패널 상태 (/api/v1/*)
+  berthGroups: [],
+  berthWeather: null,
+  gateAssessment: null,
+  orchestration: null,
+  selectedBerthGroup: null, // 지도에서 선석 클릭 시 기상 판정 패널과 연동
+  setSelectedBerthGroup: (v) => set({ selectedBerthGroup: v }),
+
+  // 선박 상세 패널 (지도 마커/입항 목록 클릭 → 선박 여정 뷰)
+  selectedVessel: null,
+  setSelectedVessel: (v) => set({ selectedVessel: v }),
+
+  // 경고 확인(acknowledge) 이력 — { alertId: { by, at } }
+  alertAcks: {},
+  ackAlert: (id) => set((s) => ({
+    alertAcks: { ...s.alertAcks, [id]: { by: '함현우 (관제)', at: new Date().toISOString() } },
+  })),
+  setBerthGroups: (v) => set({ berthGroups: v }),
+  setBerthWeather: (v) => set({ berthWeather: v }),
+  setGateAssessment: (v) => set({ gateAssessment: v }),
+  setOrchestration: (v) => set({ orchestration: v }),
   
   addAlert: (alert) => set((state) => ({
     alerts: [{ id: Date.now(), timestamp: Date.now(), ...alert }, ...state.alerts].slice(0, 20)
