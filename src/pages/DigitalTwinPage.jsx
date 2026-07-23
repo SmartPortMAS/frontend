@@ -5,10 +5,13 @@ import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import RadarMap from '../components/three/hud/RadarMap';
 import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
+import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import useSensorStore from '../stores/useSensorStore';
 import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
 
-const OMNIVERSE_URL = 'http://localhost:8111';
+// Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample, 포트 5173)를 통해 표시된다.
+// 실행: D:\omniverse\start_twin_stream.bat (Isaac Sim 스트리밍 + 웹 뷰어 동시 기동)
+const OMNIVERSE_URL = 'http://localhost:5173';
 
 export default function DigitalTwinPage() {
   const [showMap, setShowMap] = useState(false);
@@ -63,7 +66,8 @@ export default function DigitalTwinPage() {
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       <Scene />
       
-      {/* VTS 실시간 관제 알림 전광판 (Alert Ticker) */}
+      {/* VTS 실시간 관제 알림 전광판 (Alert Ticker) — 스트리밍 중에는 숨김 */}
+      {!showOmniverseStream && (
       <div style={{
         position: 'absolute', top: 0, left: 0, width: '100%', height: '30px',
         background: 'linear-gradient(90deg, rgba(15,23,42,1) 0%, rgba(220,38,38,0.8) 50%, rgba(15,23,42,1) 100%)',
@@ -81,6 +85,7 @@ export default function DigitalTwinPage() {
           <span><FaExclamationTriangle color="#f59e0b" /> [위험] T005 탱크 수위 90% 임박 (ESD 대기)</span>
         </div>
       </div>
+      )}
 
       <style>{`
         @keyframes marquee {
@@ -89,12 +94,13 @@ export default function DigitalTwinPage() {
         }
       `}</style>
 
-      {/* HUD Overlays */}
-      {!showMap && (
+      {/* HUD Overlays — 2D 지도/스트리밍 중에는 숨김 */}
+      {!showMap && !showOmniverseStream && (
         <>
           <RadarMap />
           <CCTVPanel />
           <VesselTrafficList />
+          <BerthStatusBar />
         </>
       )}
 
@@ -157,11 +163,11 @@ export default function DigitalTwinPage() {
               color: '#e8f0f2', textAlign: 'center', padding: '0 24px',
             }}>
               <FaExclamationTriangle size={42} color="#f59e0b" />
-              <h2 style={{ margin: 0 }}>Omniverse 스트리밍 서버가 실행되고 있지 않습니다</h2>
+              <h2 style={{ margin: 0 }}>Omniverse 스트리밍이 실행되고 있지 않습니다</h2>
               <p style={{ margin: 0, color: '#94a3b8', maxWidth: '560px', lineHeight: 1.6 }}>
-                {OMNIVERSE_URL} 에서 응답이 없습니다 (연결 거부).<br />
-                NVIDIA Omniverse 앱(USD Composer 등)을 실행하고 WebRTC 스트리밍을 켜야
-                이 화면에 표시됩니다. Omniverse 연동은 8월 예정 항목이라 지금은 정상적인 상태입니다.
+                {OMNIVERSE_URL} (웹 뷰어)에서 응답이 없습니다.<br />
+                탐색기에서 <strong style={{ color: '#e8f0f2' }}>D:\omniverse\start_twin_stream.bat</strong> 을 실행하면
+                Isaac Sim 스트리밍과 웹 뷰어가 함께 켜집니다. (최초 실행은 셰이더 컴파일로 수 분 소요)
               </p>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
@@ -197,7 +203,8 @@ export default function DigitalTwinPage() {
       {/* 선박 상세 패널 (2D 지도 마커 클릭 시) */}
       <VesselDetailPanel />
 
-      {/* Time Travel Slider with Media Controls */}
+      {/* Time Travel Slider with Media Controls — 스트리밍 중에는 숨김 */}
+      {!showOmniverseStream && (
       <div className="time-slider-container" style={{ 
         position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)', 
         width: '600px', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(10px)',
@@ -237,6 +244,7 @@ export default function DigitalTwinPage() {
           style={{ width: '100%', cursor: 'pointer', accentColor: '#38bdf8' }}
         />
       </div>
+      )}
     </div>
   );
 }

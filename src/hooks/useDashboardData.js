@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE } from '../utils/constants';
 import { mockDashboard, advanceMockVessels } from '../mocks/mockDashboard';
 
-// 백엔드 GET /api/dashboard 가 완성되면 false 로만 바꾸면 된다.
-const USE_MOCK = true;
+// false: GET /api/dashboard 사용 (지금은 mock-server/dashboard_server.py,
+// 김동안 백엔드 완성 시 동일 계약으로 자동 대체). true: 브라우저 내장 mock.
+const USE_MOCK = false;
 
 // 폴링 주기 30초 (CLAUDE.md 합의: WebSocket 은 후순위)
 const POLL_INTERVAL_MS = 30_000;
