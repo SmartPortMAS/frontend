@@ -29,7 +29,7 @@ function SimulationEnvironment() {
   return (
     <>
       <color attach="background" args={['#0a1628']} />
-      <fog attach="fog" args={['#0a1628', 200, 1200]} />
+      <fog attach="fog" args={['#0a1628', 500, 1800]} />
 
       <ambientLight intensity={ambientIntensity} color="#b0c4de" />
       <hemisphereLight
@@ -78,11 +78,11 @@ function SimulationEnvironment() {
 
       <OrbitControls
         makeDefault
-        target={[50, 0, 50]}
+        target={[0, 0, 0]}
         minPolarAngle={Math.PI / 8}
         maxPolarAngle={Math.PI / 2 - 0.05}
         minDistance={30}
-        maxDistance={800}
+        maxDistance={1100}
         enableDamping
         dampingFactor={0.08}
       />
@@ -93,7 +93,7 @@ function SimulationEnvironment() {
 export default function Scene() {
   return (
     <Canvas
-      camera={{ position: [-100, 120, 200], fov: 50 }}
+      camera={{ position: [330, 230, -250], fov: 50 }}
       style={{ background: '#0a1628' }}
       shadows
       gl={{

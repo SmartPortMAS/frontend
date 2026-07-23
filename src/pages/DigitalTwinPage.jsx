@@ -1,15 +1,36 @@
 import { useState, useEffect, useRef } from 'react';
 import Scene from '../components/three/Scene';
 import PortMap from '../components/dashboard/PortMap';
+import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import RadarMap from '../components/three/hud/RadarMap';
 import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import useSensorStore from '../stores/useSensorStore';
 import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
 
+const OMNIVERSE_URL = 'http://localhost:8111';
+
 export default function DigitalTwinPage() {
   const [showMap, setShowMap] = useState(false);
   const [showOmniverseStream, setShowOmniverseStream] = useState(false);
+  // 'checking' | 'ok' | 'unreachable'
+  const [streamStatus, setStreamStatus] = useState('checking');
+
+  // Omniverse 스트리밍 서버(8111)가 실제로 떠 있는지 확인.
+  // no-cors 라 응답 내용은 못 읽지만, 연결 거부/타임아웃이면 reject 된다.
+  const checkStream = async () => {
+    setStreamStatus('checking');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    try {
+      await fetch(OMNIVERSE_URL, { mode: 'no-cors', signal: ctrl.signal });
+      setStreamStatus('ok');
+    } catch {
+      setStreamStatus('unreachable');
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const predictionOffset = useSensorStore(state => state.predictionOffset);
   const setPredictionOffset = useSensorStore(state => state.setPredictionOffset);
   
@@ -78,9 +99,13 @@ export default function DigitalTwinPage() {
       )}
 
       <div style={{ position: 'absolute', top: 50, right: 20, zIndex: 1000, display: 'flex', gap: '10px' }}>
-        <button 
+        <button
           className="action-btn"
-          onClick={() => setShowOmniverseStream(!showOmniverseStream)}
+          onClick={() => {
+            const next = !showOmniverseStream;
+            setShowOmniverseStream(next);
+            if (next) checkStream();
+          }}
           style={{ 
             padding: '10px 16px', background: showOmniverseStream ? 'rgba(16, 185, 129, 0.8)' : 'rgba(15, 23, 42, 0.8)', 
             backdropFilter: 'blur(10px)', color: showOmniverseStream ? '#fff' : '#10b981', border: '1px solid rgba(16, 185, 129, 0.5)',
@@ -106,13 +131,60 @@ export default function DigitalTwinPage() {
       {/* Omniverse WebRTC Streaming Player */}
       {showOmniverseStream && (
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 850, background: '#000' }}>
-          {/* 보통 Omniverse WebRTC는 8011, 8111, 또는 8889 포트를 사용합니다 */}
-          <iframe 
-            src="http://localhost:8111" 
-            style={{ width: '100%', height: '100%', border: 'none' }}
-            title="Omniverse WebRTC Stream"
-            allow="camera; microphone; fullscreen; display-capture"
-          />
+          {streamStatus === 'ok' && (
+            /* 보통 Omniverse WebRTC는 8011, 8111, 또는 8889 포트를 사용합니다 */
+            <iframe
+              src={OMNIVERSE_URL}
+              style={{ width: '100%', height: '100%', border: 'none' }}
+              title="Omniverse WebRTC Stream"
+              allow="camera; microphone; fullscreen; display-capture"
+            />
+          )}
+
+          {streamStatus === 'checking' && (
+            <div style={{
+              height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#38bdf8', fontSize: '16px', fontWeight: 'bold',
+            }}>
+              Omniverse 스트리밍 서버 연결 확인 중...
+            </div>
+          )}
+
+          {streamStatus === 'unreachable' && (
+            <div style={{
+              height: '100%', display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: '14px',
+              color: '#e8f0f2', textAlign: 'center', padding: '0 24px',
+            }}>
+              <FaExclamationTriangle size={42} color="#f59e0b" />
+              <h2 style={{ margin: 0 }}>Omniverse 스트리밍 서버가 실행되고 있지 않습니다</h2>
+              <p style={{ margin: 0, color: '#94a3b8', maxWidth: '560px', lineHeight: 1.6 }}>
+                {OMNIVERSE_URL} 에서 응답이 없습니다 (연결 거부).<br />
+                NVIDIA Omniverse 앱(USD Composer 등)을 실행하고 WebRTC 스트리밍을 켜야
+                이 화면에 표시됩니다. Omniverse 연동은 8월 예정 항목이라 지금은 정상적인 상태입니다.
+              </p>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={checkStream}
+                  style={{
+                    padding: '10px 18px', background: '#10b981', color: '#fff',
+                    border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold',
+                  }}
+                >
+                  다시 연결 시도
+                </button>
+                <button
+                  onClick={() => setShowOmniverseStream(false)}
+                  style={{
+                    padding: '10px 18px', background: '#334155', color: '#fff',
+                    border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold',
+                  }}
+                >
+                  3D 시뮬레이션으로 돌아가기
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -121,6 +193,9 @@ export default function DigitalTwinPage() {
           <PortMap />
         </div>
       )}
+
+      {/* 선박 상세 패널 (2D 지도 마커 클릭 시) */}
+      <VesselDetailPanel />
 
       {/* Time Travel Slider with Media Controls */}
       <div className="time-slider-container" style={{ 

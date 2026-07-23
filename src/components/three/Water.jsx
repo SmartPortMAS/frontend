@@ -155,10 +155,10 @@ export default function Water() {
   const uniforms = useMemo(() => ({
     uTime:         { value: 0 },
     uWaveHeight:   { value: 1.0 },
-    uDeepColor:    { value: new THREE.Color('#0a2856') },   // deep navy
-    uShallowColor: { value: new THREE.Color('#0d4f6e') },   // teal-green crests
+    uDeepColor:    { value: new THREE.Color('#0d3d6b') },   // deep sea blue
+    uShallowColor: { value: new THREE.Color('#15678a') },   // teal-green crests
     uFoamColor:    { value: new THREE.Color('#c8dce8') },   // white-ish foam
-    uSkyColor:     { value: new THREE.Color('#1a3a5c') },   // reflected dark sky
+    uSkyColor:     { value: new THREE.Color('#27506e') },   // reflected sky
     uSunDir:       { value: new THREE.Vector3(0.4, 0.8, -0.3).normalize() },
     uSunIntensity: { value: 1.0 },
   }), []);
