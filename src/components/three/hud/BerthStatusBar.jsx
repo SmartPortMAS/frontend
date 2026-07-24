@@ -19,11 +19,12 @@ export default function BerthStatusBar() {
 
   return (
     <div style={{
-      position: 'absolute', top: 42, left: '50%', transform: 'translateX(-50%)',
+      // CCTV(좌, ~300px)와 우측 버튼(~390px) 사이 구간에만 배치 — 어느 쪽도 가리지 않음
+      position: 'absolute', top: 44, left: 320, right: 400,
       zIndex: 1000, display: 'flex', gap: '6px', alignItems: 'center',
       background: 'rgba(13, 27, 42, 0.8)', backdropFilter: 'blur(8px)',
       border: `1px solid ${COLORS.glassBorder}`, borderRadius: '10px',
-      padding: '7px 12px', maxWidth: '92vw', overflowX: 'auto',
+      padding: '7px 12px', overflowX: 'auto',
     }}>
       <span style={{ fontSize: '11px', fontWeight: 800, color: COLORS.textSecondary, whiteSpace: 'nowrap', marginRight: '4px' }}>
         선석 현황

@@ -85,7 +85,7 @@ export default function CCTVPanel() {
 
   return (
     <div className="cctv-panel" key={`${berthId}-${P.label}`} style={{
-      position: 'absolute', top: 20, left: 20, zIndex: 1000,
+      position: 'absolute', top: 44, left: 20, zIndex: 1000,
       width: '280px', height: '168px',
       background: P.sky1,
       border: '1px solid rgba(255, 255, 255, 0.2)',

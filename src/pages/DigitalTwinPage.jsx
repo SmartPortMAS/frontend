@@ -132,9 +132,9 @@ export default function DigitalTwinPage() {
         </button>
       </div>
 
-      {/* Omniverse WebRTC Streaming Player */}
+      {/* Omniverse WebRTC Streaming Player — 티커 아래에서 시작 */}
       {showOmniverseStream && (
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 850, background: '#000' }}>
+        <div style={{ position: 'absolute', top: 30, left: 0, width: '100%', height: 'calc(100% - 30px)', zIndex: 850, background: '#000' }}>
           {streamStatus === 'ok' && (
             /* 보통 Omniverse WebRTC는 8011, 8111, 또는 8889 포트를 사용합니다 */
             <iframe
@@ -193,7 +193,8 @@ export default function DigitalTwinPage() {
       )}
 
       {showMap && (
-        <div className="map-overlay" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 900 }}>
+        /* 티커(30px) 아래에서 시작 → 지도 내부 버튼(온산확대·줌 등)이 가려지지 않음 */
+        <div className="map-overlay" style={{ position: 'absolute', top: 30, left: 0, right: 0, bottom: 0, zIndex: 900 }}>
           <PortMap />
         </div>
       )}
