@@ -35,7 +35,8 @@ export default function InfoPopup({ object, onClose }) {
 
   return (
     <Html fullscreen zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
-      <div style={{ position: 'absolute', top: 16, right: 16, pointerEvents: 'auto', width: '300px' }}>
+      {/* Omniverse/2D Map 버튼(top 50~88) 아래에 배치 — 버튼에 가려지지 않음 */}
+      <div style={{ position: 'absolute', top: 100, right: 16, pointerEvents: 'auto', width: '300px' }}>
         <div className="glass-hud" style={{ width: '100%' }}>
           <div className="hud-header">
             <div className="hud-title">
