@@ -17,7 +17,29 @@ export default function Header() {
       <div className="header-left">
         <div className="header-title">울산항 액체화물 하역 스케줄링 및 안전 관제</div>
       </div>
-      
+
+      {/* VTS 실시간 알림 전광판 — 헤더 중앙 (콘텐츠와 안 겹치는 전역 위치) */}
+      <div style={{
+        flex: 1, minWidth: 0, margin: '0 18px', height: '26px',
+        overflow: 'hidden', position: 'relative', borderRadius: '6px',
+        background: 'linear-gradient(90deg, rgba(220,38,38,0.12), rgba(220,38,38,0.42), rgba(220,38,38,0.12))',
+        border: '1px solid rgba(239,68,68,0.45)',
+        display: 'flex', alignItems: 'center',
+      }}>
+        <div style={{
+          whiteSpace: 'nowrap', display: 'flex', gap: '52px',
+          color: '#fff', fontSize: '12.5px', fontWeight: 600,
+          animation: 'headerMarquee 26s linear infinite',
+        }}>
+          <span>⚠ [위험] T005 탱크 수위 90% 임박 (ESD 대기)</span>
+          <span>✅ [접안] ULSAN PIONEER 제3부두 접안 완료</span>
+          <span>ℹ [시스템] 해양수산부 VTS 연동 정상화</span>
+          <span>⚠ [위험] T005 탱크 수위 90% 임박 (ESD 대기)</span>
+          <span>✅ [접안] ULSAN PIONEER 제3부두 접안 완료</span>
+        </div>
+        <style>{`@keyframes headerMarquee { 0% { transform: translateX(60%); } 100% { transform: translateX(-100%); } }`}</style>
+      </div>
+
       <div className="header-right">
         <div className="header-badge weather-badge">
           <FaCloudSun />

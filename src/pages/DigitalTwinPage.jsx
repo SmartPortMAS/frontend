@@ -66,33 +66,7 @@ export default function DigitalTwinPage() {
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       <Scene />
       
-      {/* VTS 실시간 관제 알림 전광판 (Alert Ticker) — 스트리밍 중에는 숨김 */}
-      {!showOmniverseStream && (
-      <div style={{
-        position: 'absolute', top: 0, left: 0, width: '100%', height: '30px',
-        background: 'linear-gradient(90deg, rgba(15,23,42,1) 0%, rgba(220,38,38,0.8) 50%, rgba(15,23,42,1) 100%)',
-        zIndex: 2000, display: 'flex', alignItems: 'center', color: '#fff', fontSize: '14px', fontWeight: 'bold',
-        overflow: 'hidden', borderBottom: '2px solid #ef4444'
-      }}>
-        <div style={{
-          whiteSpace: 'nowrap',
-          animation: 'marquee 20s linear infinite',
-          display: 'flex', gap: '50px'
-        }}>
-          <span><FaExclamationTriangle color="#f59e0b" /> [위험] T005 탱크 수위 90% 임박 (ESD 대기)</span>
-          <span>✅ [접안] ULSAN PIONEER 제3부두 접안 완료</span>
-          <span>ℹ️ [시스템] 해양수산부 VTS 연동 정상화</span>
-          <span><FaExclamationTriangle color="#f59e0b" /> [위험] T005 탱크 수위 90% 임박 (ESD 대기)</span>
-        </div>
-      </div>
-      )}
-
-      <style>{`
-        @keyframes marquee {
-          0% { transform: translateX(100vw); }
-          100% { transform: translateX(-100%); }
-        }
-      `}</style>
+      {/* VTS 알림 전광판은 상단 헤더 중앙으로 이동됨 (Header.jsx) */}
 
       {/* HUD Overlays — 2D 지도/스트리밍 중에는 숨김 */}
       {!showMap && !showOmniverseStream && (
