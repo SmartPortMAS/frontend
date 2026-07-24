@@ -1,68 +1,163 @@
 import { useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
 
-// 온산 액체부두 선석 스케줄 mock (입항 목록의 배정과 일치)
-const BASE_SCHEDULE = [
-  { berth: 'OTK 1부두', ship: 'HMM GOODWILL (에탄올)', start: 0, duration: 5, fill: '#38bdf8' },
-  { berth: 'OTK 2부두', ship: 'GAS UTOPIA (부타디엔)', start: 6, duration: 4, fill: '#10b981' },
-  { berth: '정일 1부두', ship: 'WOOYANG CHEMI (자일렌)', start: 1, duration: 6, fill: '#f59e0b' },
-  { berth: 'S-Oil 1부두', ship: 'PACIFIC GLORY (등유)', start: 2, duration: 7, fill: '#8b5cf6' },
-  { berth: 'S-Oil 2부두', ship: 'ULSAN PIONEER (가솔린)', start: 5, duration: 5, fill: '#4ecdc4' },
-];
+const STATUS_META = {
+  IN_PROGRESS: { label: '하역 중', color: COLORS.teal },
+  PLANNED: { label: '대기', color: COLORS.yellow },
+  COMPLETED: { label: '완료', color: COLORS.textDim },
+};
+
+const fmtKST = (utc, withDate = true) =>
+  utc
+    ? new Date(utc).toLocaleString('ko-KR', {
+        ...(withDate ? { month: '2-digit', day: '2-digit' } : {}),
+        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul',
+      })
+    : '-';
+
+// 진행 중/예정 하역 작업 행 (진행률 바)
+function JobRow({ op }) {
+  const meta = STATUS_META[op.status] || STATUS_META.PLANNED;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0', borderBottom: `1px solid rgba(78,205,196,0.06)` }}>
+      <div style={{ width: '210px', flexShrink: 0 }}>
+        <div style={{ fontSize: '13px', fontWeight: 700 }}>{op.vessel_name}</div>
+        <div style={{ fontSize: '11.5px', color: COLORS.textSecondary }}>
+          {op.berth} · {op.cargo} {op.un_no && `(${op.un_no})`}
+        </div>
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: COLORS.textSecondary, marginBottom: '3px' }}>
+          <span>{fmtKST(op.begin_utc, false)} → {fmtKST(op.end_utc, false)} (KST)</span>
+          <span>
+            {op.planned_tons != null && (
+              <>{(op.done_tons ?? 0).toLocaleString()} / {op.planned_tons.toLocaleString()} t</>
+            )}
+          </span>
+        </div>
+        <div style={{ height: '10px', background: COLORS.card, borderRadius: '5px', overflow: 'hidden' }}>
+          <div style={{
+            width: `${op.progress_pct}%`, height: '100%',
+            background: `linear-gradient(90deg, ${meta.color}, ${meta.color}cc)`,
+            transition: 'width 1s', borderRadius: '5px',
+          }} />
+        </div>
+      </div>
+      <span style={{
+        flexShrink: 0, fontSize: '12px', fontWeight: 800, color: meta.color,
+        border: `1px solid ${meta.color}`, borderRadius: '999px', padding: '2px 10px', minWidth: '70px', textAlign: 'center',
+      }}>
+        {meta.label} {op.status === 'IN_PROGRESS' && `${Math.round(op.progress_pct)}%`}
+      </span>
+    </div>
+  );
+}
+
+// 실데이터 접안 이력 간트 (upa_port_call 실기록)
+function HistoryGantt({ records }) {
+  const { t0, t1 } = useMemo(() => {
+    const begins = records.map((r) => new Date(r.begin_utc).getTime());
+    const ends = records.map((r) => new Date(r.end_utc).getTime());
+    return { t0: Math.min(...begins), t1: Math.max(...ends) };
+  }, [records]);
+  const span = Math.max(1, t1 - t0);
+
+  return (
+    <div>
+      {records.map((r) => {
+        const b = new Date(r.begin_utc).getTime();
+        const e = new Date(r.end_utc).getTime();
+        const left = ((b - t0) / span) * 100;
+        const width = Math.max(1.2, ((e - b) / span) * 100);
+        const hours = ((e - b) / 3600000).toFixed(1);
+        return (
+          <div key={r.job_id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0' }}>
+            <div style={{ width: '210px', flexShrink: 0, fontSize: '12px' }}>
+              <span style={{ fontWeight: 700 }}>{r.vessel_name}</span>
+              <span style={{ color: COLORS.textSecondary }}> · {r.berth}</span>
+            </div>
+            <div style={{ flex: 1, position: 'relative', height: '14px', background: 'rgba(78,205,196,0.05)', borderRadius: '4px' }}>
+              <div
+                title={`${fmtKST(r.begin_utc)} → ${fmtKST(r.end_utc)} (KST) · ${hours}시간 접안`}
+                style={{
+                  position: 'absolute', left: `${left}%`, width: `${width}%`, height: '100%',
+                  background: COLORS.info, opacity: 0.75, borderRadius: '4px',
+                }}
+              />
+            </div>
+            <span style={{ flexShrink: 0, fontSize: '11px', color: COLORS.textDim, width: '58px', textAlign: 'right' }}>
+              {hours}h
+            </span>
+          </div>
+        );
+      })}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: COLORS.textDim, marginTop: '4px', paddingLeft: '220px' }}>
+        <span>{fmtKST(new Date(t0).toISOString())}</span>
+        <span>{fmtKST(new Date(t1).toISOString())} (KST)</span>
+      </div>
+    </div>
+  );
+}
 
 export default function GanttChart() {
+  const { data } = useDashboardData();
   const orchestration = useSensorStore((s) => s.orchestration);
 
-  // 배정 시뮬레이션에서 승인된 건을 스케줄 맨 위에 반영 (같은 선석 mock 행은 대체)
-  const scheduleData = useMemo(() => {
-    if (orchestration?.status !== 'APPROVED' || !orchestration.berth_assigned) return BASE_SCHEDULE;
-    const simRow = {
-      berth: orchestration.berth_assigned,
-      ship: `${orchestration.vessel_name} (${orchestration.cargo_name}) — 시뮬레이션 배정`,
-      start: 8,
-      duration: 5,
-      fill: COLORS.teal,
-      sim: true,
-    };
-    return [simRow, ...BASE_SCHEDULE.filter((r) => r.berth !== simRow.berth)];
-  }, [orchestration]);
+  const ops = data?.operations ?? [];
+  const stats = data?.stats;
+  const isRealHistory = data?.data_source?.history === 'REAL';
+
+  // 배정 시뮬레이션 승인 건을 예정 작업으로 반영
+  const jobs = useMemo(() => {
+    const base = ops.filter((o) => !o.is_real_record);
+    if (orchestration?.status === 'APPROVED' && orchestration.berth_assigned) {
+      return [
+        {
+          job_id: 'SIM', vessel_name: `${orchestration.vessel_name} (시뮬레이션 배정)`,
+          berth: orchestration.berth_assigned, cargo: orchestration.cargo_name, un_no: null,
+          planned_tons: null, done_tons: null, progress_pct: 0, status: 'PLANNED',
+          begin_utc: null, end_utc: null, is_real_record: false,
+        },
+        ...base,
+      ];
+    }
+    return base;
+  }, [ops, orchestration]);
+
+  const history = ops.filter((o) => o.is_real_record);
 
   return (
     <div className="glass-card full-width">
-      <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 className="glass-card-title">AI 에이전트 자동 할당 선석 스케줄 (Gantt Chart)</h3>
-        {scheduleData[0]?.sim && (
-          <span style={{ fontSize: '12px', color: COLORS.teal }}>
-            ● 시뮬레이션 배정 반영: {scheduleData[0].berth}
+      <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+        <h3 className="glass-card-title">하역 작업 현황 (선석 스케줄)</h3>
+        {stats && (
+          <span style={{ fontSize: '12px', color: COLORS.textSecondary }}>
+            실수집 기반: 입출항 <strong style={{ color: COLORS.teal }}>{stats.total_port_calls.toLocaleString()}</strong>건
+            · 온산 <strong style={{ color: COLORS.teal }}>{stats.onsan_port_calls}</strong>건
+            · AIS {stats.ais_position_rows.toLocaleString()}행
           </span>
         )}
       </div>
-      <div style={{ width: '100%', height: '250px' }}>
-        <ResponsiveContainer>
-          <BarChart
-            data={scheduleData}
-            layout="vertical"
-            margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" horizontal={true} vertical={true} />
-            <XAxis type="number" domain={[0, 12]} tickFormatter={(val) => `+${val}h`} stroke="#8ba3b8" />
-            <YAxis dataKey="berth" type="category" width={100} stroke="#8ba3b8" />
-            <RechartsTooltip
-              cursor={{fill: 'rgba(255,255,255,0.05)'}}
-              contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.1)' }}
-              labelFormatter={(label, payload) =>
-                payload?.[0]?.payload ? `${label} · ${payload[0].payload.ship}` : label}
-              formatter={(value, name) => [`${value}h`, name === 'duration' ? '작업시간' : '시작(+h)']}
-            />
-            {/* Start offset (transparent) */}
-            <Bar dataKey="start" stackId="a" fill="transparent" />
-            {/* Duration */}
-            <Bar dataKey="duration" stackId="a" radius={[4, 4, 4, 4]} />
-          </BarChart>
-        </ResponsiveContainer>
+
+      <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, margin: '4px 0' }}>
+        진행 중 / 예정 작업
+        <span style={{ fontWeight: 400, color: COLORS.textDim }}> — 진행률은 데모값 (실시간 유량 센서 미수집)</span>
       </div>
+      {jobs.map((op) => <JobRow key={op.job_id} op={op} />)}
+
+      {history.length > 0 && (
+        <>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, margin: '16px 0 6px' }}>
+            온산 선석 실제 접안 이력
+            <span style={{ fontWeight: 400, color: isRealHistory ? COLORS.teal : COLORS.textDim }}>
+              {' '}— upa_port_call 실수집 데이터 {isRealHistory && '●'}
+            </span>
+          </div>
+          <HistoryGantt records={history} />
+        </>
+      )}
     </div>
   );
 }

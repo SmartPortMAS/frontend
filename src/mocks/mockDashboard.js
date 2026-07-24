@@ -160,6 +160,33 @@ export const mockDashboard = {
       created_at_utc: '2026-07-19T02:00:00Z',
     },
   ],
+
+  // 하역 작업 (오프라인 폴백 — 서버 연결 시 실데이터 접안 이력이 추가됨)
+  operations: [
+    {
+      job_id: 'OP-2026-101', vessel_name: 'HMM GOODWILL', berth: 'OTK 1부두',
+      cargo: '에탄올', un_no: 'UN1170', planned_tons: 12000, done_tons: 4500,
+      progress_pct: 37.5, status: 'IN_PROGRESS',
+      begin_utc: '2026-07-24T10:00:00Z', end_utc: '2026-07-24T18:00:00Z',
+      is_real_record: false,
+    },
+    {
+      job_id: 'OP-2026-102', vessel_name: 'WOOYANG CHEMI', berth: '정일 1부두',
+      cargo: '자일렌', un_no: 'UN1307', planned_tons: 7500, done_tons: 1900,
+      progress_pct: 25.0, status: 'IN_PROGRESS',
+      begin_utc: '2026-07-24T11:30:00Z', end_utc: '2026-07-24T17:30:00Z',
+      is_real_record: false,
+    },
+    {
+      job_id: 'OP-2026-103', vessel_name: 'PACIFIC GLORY', berth: 'S-Oil 1부두',
+      cargo: '등유', un_no: 'UN1223', planned_tons: 9800, done_tons: 0,
+      progress_pct: 0, status: 'PLANNED',
+      begin_utc: '2026-07-24T15:00:00Z', end_utc: '2026-07-24T22:00:00Z',
+      is_real_record: false,
+    },
+  ],
+  stats: null,
+  data_source: { weather: 'MOCK', history: 'NONE', stats: 'NONE' },
 };
 
 /**

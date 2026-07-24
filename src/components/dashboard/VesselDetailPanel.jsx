@@ -154,6 +154,33 @@ export default function VesselDetailPanel() {
         </Row>
       )}
 
+      {/* 하역 작업 진행률 */}
+      {(() => {
+        const op = (data?.operations || []).find(
+          (o) => !o.is_real_record && o.vessel_name === vessel.vessel_name
+        );
+        if (!op) return null;
+        const opColor = op.status === 'IN_PROGRESS' ? COLORS.teal : COLORS.yellow;
+        return (
+          <div style={{ marginTop: '10px', padding: '10px 12px', background: COLORS.card, borderRadius: '10px', border: `1px solid ${COLORS.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', marginBottom: '6px' }}>
+              <span style={{ fontWeight: 700 }}>
+                하역 작업 {op.status === 'IN_PROGRESS' ? '진행 중' : '대기'}
+              </span>
+              <span style={{ color: opColor, fontWeight: 800 }}>{Math.round(op.progress_pct)}%</span>
+            </div>
+            <div style={{ height: '9px', background: '#0d1b2a', borderRadius: '5px', overflow: 'hidden' }}>
+              <div style={{ width: `${op.progress_pct}%`, height: '100%', background: opColor, borderRadius: '5px', transition: 'width 1s' }} />
+            </div>
+            {op.planned_tons != null && (
+              <div style={{ fontSize: '11.5px', color: COLORS.textSecondary, marginTop: '5px' }}>
+                {(op.done_tons ?? 0).toLocaleString()} / {op.planned_tons.toLocaleString()} t · {op.cargo}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* 안전 심사 (게이트 R1~R15) */}
       <SectionTitle icon={<FaShieldAlt />}>안전 심사 — 게이트 R1~R15</SectionTitle>
       <div style={{
