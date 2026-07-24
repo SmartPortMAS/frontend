@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS, WEATHER_STATUS_COLORS } from '../../utils/constants';
 import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP } from '../../utils/geoUtils';
 import { assessVesselSafety } from '../../mocks/mockAssessment';
 import useDashboardData from '../../hooks/useDashboardData';
-import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell } from 'react-icons/fa';
+import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs } from 'react-icons/fa';
+import { API_BASE } from '../../utils/constants';
 
 const RISK_COLORS = { '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red };
 
@@ -49,8 +50,13 @@ function SectionTitle({ icon, children }) {
   );
 }
 
+const MOOR_VERDICT_COLORS = { '정상': COLORS.teal, '주의': COLORS.yellow, '경고': '#ff8c42', '위험': COLORS.red };
+const ASSUMED_DWT = 20000; // 케미컬 탱커 가정값 (AIS static 연동 시 실값으로 교체)
+
 export default function VesselDetailPanel() {
   const vessel = useSensorStore((s) => s.selectedVessel);
+  const [moorSim, setMoorSim] = useState(null);
+  const [simLoading, setSimLoading] = useState(false);
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const setSelectedBerthGroup = useSensorStore((s) => s.setSelectedBerthGroup);
   const berthWeather = useSensorStore((s) => s.berthWeather);
@@ -235,6 +241,67 @@ export default function VesselDetailPanel() {
           >
             이 선석 기상 판정 실행 → 판정 패널로 이동
           </button>
+        </>
+      )}
+
+      {/* 계류 물리 검증 (8월 시나리오 S1 — 준정적 근사, PhysX 스크립트로 검증) */}
+      {vessel.berth && (
+        <>
+          <SectionTitle icon={<FaCogs />}>계류 안정성 물리 검증</SectionTitle>
+          <button
+            disabled={simLoading}
+            onClick={async () => {
+              setSimLoading(true);
+              try {
+                const res = await fetch(`${API_BASE}/v1/sim/mooring`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    dwt: ASSUMED_DWT,
+                    wind_speed: data?.weather?.wind_speed_ms ?? 10,
+                    wave_height: data?.weather?.wave_height_sig_m ?? 0.5,
+                  }),
+                });
+                setMoorSim(await res.json());
+              } catch {
+                setMoorSim({ error: '시뮬레이션 서버(8000) 응답 없음' });
+              } finally {
+                setSimLoading(false);
+              }
+            }}
+            style={{
+              width: '100%', padding: '9px', borderRadius: '8px',
+              border: `1px solid ${COLORS.info}`, background: 'transparent',
+              color: COLORS.info, fontWeight: 700, cursor: 'pointer', fontSize: '13px',
+            }}
+          >
+            {simLoading ? '계산 중...' : `현재 기상으로 계류삭 장력 검증 (DWT ${ASSUMED_DWT.toLocaleString()} 가정)`}
+          </button>
+          {moorSim && !moorSim.error && (
+            <div style={{ marginTop: '8px', padding: '10px 12px', background: COLORS.card, borderRadius: '10px', border: `1px solid ${MOOR_VERDICT_COLORS[moorSim.verdict] || COLORS.border}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
+                <span style={{ fontWeight: 800, color: MOOR_VERDICT_COLORS[moorSim.verdict] }}>
+                  {moorSim.verdict} — 장력 {moorSim.tension_pct}%
+                </span>
+                <span style={{ color: COLORS.textSecondary }}>
+                  {moorSim.line_tension_kn} / {moorSim.mbl_kn} kN
+                </span>
+              </div>
+              <div style={{ height: '8px', background: '#0d1b2a', borderRadius: '4px', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${Math.min(100, moorSim.tension_pct)}%`, height: '100%',
+                  background: MOOR_VERDICT_COLORS[moorSim.verdict], borderRadius: '4px',
+                }} />
+              </div>
+              <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginTop: '6px' }}>
+                {moorSim.action} · 정상 한계풍속 <strong style={{ color: COLORS.textPrimary }}>{moorSim.safe_wind_limit_ms} m/s</strong>
+              </div>
+              <div style={{ fontSize: '10.5px', color: COLORS.textDim, marginTop: '4px' }}>{moorSim.model}</div>
+            </div>
+          )}
+          {moorSim?.error && (
+            <div style={{ marginTop: '8px', fontSize: '12px', color: COLORS.yellow }}>{moorSim.error}</div>
+          )}
         </>
       )}
 

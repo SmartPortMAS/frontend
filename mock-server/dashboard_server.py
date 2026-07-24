@@ -16,6 +16,7 @@
 실행: python dashboard_server.py  (포트 8000)
 """
 import json
+import math
 import os
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -247,6 +248,65 @@ def build_payload():
     return p
 
 
+# ─────────────────────────────────────────────
+# 물리 시뮬레이션 준정적 근사식 (8월 시나리오 S1·S2)
+# 상수·수식은 digital-twin/physics/mooring_berthing_sim.py 의 PhysX
+# 동역학 검증 스크립트와 동일 — 그쪽 결과로 이 근사식을 검증한다.
+# 시나리오 입력=실측(풍속·파고·DWT), 물리 상수=공개 문헌(OCIMF 계열) 근사.
+# ─────────────────────────────────────────────
+def _vessel_particulars(dwt):
+    loa = 8.6 * dwt ** 0.316
+    freeboard = 0.02 * loa + 3.0
+    return dict(loa=loa, area=0.75 * loa * (freeboard + 4.0), mass=dwt * 1000 * 1.35)
+
+
+def _line_mbl_kn(dwt):
+    return 392.0 if dwt < 20000 else (588.0 if dwt < 60000 else 784.0)
+
+
+def sim_mooring(dwt, wind_ms, wave_m):
+    p = _vessel_particulars(dwt)
+    force = 0.5 * 1.225 * 1.0 * p["area"] * wind_ms ** 2
+    eff = 2 * 0.9 + 4 * 0.25            # 계류삭 6가닥 횡하중 유효 분담
+    daf = 1.0 + 0.35 * wave_m           # 파랑 동적증폭
+    t_line_kn = force * daf / eff / 1000
+    mbl = _line_mbl_kn(dwt)
+    pct = t_line_kn / mbl * 100
+    if pct < 30:
+        verdict, action = "정상", "하역 계속 가능"
+    elif pct < 50:
+        verdict, action = "주의", "하역 중단 검토 (라인 텐딩 강화)"
+    elif pct < 70:
+        verdict, action = "경고", "이안 준비 권고"
+    else:
+        verdict, action = "위험", "즉시 호스분리·비상 이안"
+    # 정상 한계 풍속 (장력 30% 도달 풍속 역산) [m/s]
+    safe_wind = math.sqrt(0.30 * mbl * 1000 * eff /
+                          (0.5 * 1.225 * p["area"] * daf))
+    return {
+        "line_tension_kn": round(t_line_kn, 1), "mbl_kn": mbl,
+        "tension_pct": round(pct, 1), "verdict": verdict, "action": action,
+        "safe_wind_limit_ms": round(safe_wind, 1),
+        "model": "준정적 근사 (OCIMF 계열) — PhysX 검증 스크립트와 동일 상수",
+    }
+
+
+def sim_berthing(dwt, speed_ms):
+    p = _vessel_particulars(dwt)
+    energy_kj = 0.5 * 1.8 * p["mass"] * speed_ms ** 2 / 1000
+    # 콘 펜더 정격 흡수에너지 근사: 2만 DWT급 ≈ 500 kJ 스케일
+    cap_kj = 0.5 * dwt ** 0.7
+    ratio = energy_kj / cap_kj * 100
+    safe_v = math.sqrt(2 * cap_kj * 1000 / (1.8 * p["mass"]))
+    verdict = "안전" if ratio < 60 else ("주의" if ratio < 100 else "펜더 용량 초과")
+    return {
+        "berthing_energy_kj": round(energy_kj, 1), "fender_capacity_kj": round(cap_kj, 1),
+        "ratio_pct": round(ratio, 1), "safe_speed_ms": round(safe_v, 2),
+        "safe_speed_kn": round(safe_v * 1.944, 2), "verdict": verdict,
+        "model": "berthing energy 근사 (Cm=1.8)",
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body):
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -262,6 +322,35 @@ class Handler(BaseHTTPRequestHandler):
             p = build_payload()
             p.pop("history_ops", None)
             self._send(200, p)
+        else:
+            self._send(404, {"detail": "not found"})
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_POST(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            self._send(400, {"detail": "invalid json"})
+            return
+
+        if self.path.startswith("/api/v1/sim/mooring"):
+            self._send(200, sim_mooring(
+                float(body.get("dwt", 20000)),
+                float(body.get("wind_speed", 10)),
+                float(body.get("wave_height", 0.5)),
+            ))
+        elif self.path.startswith("/api/v1/sim/berthing"):
+            self._send(200, sim_berthing(
+                float(body.get("dwt", 20000)),
+                float(body.get("speed_ms", 0.15)),
+            ))
         else:
             self._send(404, {"detail": "not found"})
 

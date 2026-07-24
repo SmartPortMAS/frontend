@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Rectangle, Tooltip, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Rectangle, Tooltip, Polyline, Polygon } from 'react-leaflet';
+import { assessVesselSafety } from '../../mocks/mockAssessment';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import useSensorStore from '../../stores/useSensorStore';
@@ -110,6 +111,33 @@ export default function PortMap() {
     [vessels]
   );
 
+  // 증기운 확산 예상 구역 (8월 시나리오 S3 — 가우시안 원뿔 근사)
+  // 선택 선박이 R13(인접 증기 중첩) 히트이면 접안 선석 풍하측에 표시
+  const selectedVessel = useSensorStore((s) => s.selectedVessel);
+  const vaporCone = useMemo(() => {
+    const v = selectedVessel;
+    if (!v?.is_liquid_cargo_vessel || !v.berth) return null;
+    const a = assessVesselSafety(v);
+    if (!a.gates_hit.some((g) => g.rule === 'R13')) return null;
+    const berthId = Object.keys(ONSAN_BERTHS).find((k) => ONSAN_BERTHS[k].name === v.berth);
+    if (!berthId) return null;
+    const [lat, lon] = onsanDisplayPos(ONSAN_BERTHS[berthId]);
+    const w = data?.weather;
+    const windDir = w?.wind_dir_deg ?? 0;
+    const windMs = w?.wind_speed_ms ?? 5;
+    const dir = ((windDir + 180) % 360) * (Math.PI / 180); // 풍하측 방위
+    const L = 250 + 55 * windMs;                            // 확산 길이 [m] 근사
+    const half = (22 * Math.PI) / 180;                      // 반개방각
+    const pt = (dist, ang) => [
+      lat + (dist * Math.cos(ang)) / 111320,
+      lon + (dist * Math.sin(ang)) / (111320 * Math.cos((lat * Math.PI) / 180)),
+    ];
+    return {
+      positions: [[lat, lon], pt(L, dir - half), pt(L * 1.1, dir), pt(L, dir + half)],
+      cargo: v.cargo?.name, windMs, windDir, lengthM: Math.round(L * 1.1),
+    };
+  }, [selectedVessel, data]);
+
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%', borderRadius: '16px', overflow: 'hidden' }}>
       <style>{`
@@ -207,6 +235,18 @@ export default function PortMap() {
           </Circle>
           );
         })}
+
+        {/* 증기운 확산 예상 구역 (R13 히트 선박 선택 시, 풍하측 원뿔 근사) */}
+        {vaporCone && (
+          <Polygon
+            positions={vaporCone.positions}
+            pathOptions={{ color: '#ff8c42', weight: 2, dashArray: '6 5', fillColor: '#ff8c42', fillOpacity: 0.22 }}
+          >
+            <Tooltip sticky>
+              {vaporCone.cargo} 증기 확산 예상 구역 (R13) — 풍향 {vaporCone.windDir}° · 풍속 {vaporCone.windMs}m/s 기준 약 {vaporCone.lengthM}m (가우시안 원뿔 근사)
+            </Tooltip>
+          </Polygon>
+        )}
 
         {/* 선박 마커 */}
         {vessels.map((vessel) => {
