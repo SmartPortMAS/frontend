@@ -22,12 +22,29 @@
 import argparse
 import json
 import math
+import os
+
+RESULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "physx_result.json")
+
+
+def _write_result_file(partial: dict):
+    """결과를 스크립트 옆 physx_result.json에 병합 저장 (stdout 유실 대비)."""
+    data = {}
+    if os.path.exists(RESULT_PATH):
+        try:
+            with open(RESULT_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    data.update(partial)
+    with open(RESULT_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 # ── 공학 근사 상수 (문헌 기반 — dashboard_server 와 동일해야 함) ──
 RHO_AIR = 1.225          # kg/m^3
 CD_WIND = 1.0            # 횡풍 항력계수 (블러프 보디)
 CM_BERTHING = 1.8        # 부가수질량 계수 (횡접안)
-DT = 1.0 / 60.0
+DT = 1.0 / 30.0          # 계류삭 고유주기(~15s) 대비 충분히 촘촘, 실행시간 절반
 SIM_SECONDS = 30.0
 
 
@@ -85,11 +102,15 @@ def run_physx(dwt, wind_ms, wave_m, berth_speed_ms):
     app = SimulationApp({"headless": True})
     import numpy as np
     from isaacsim.core.api import World
-    from isaacsim.core.api.objects import DynamicCuboid, FixedCuboid
+    from isaacsim.core.api.objects import DynamicCuboid
+    from isaacsim.core.prims import RigidPrim  # 배치 뷰 — 단일 프림 클래스에는 apply_forces가 없다
 
     p = vessel_particulars(dwt)
     world = World(stage_units_in_meters=1.0, physics_dt=DT)
-    world.scene.add_default_ground_plane()
+    # 선체는 물에 떠 있다(부력=중력 평형). 중력을 0으로 두면 이 평형이 그대로
+    # 재현되고 수평면(x,y) 동역학만 남는다. 지면을 깔면 선체가 바닥 마찰에
+    # 붙들려(수억 N) 바람에도 안 움직이는 비물리적 결과가 나온다 — 지면 없음.
+    world.get_physics_context().set_gravity(0.0)
 
     # ── S1: 계류 선체 + 계류삭 6가닥 ──
     ship = world.scene.add(DynamicCuboid(
@@ -111,6 +132,7 @@ def run_physx(dwt, wind_ms, wave_m, berth_speed_ms):
 
     wind_f = wind_force_n(wind_ms, p["area"]) * (1.0 + 0.35 * wave_m)
     world.reset()
+    ship_view = RigidPrim("/World/Ship")
 
     max_tension = 0.0
     rest_lens = None
@@ -133,34 +155,42 @@ def run_physx(dwt, wind_ms, wave_m, berth_speed_ms):
                 total[0] -= t * fx / dist
                 total[1] -= t * fy / dist
         total[0] += wind_f    # 횡풍 (+x, 부두 반대 방향으로 밀어냄)
-        ship.apply_forces(total)   # 매 스텝 외력 적용 (isaacsim.core RigidPrim API)
+        ship_view.apply_forces(total.reshape(1, 3))   # 매 스텝 외력 적용
         world.step(render=False)
 
-    # ── S2: 접안 충돌 (별도 선체가 펜더 벽으로 진입) ──
-    wall = world.scene.add(FixedCuboid(
-        prim_path="/World/Fender", name="fender",
-        position=np.array([300.0, 0.0, 2.0]), scale=np.array([2.0, 60.0, 6.0])))
+    # ── S2: 접안 충돌 — 펜더 반력은 스프링 모델(K_FENDER)로 직접 계산한다.
+    # 충돌용 벽 프림을 두면 PhysX 자체 접촉해석과 이중 계산되므로 벽은 두지 않고,
+    # contact_x 안쪽 침투량(pen)에 비례한 반력만 가한다. 접안 속도 0.15 m/s로는
+    # 10초에 1.5 m밖에 못 가므로 접촉 0.5 m 앞에서 출발시킨다.
+    contact_x = 300.0 + 1.0 + p["beam"] / 2
     ship2 = world.scene.add(DynamicCuboid(
         prim_path="/World/Ship2", name="ship2",
-        position=np.array([300.0 + 30.0, 0.0, 2.0]),
+        position=np.array([contact_x + 0.5, 0.0, 2.0]),
         scale=np.array([p["beam"], p["loa"], 4.0]), mass=p["mass"]))
     world.reset()
+    ship2_view = RigidPrim("/World/Ship2")
     ship2.set_linear_velocity(np.array([-berth_speed_ms, 0.0, 0.0]))
     K_FENDER = 3.0e6
     max_fender = 0.0
-    for i in range(int(10.0 / DT)):
+    for i in range(int(20.0 / DT)):
         pos2, _ = ship2.get_world_pose()
-        pen = (300.0 + 1.0 + p["beam"] / 2) - pos2[0]
+        pen = contact_x - pos2[0]
         if pen > 0:
             f = K_FENDER * pen
             max_fender = max(max_fender, f)
-            ship2.apply_forces(np.array([f, 0.0, 0.0]))
+            ship2_view.apply_forces(np.array([[f, 0.0, 0.0]]))
         world.step(render=False)
 
+    # numpy float32는 json 직렬화가 안 되므로 파이썬 float로 강제 변환
+    fender_energy = 0.5 * float(max_fender) ** 2 / K_FENDER / 1000.0   # kJ (스프링 에너지)
+    result = dict(physx_max_line_tension_kn=float(max_tension) / 1000.0,
+                  physx_fender_energy_kj=fender_energy)
+    # app.close()가 프로세스를 함께 종료시키는 환경이 있어, 결과는 close 전에
+    # 출력·파일저장까지 마쳐야 유실되지 않는다.
+    print("PHYSX_RESULT " + json.dumps(result), flush=True)
+    _write_result_file({"physx": result})
     app.close()
-    fender_energy = 0.5 * max_fender ** 2 / K_FENDER / 1000.0   # kJ (스프링 에너지)
-    return dict(physx_max_line_tension_kn=max_tension / 1000.0,
-                physx_fender_energy_kj=fender_energy)
+    return result
 
 
 def main():
@@ -172,16 +202,21 @@ def main():
     ap.add_argument("--no-physx", action="store_true", help="근사식만 계산 (Isaac 불필요)")
     a = ap.parse_args()
 
+    if os.path.exists(RESULT_PATH):
+        os.remove(RESULT_PATH)   # 이전 실행의 physx_error 등이 섞이지 않게 새로 시작
+
     result = {
         "input": vars(a),
         "quasi_static_mooring": quasi_static_mooring(a.dwt, a.wind, a.wave),
         "quasi_static_berthing": quasi_static_berthing(a.dwt, a.berth_speed),
     }
+    _write_result_file(result)
     if not a.no_physx:
         try:
             result["physx"] = run_physx(a.dwt, a.wind, a.wave, a.berth_speed)
         except Exception as e:  # Isaac 미설치 환경 등
             result["physx_error"] = str(e)
+            _write_result_file({"physx_error": str(e)})
     print(json.dumps(result, ensure_ascii=False))
 
 
