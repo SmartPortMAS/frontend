@@ -293,11 +293,18 @@ export default function PortMap() {
         })}
       </MapContainer>
 
-      {/* 뷰 전환 버튼 */}
+      {/* 지도 옵션 박스 — 페이지 상단의 [Omniverse/3D View] 버튼(≈top 50~88px)에
+          가려지지 않도록 그 아래(top 70 = 페이지 기준 약 100px)에 세로 박스로 배치 */}
       <div style={{
-        position: 'absolute', top: 14, right: 14, zIndex: 1000,
-        display: 'flex', gap: '8px',
+        position: 'absolute', top: 70, right: 14, zIndex: 1000,
+        background: COLORS.glass, border: `1px solid ${COLORS.glassBorder}`,
+        backdropFilter: 'blur(8px)', borderRadius: '10px',
+        padding: '10px 12px', width: '168px',
+        display: 'flex', flexDirection: 'column', gap: '6px',
       }}>
+        <div style={{ fontSize: '11px', fontWeight: 700, color: '#8ba3b8', letterSpacing: '1px' }}>
+          지도 옵션
+        </div>
         {[
           { label: '온산 확대', center: ONSAN_CENTER, zoom: ONSAN_ZOOM },
           { label: '울산항 전체', center: MAP_CENTER, zoom: MAP_DEFAULT_ZOOM },
@@ -306,28 +313,30 @@ export default function PortMap() {
             key={v.label}
             onClick={() => mapRef.current?.flyTo(v.center, v.zoom, { duration: 0.8 })}
             style={{
-              background: COLORS.glass, border: `1px solid ${COLORS.glassBorder}`,
-              backdropFilter: 'blur(8px)', color: COLORS.textPrimary,
-              borderRadius: '8px', padding: '7px 14px', fontSize: '12px',
-              fontWeight: 600, cursor: 'pointer',
+              background: 'rgba(255,255,255,0.06)', border: `1px solid ${COLORS.glassBorder}`,
+              color: COLORS.textPrimary, borderRadius: '7px', padding: '7px 10px',
+              fontSize: '12px', fontWeight: 600, cursor: 'pointer', textAlign: 'left',
             }}
           >
             {v.label}
           </button>
         ))}
         {realTraffic.length > 0 && (
-          <button
-            onClick={() => setShowAis((s) => !s)}
-            style={{
-              background: showAis ? 'rgba(56,189,248,0.25)' : COLORS.glass,
-              border: `1px solid ${showAis ? '#38bdf8' : COLORS.glassBorder}`,
-              backdropFilter: 'blur(8px)', color: COLORS.textPrimary,
-              borderRadius: '8px', padding: '7px 14px', fontSize: '12px',
-              fontWeight: 600, cursor: 'pointer',
-            }}
-          >
-            실선박 AIS {showAis ? 'ON' : `(${realTraffic.length})`}
-          </button>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer',
+            background: showAis ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.06)',
+            border: `1px solid ${showAis ? '#38bdf8' : COLORS.glassBorder}`,
+            borderRadius: '7px', padding: '7px 10px',
+            fontSize: '12px', fontWeight: 600, color: COLORS.textPrimary,
+          }}>
+            <input
+              type="checkbox"
+              checked={showAis}
+              onChange={() => setShowAis((s) => !s)}
+              style={{ accentColor: '#38bdf8', cursor: 'pointer' }}
+            />
+            실선박 AIS ({realTraffic.length}척)
+          </label>
         )}
       </div>
 
