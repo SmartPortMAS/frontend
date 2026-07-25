@@ -1,5 +1,5 @@
-import { useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Rectangle, Tooltip, Polyline, Polygon } from 'react-leaflet';
+import { useMemo, useRef, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, CircleMarker, Rectangle, Tooltip, Polyline, Polygon } from 'react-leaflet';
 import { assessVesselSafety } from '../../mocks/mockAssessment';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -104,6 +104,8 @@ export default function PortMap() {
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const { data } = useDashboardData();
   const vessels = data?.vessels ?? [];
+  const realTraffic = data?.real_traffic ?? []; // 실백엔드(upa_vessel_position) AIS 레이어
+  const [showAis, setShowAis] = useState(false);
   const mapRef = useRef(null);
 
   const liquidCount = useMemo(
@@ -248,6 +250,26 @@ export default function PortMap() {
           </Polygon>
         )}
 
+        {/* 실 AIS 선박 (upa_vessel_position, 백엔드 연동) — 토글 시 점 마커로 표시 */}
+        {showAis && realTraffic.map((v) => (
+          <CircleMarker
+            key={v.port_call_id}
+            center={[v.latitude, v.longitude]}
+            radius={3.5}
+            pathOptions={{
+              color: v.nav_status_category === 'UNDER_WAY' ? '#38bdf8' : '#8ba3b8',
+              fillOpacity: 0.85,
+              weight: 1,
+            }}
+          >
+            <Tooltip>
+              {v.vessel_name || v.callsgn} · {v.sog ?? '-'} kn ·{' '}
+              {(NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label}
+              <br />수신 {formatKST(v.received_at_utc)} (KST)
+            </Tooltip>
+          </CircleMarker>
+        ))}
+
         {/* 선박 마커 */}
         {vessels.map((vessel) => {
           if (vessel.latitude == null || vessel.longitude == null) return null;
@@ -293,6 +315,20 @@ export default function PortMap() {
             {v.label}
           </button>
         ))}
+        {realTraffic.length > 0 && (
+          <button
+            onClick={() => setShowAis((s) => !s)}
+            style={{
+              background: showAis ? 'rgba(56,189,248,0.25)' : COLORS.glass,
+              border: `1px solid ${showAis ? '#38bdf8' : COLORS.glassBorder}`,
+              backdropFilter: 'blur(8px)', color: COLORS.textPrimary,
+              borderRadius: '8px', padding: '7px 14px', fontSize: '12px',
+              fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            실선박 AIS {showAis ? 'ON' : `(${realTraffic.length})`}
+          </button>
+        )}
       </div>
 
       {/* 범례 + 현황 요약 */}
