@@ -9,30 +9,40 @@ import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import useSensorStore from '../stores/useSensorStore';
 import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
 
-// Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample, 포트 5173)를 통해 표시된다.
+// Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
 // 실행: D:\omniverse\start_twin_stream.bat (Isaac Sim 스트리밍 + 웹 뷰어 동시 기동)
-const OMNIVERSE_URL = 'http://localhost:5173';
+//
+// 뷰어 포트: Vite 는 5173 이 점유되어 있으면 5174, 5175… 로 올려서 뜬다.
+// 5173 하나만 보고 있으면 "떠 있는데 못 찾는" 상황이 생기므로 후보를 순차 탐색한다.
+const OMNIVERSE_PORTS = [5173, 5174, 5175, 5176];
+const omniverseUrl = (port) => `http://localhost:${port}`;
 
 export default function DigitalTwinPage() {
   const [showMap, setShowMap] = useState(false);
   const [showOmniverseStream, setShowOmniverseStream] = useState(false);
   // 'checking' | 'ok' | 'unreachable'
   const [streamStatus, setStreamStatus] = useState('checking');
+  const [omniUrl, setOmniUrl] = useState(omniverseUrl(OMNIVERSE_PORTS[0]));
 
-  // Omniverse 스트리밍 서버(8111)가 실제로 떠 있는지 확인.
-  // no-cors 라 응답 내용은 못 읽지만, 연결 거부/타임아웃이면 reject 된다.
+  // 웹 뷰어가 떠 있는 포트를 찾는다. no-cors 라 응답 내용은 못 읽지만,
+  // 연결 거부/타임아웃이면 reject 되므로 "떠 있는지"는 판별 가능하다.
   const checkStream = async () => {
     setStreamStatus('checking');
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
-    try {
-      await fetch(OMNIVERSE_URL, { mode: 'no-cors', signal: ctrl.signal });
-      setStreamStatus('ok');
-    } catch {
-      setStreamStatus('unreachable');
-    } finally {
-      clearTimeout(timer);
+    for (const port of OMNIVERSE_PORTS) {
+      const url = omniverseUrl(port);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2500);
+      try {
+        await fetch(url, { mode: 'no-cors', signal: ctrl.signal });
+        clearTimeout(timer);
+        setOmniUrl(url);
+        setStreamStatus('ok');
+        return;
+      } catch {
+        clearTimeout(timer);   // 다음 포트 시도
+      }
     }
+    setStreamStatus('unreachable');
   };
   const predictionOffset = useSensorStore(state => state.predictionOffset);
   const setPredictionOffset = useSensorStore(state => state.setPredictionOffset);
@@ -138,7 +148,7 @@ export default function DigitalTwinPage() {
           {streamStatus === 'ok' && (
             /* 보통 Omniverse WebRTC는 8011, 8111, 또는 8889 포트를 사용합니다 */
             <iframe
-              src={OMNIVERSE_URL}
+              src={omniUrl}
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="Omniverse WebRTC Stream"
               allow="camera; microphone; fullscreen; display-capture"
@@ -163,7 +173,7 @@ export default function DigitalTwinPage() {
               <FaExclamationTriangle size={42} color="#f59e0b" />
               <h2 style={{ margin: 0 }}>Omniverse 스트리밍이 실행되고 있지 않습니다</h2>
               <p style={{ margin: 0, color: '#94a3b8', maxWidth: '560px', lineHeight: 1.6 }}>
-                {OMNIVERSE_URL} (웹 뷰어)에서 응답이 없습니다.<br />
+                웹 뷰어({OMNIVERSE_PORTS.map((p) => `:${p}`).join(', ')})에서 응답이 없습니다.<br />
                 탐색기에서 <strong style={{ color: '#e8f0f2' }}>D:\omniverse\start_twin_stream.bat</strong> 을 실행하면
                 Isaac Sim 스트리밍과 웹 뷰어가 함께 켜집니다. (최초 실행은 셰이더 컴파일로 수 분 소요)
               </p>
