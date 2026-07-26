@@ -1,43 +1,469 @@
 import { useMemo } from 'react';
+import * as THREE from 'three';
+import { Html } from '@react-three/drei';
 import useSensorStore from '../../stores/useSensorStore';
 import Tank from './Tank';
 import Ship from './Ship';
 import Pipe from './Pipe';
 import InfoPopup from './InfoPopup';
-import { BERTHS, convertLatLonToVector3 } from '../../utils/geoUtils';
+import {
+  ONSAN_BERTHS_3D,
+  ONSAN_SHORE_PATH,
+  ONSAN_KNOC_3D,
+  ONSAN_ANCHORAGE_3D,
+  TANK_BASE_3D,
+  SHORE_N,
+  shoreShift,
+  bayShift,
+  shipScale,
+} from '../../utils/geoUtils';
+
+// 두 점을 잇는 계류삭 (얇은 원기둥)
+function MooringLine({ from, to }) {
+  const a = new THREE.Vector3(...from);
+  const b = new THREE.Vector3(...to);
+  const d = b.clone().sub(a);
+  const len = d.length();
+  const quat = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    d.clone().normalize()
+  );
+  const mid = a.clone().add(d.multiplyScalar(0.5));
+  return (
+    <mesh position={mid} quaternion={quat}>
+      <cylinderGeometry args={[0.13, 0.13, len, 6]} />
+      <meshStandardMaterial color="#111827" roughness={0.9} />
+    </mesh>
+  );
+}
+
+import { TankTruck, PatrolBoat, SPMTanker, makePath } from './Vehicles';
+import { VTSTower, DistillationPlant, Lighthouse, Windsock, RailSiding, FireBoat } from './Facilities';
+import { MOOR_HEADING, ONSAN_WEATHER_GROUP } from '../../utils/geoUtils';
+import { WEATHER_STATUS_COLORS } from '../../utils/constants';
+
+// 건물 정면(local +z)이 수역(N) 방향을 보도록 하는 회전각
+const BUILD_ROT = Math.atan2(SHORE_N[0], SHORE_N[1]);
+
+// 창고 (아치 지붕 물류창고 — 잔교 배후 배치)
+function Warehouse({ pos, w = 30, h = 9, d = 18, color = '#475569' }) {
+  return (
+    <group position={[pos[0], 0, pos[1]]} rotation={[0, BUILD_ROT, 0]}>
+      <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[w, h, d]} />
+        <meshStandardMaterial color={color} roughness={0.8} />
+      </mesh>
+      {/* 지붕 */}
+      <mesh position={[0, h + 0.6, 0]} castShadow>
+        <boxGeometry args={[w + 1.5, 1.2, d + 1.5]} />
+        <meshStandardMaterial color="#334155" roughness={0.7} />
+      </mesh>
+      {/* 대형 출입문 + 위험물 표지 스트라이프 */}
+      <mesh position={[0, h * 0.35, d / 2 + 0.06]}>
+        <boxGeometry args={[w * 0.35, h * 0.7, 0.1]} />
+        <meshStandardMaterial color="#1f2937" />
+      </mesh>
+      <mesh position={[0, h * 0.78, d / 2 + 0.06]}>
+        <boxGeometry args={[w * 0.8, 0.8, 0.1]} />
+        <meshStandardMaterial color="#f97316" emissive="#f97316" emissiveIntensity={0.3} />
+      </mesh>
+    </group>
+  );
+}
+
+// 드럼/IBC 야적장 (컬러 박스 스택)
+const STACK_COLORS = ['#0e7490', '#b45309', '#4d7c0f', '#7c3aed'];
+function StorageYard({ pos, rows = 2, cols = 5 }) {
+  return (
+    <group position={[pos[0], 0, pos[1]]} rotation={[0, BUILD_ROT, 0]}>
+      <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[cols * 4 + 5, rows * 4 + 5]} />
+        <meshStandardMaterial color="#3a4759" roughness={0.95} />
+      </mesh>
+      {Array.from({ length: rows * cols }).map((_, i) => {
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        return (
+          <mesh
+            key={i}
+            position={[(c - (cols - 1) / 2) * 4, 1.4, (r - (rows - 1) / 2) * 4]}
+            castShadow
+          >
+            <boxGeometry args={[3, 2.8, 3]} />
+            <meshStandardMaterial color={STACK_COLORS[(r + c * 2) % STACK_COLORS.length]} roughness={0.6} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+// 배후단지 건물 (창문 발광 스트립 포함)
+function Building({ pos, w = 22, h = 12, d = 14, color = '#374151' }) {
+  return (
+    <group position={[pos[0], 0, pos[1]]} rotation={[0, BUILD_ROT, 0]}>
+      <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[w, h, d]} />
+        <meshStandardMaterial color={color} roughness={0.85} />
+      </mesh>
+      {[0.35, 0.68].map((f, i) => (
+        <mesh key={i} position={[0, h * f, d / 2 + 0.06]}>
+          <boxGeometry args={[w * 0.8, 1.1, 0.1]} />
+          <meshStandardMaterial color="#fbbf24" emissive="#fbbf24" emissiveIntensity={0.7} />
+        </mesh>
+      ))}
+      {/* 옥상 설비 */}
+      <mesh position={[w * 0.25, h + 1, 0]} castShadow>
+        <boxGeometry args={[3, 2, 3]} />
+        <meshStandardMaterial color="#6b7280" />
+      </mesh>
+    </group>
+  );
+}
+
+// 배후 보조 탱크 클러스터 (장식용, 비인터랙티브)
+function DecorTanks({ pos, count = 3, r = 7, h = 9 }) {
+  return (
+    <group position={[pos[0], 0, pos[1]]} rotation={[0, BUILD_ROT, 0]}>
+      {Array.from({ length: count }).map((_, i) => (
+        <group key={i} position={[(i - (count - 1) / 2) * (r * 2.4), 0, 0]}>
+          <mesh position={[0, h / 2, 0]} castShadow receiveShadow>
+            <cylinderGeometry args={[r, r, h, 20]} />
+            <meshStandardMaterial color="#d1d5db" roughness={0.55} metalness={0.15} />
+          </mesh>
+          <mesh position={[0, h + 0.3, 0]}>
+            <cylinderGeometry args={[r * 0.98, r * 0.98, 0.6, 20]} />
+            <meshStandardMaterial color="#9ca3af" />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// 실측 위경도 투영 기반 온산 배치 (geoUtils 3D 블록 참조)
+// 해안선은 처용리(북서) → 산암리 → 정일(남동) 대각선, 수역(만)은 북동쪽.
+const berthLabelStyle = {
+  background: 'rgba(13, 27, 42, 0.85)',
+  border: '1px solid rgba(78, 205, 196, 0.35)',
+  borderRadius: '6px',
+  padding: '3px 8px',
+  color: '#e8f0f2',
+  fontSize: '12px',
+  fontWeight: 700,
+  whiteSpace: 'nowrap',
+  pointerEvents: 'none',
+};
+
+function ringShape(points) {
+  const s = new THREE.Shape();
+  points.forEach(([x, z], i) => (i === 0 ? s.moveTo(x, -z) : s.lineTo(x, -z)));
+  s.closePath();
+  return s;
+}
 
 export default function Port() {
   const { tanks, ships, pipes, selectedObject, setSelectedObject } =
     useSensorStore();
+  const berthWeather = useSensorStore((s) => s.berthWeather);
 
-  // Pre-compute berth positions for tank placement
-  const berthPositions = useMemo(() => {
-    const positions = {};
-    Object.entries(BERTHS).forEach(([id, berth]) => {
-      positions[id] = convertLatLonToVector3(berth.lat, berth.lon);
-    });
-    return positions;
+  // 육지: 해안선 경로에서 내륙(-N) 방향으로 420유닛 확장한 폴리곤
+  const landShape = useMemo(() => {
+    const back = [...ONSAN_SHORE_PATH].reverse().map((p) => bayShift(p, -420));
+    return ringShape([...ONSAN_SHORE_PATH, ...back]);
   }, []);
+
+  // 안벽 에이프런: 해안선 앞쪽(만 방향) 18유닛 포장 스트립
+  const apronShape = useMemo(() => {
+    const outer = ONSAN_SHORE_PATH.map((p) => bayShift(p, 18));
+    return ringShape([...outer, ...[...ONSAN_SHORE_PATH].reverse()]);
+  }, []);
+
+  // 해안 도로: 해안선 배후 -6 ~ -16 스트립 + 중앙 점선
+  const roadShape = useMemo(() => {
+    const inner = ONSAN_SHORE_PATH.map((p) => bayShift(p, -6));
+    const outer = [...ONSAN_SHORE_PATH].reverse().map((p) => bayShift(p, -16));
+    return ringShape([...inner, ...outer]);
+  }, []);
+  const roadDashes = useMemo(() => {
+    const line = ONSAN_SHORE_PATH.map((p) => bayShift(p, -11));
+    return line.slice(0, -1).map((p, i) => {
+      const q = line[i + 1];
+      return {
+        mid: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2],
+        ang: Math.atan2(q[0] - p[0], q[1] - p[1]),
+      };
+    });
+  }, []);
+
+  const [tbx, tbz] = TANK_BASE_3D;
+  const [kx, kz] = ONSAN_KNOC_3D;
+
+  // 배후단지 데코 배치 (선석 실좌표 기준)
+  const decor = useMemo(() => {
+    const B = ONSAN_BERTHS_3D;
+    return {
+      buildings: [
+        { pos: bayShift(B['CY-UTK'].pos, -78), w: 24, h: 13 },
+        { pos: bayShift(shoreShift(B['CY-OTK1'].pos, 16), -85), w: 36, h: 11, color: '#3b4657' },
+        { pos: bayShift(B['CY-DHY'].pos, -72), w: 20, h: 10 },
+        { pos: bayShift(B['SA-HS'].pos, -78), w: 42, h: 17, color: '#414d61' },
+        { pos: bayShift(B['SA-JI1'].pos, -72), w: 22, h: 12 },
+        { pos: bayShift(B['SA-JI2'].pos, -90), w: 30, h: 10, color: '#3b4657' },
+      ],
+      tankClusters: [
+        { pos: bayShift(shoreShift(B['CY-OTK2'].pos, 10), -130), count: 3 },
+        { pos: bayShift(B['CY-UTK'].pos, -135), count: 3, r: 6, h: 8 },
+        { pos: bayShift(shoreShift(B['SA-JI1'].pos, 16), -135), count: 3 },
+      ],
+      flare: shoreShift([tbx, tbz], 52),
+      lightTowers: [2, 6, 10].map((i) => bayShift(ONSAN_SHORE_PATH[i], -20)),
+      breakwater: Array.from({ length: 7 }).map((_, i) =>
+        bayShift(shoreShift(B['SA-JI2'].pos, 78), 16 + i * 18)),
+      // 배후 항만시설: 포장 야드 / 물류창고 / 드럼·IBC 야적장
+      yardPads: [
+        { pos: bayShift(shoreShift([0, 0], -180), -130), w: 130, d: 100 },
+        { pos: bayShift(shoreShift([0, 0], 50), -180), w: 170, d: 120 },
+        { pos: bayShift(shoreShift([0, 0], 250), -110), w: 120, d: 90 },
+      ],
+      warehouses: [
+        { pos: bayShift(shoreShift(B['CY-UTK'].pos, 55), -125), w: 34 },
+        { pos: bayShift(shoreShift(B['CY-DHY'].pos, 45), -112), w: 26, d: 15 },
+        { pos: bayShift(shoreShift(B['SA-HS'].pos, -45), -128), w: 40, h: 11 },
+        { pos: bayShift(shoreShift(B['SA-JI2'].pos, 62), -118), w: 28 },
+      ],
+      storageYards: [
+        { pos: bayShift(shoreShift(B['CY-OTK1'].pos, -42), -62) },
+        { pos: bayShift(shoreShift(B['SA-SO2'].pos, 72), -72), rows: 3 },
+        { pos: bayShift(shoreShift(B['SA-JI1'].pos, -52), -98) },
+      ],
+      // 실재 시설 모사: VTS 관제탑 / S-Oil 증류탑 플랜트 / 방파제 등대 /
+      // 윈드삭(하역 풍속 판단) / 철도 인입선 / 소방정
+      vts: bayShift(shoreShift(B['CY-DHY'].pos, -38), -95),
+      plant: shoreShift(bayShift(B['SA-SO1'].pos, -185), 45),
+      lighthouse: bayShift(shoreShift(B['SA-JI2'].pos, 78), 150),
+      windsocks: [
+        bayShift(shoreShift(B['CY-OTK1'].pos, 22), -22),
+        bayShift(shoreShift(B['SA-SO2'].pos, -20), -22),
+        bayShift(shoreShift(B['SA-JI1'].pos, 24), -22),
+      ],
+      rail: bayShift(shoreShift([0, 0], 40), -155),
+      fireboat: bayShift(shoreShift(B['SA-HS'].pos, -32), 32),
+    };
+  }, [tbx, tbz]);
+
+  // 임항도로 경로 (탱크로리 왕복 운행용)
+  const roadPath = useMemo(
+    () => makePath(ONSAN_SHORE_PATH.map((p) => bayShift(p, -11))),
+    []
+  );
 
   return (
     <group>
-      {/* ===== GROUND PLANE (Land Area) ===== */}
-      <mesh position={[120, -0.5, 0]} receiveShadow>
-        <boxGeometry args={[300, 1, 600]} />
-        <meshStandardMaterial color="#2d3748" roughness={0.95} />
+      {/* ===== 육지 (실측 해안선 폴리곤) ===== */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
+        <shapeGeometry args={[landShape]} />
+        <meshStandardMaterial color="#334155" roughness={0.95} />
       </mesh>
 
-      {/* ===== BERTH STRUCTURES ===== */}
-      {Object.entries(BERTHS).map(([id, berth]) => {
-        const [x, , z] = convertLatLonToVector3(berth.lat, berth.lon);
+      {/* 포장 야드 (배후지 채움) */}
+      {decor.yardPads.map((p, i) => (
+        <group key={`pad-${i}`} position={[p.pos[0], 0.045, p.pos[1]]} rotation={[0, BUILD_ROT, 0]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+            <planeGeometry args={[p.w, p.d]} />
+            <meshStandardMaterial color="#3a4655" roughness={0.95} />
+          </mesh>
+        </group>
+      ))}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]} receiveShadow>
+        <shapeGeometry args={[apronShape]} />
+        <meshStandardMaterial color="#3f4a5a" roughness={0.9} />
+      </mesh>
+
+      {/* ===== 해안 도로 (배후 임항도로 + 중앙 점선) ===== */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.08, 0]} receiveShadow>
+        <shapeGeometry args={[roadShape]} />
+        <meshStandardMaterial color="#1f2937" roughness={0.95} />
+      </mesh>
+      {roadDashes.map(({ mid, ang }, i) => (
+        <mesh key={`dash-${i}`} position={[mid[0], 0.12, mid[1]]} rotation={[0, ang, 0]}>
+          <boxGeometry args={[0.5, 0.02, 6]} />
+          <meshStandardMaterial color="#fbbf24" emissive="#fbbf24" emissiveIntensity={0.3} />
+        </mesh>
+      ))}
+
+      {/* ===== 배후단지: 터미널 건물 · 보조 탱크 · 플레어 스택 · 조명타워 · 방파제 ===== */}
+      {decor.buildings.map((b, i) => (
+        <Building key={`bldg-${i}`} {...b} />
+      ))}
+      {decor.tankClusters.map((t, i) => (
+        <DecorTanks key={`dtank-${i}`} {...t} />
+      ))}
+      {decor.warehouses.map((w, i) => (
+        <Warehouse key={`wh-${i}`} {...w} />
+      ))}
+      {decor.storageYards.map((s, i) => (
+        <StorageYard key={`sy-${i}`} {...s} />
+      ))}
+
+      {/* 실재 시설: VTS 관제탑 · 증류탑 플랜트 · 등대 · 윈드삭 · 철도 · 소방정 */}
+      <VTSTower pos={decor.vts} />
+      <DistillationPlant pos={decor.plant} rot={BUILD_ROT} />
+      <Lighthouse pos={decor.lighthouse} />
+      {decor.windsocks.map((p, i) => (
+        <Windsock key={`ws-${i}`} pos={p} rot={MOOR_HEADING} />
+      ))}
+      <RailSiding pos={decor.rail} rot={MOOR_HEADING} />
+      <FireBoat pos={decor.fireboat} rot={MOOR_HEADING} />
+
+      {/* S-Oil 정유단지 플레어 스택 (상시 연소) */}
+      <group position={[decor.flare[0], 0, decor.flare[1]]}>
+        <mesh position={[0, 20, 0]} castShadow>
+          <cylinderGeometry args={[0.9, 1.4, 40, 10]} />
+          <meshStandardMaterial color="#6b7280" metalness={0.6} roughness={0.5} />
+        </mesh>
+        <mesh position={[0, 41.5, 0]}>
+          <coneGeometry args={[1.6, 4, 10]} />
+          <meshStandardMaterial color="#f97316" emissive="#f97316" emissiveIntensity={2.2} />
+        </mesh>
+        <pointLight position={[0, 44, 0]} distance={130} intensity={1.4} color="#fb923c" />
+      </group>
+
+      {/* 야드 조명타워 */}
+      {decor.lightTowers.map((p, i) => (
+        <group key={`tower-${i}`} position={[p[0], 0, p[1]]}>
+          <mesh position={[0, 14, 0]} castShadow>
+            <cylinderGeometry args={[0.35, 0.6, 28, 8]} />
+            <meshStandardMaterial color="#6b7280" />
+          </mesh>
+          <mesh position={[0, 28, 0]}>
+            <boxGeometry args={[3.4, 1, 1.2]} />
+            <meshStandardMaterial color="#fef08a" emissive="#fef08a" emissiveIntensity={1.6} />
+          </mesh>
+          <pointLight position={[0, 27, 0]} distance={110} intensity={0.7} color="#fef08a" />
+        </group>
+      ))}
+
+      {/* 방파제 (정일 남동측, 만 방향 돌제) */}
+      {decor.breakwater.map((p, i) => (
+        <mesh key={`bw-${i}`} position={[p[0], 1, p[1]]} rotation={[0, BUILD_ROT, 0]} castShadow>
+          <boxGeometry args={[14, 3.2, 12]} />
+          <meshStandardMaterial color="#4b5563" roughness={1} />
+        </mesh>
+      ))}
+
+      {/* ===== BERTH STRUCTURES (잔교식 액체화물 부두, 해안 접선에 정렬) ===== */}
+      {Object.entries(ONSAN_BERTHS_3D).map(([id, berth]) => {
+        const [x, z] = berth.pos;
+        // 이 선석에 계류 중인 선박 (로딩암 연결 표시용)
+        const mooredShip = ships.find(
+          (s) => s.berth === id && ['operating', 'mooring', 'docked'].includes(s.status)
+        );
+        // 기상 판정 역연동: 이 선석의 임계군에 대한 최근 판정
+        const verdict =
+          berthWeather && ONSAN_WEATHER_GROUP[id] === berthWeather.berth_group
+            ? berthWeather.status
+            : null;
+        const escalated = verdict && verdict !== '정상';
+        const stripeColor = escalated
+          ? WEATHER_STATUS_COLORS[verdict] || '#eab308'
+          : '#eab308';
 
         return (
-          <group key={id} position={[x, 0, z]}>
+          <group
+            key={id}
+            position={[x, 0, z]}
+            rotation={[0, berth.rotY, 0]}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedObject({
+                type: 'Berth',
+                id,
+                name: berth.name,
+                status: mooredShip ? 'active' : 'idle',
+                mooredShip: mooredShip ? `${mooredShip.id} (${mooredShip.cargoType})` : null,
+              });
+            }}
+          >
+            {/* 선석명 라벨 (판정 시 상태 표시) */}
+            <Html position={[10, 22, 0]} center zIndexRange={[20, 0]} distanceFactor={320}>
+              <div style={{
+                ...berthLabelStyle,
+                ...(escalated ? { border: `1px solid ${stripeColor}`, color: stripeColor } : {}),
+              }}>
+                {berth.name}
+                {escalated && ` · ${verdict}`}
+              </div>
+            </Html>
+
+            {/* 판정 경보 링: 하역중단/이안/호스분리 시 잔교 주위 발광 링 */}
+            {escalated && (
+              <mesh position={[5, 0.7, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[38, 40.5, 40]} />
+                <meshBasicMaterial color={stripeColor} transparent opacity={0.55} depthWrite={false} />
+              </mesh>
+            )}
+
             {/* Main Pier Deck */}
             <mesh position={[20, 2, 0]} receiveShadow>
               <boxGeometry args={[45, 4, 25]} />
               <meshStandardMaterial color="#374151" roughness={0.9} />
             </mesh>
+
+            {/* 안벽 경계선 (기본 노랑, 판정 에스컬레이션 시 판정 색) */}
+            <mesh position={[-1.8, 4.05, 0]}>
+              <boxGeometry args={[1.2, 0.1, 25]} />
+              <meshStandardMaterial
+                color={stripeColor}
+                emissive={stripeColor}
+                emissiveIntensity={escalated ? 1.2 : 0.4}
+              />
+            </mesh>
+
+            {/* 로딩암 연결: 계류 선박이 있으면 MLA 에서 선박 매니폴드까지 */}
+            {mooredShip && (
+              <group>
+                {/* 본체 암: MLA 타워(1,10) → 선박 매니폴드(-11,5) */}
+                <mesh
+                  position={[-5, 7.5, 0]}
+                  rotation={[0, 0, Math.atan2(12, -5)]}
+                  castShadow
+                >
+                  <cylinderGeometry args={[0.35, 0.35, 13, 12]} />
+                  <meshStandardMaterial color="#eab308" metalness={0.6} roughness={0.4} />
+                </mesh>
+                {/* 하역 중이면 이송 라인 발광 표시 */}
+                {mooredShip.status === 'operating' && (
+                  <mesh
+                    position={[-5, 7.9, 0]}
+                    rotation={[0, 0, Math.atan2(12, -5)]}
+                  >
+                    <cylinderGeometry args={[0.14, 0.14, 13, 8]} />
+                    <meshStandardMaterial
+                      color="#00d4aa"
+                      emissive="#00d4aa"
+                      emissiveIntensity={2}
+                    />
+                  </mesh>
+                )}
+              </group>
+            )}
+
+            {/* 계류삭: 선수/선미 → 돌핀, 중앙 브레스트라인 → 안벽 */}
+            {mooredShip && (() => {
+              const s = shipScale(mooredShip.cargoAmount);
+              const side = -15 + 8 * s; // 선박의 안벽측 뱃전 x
+              const deckY = 6.2 * s;
+              const lines = [
+                [[17, 4.5, 35], [side, deckY, 26 * s]],
+                [[17, 4.5, -35], [side, deckY, -26 * s]],
+                [[-2.5, 4.2, 8], [side, deckY, 8]],
+                [[-2.5, 4.2, -8], [side, deckY, -8]],
+              ];
+              return lines.map(([f, t], i) => (
+                <MooringLine key={`ml-${i}`} from={f} to={t} />
+              ));
+            })()}
 
             {/* Marine Loading Arms (MLA) — complex structure */}
             <group position={[3, 4.5, 0]}>
@@ -172,7 +598,7 @@ export default function Port() {
                     receiveShadow
                   >
                     <boxGeometry args={[4, 0.5, 20]} />
-                    <meshStandardMaterial color="#9ca3af" wireframe />
+                    <meshStandardMaterial color="#9ca3af" roughness={0.7} />
                   </mesh>
                 </group>
               ))}
@@ -181,49 +607,99 @@ export default function Port() {
         );
       })}
 
-      {/* ===== NAVIGATIONAL BUOYS ===== */}
+      {/* ===== 항로(페어웨이) 부표: 만 중앙선 따라 녹색=우현측, 적색=좌현측 ===== */}
       <group>
-        {[-80, -40, 40, 80].map((bz, i) => (
-          <group key={`buoy-${i}`} position={[-50, 0, bz]}>
-            {/* Buoy base cylinder */}
-            <mesh position={[0, 0.5, 0]}>
-              <cylinderGeometry args={[1.5, 1.5, 1, 16]} />
-              <meshStandardMaterial
-                color={bz < 0 ? '#ef4444' : '#10b981'}
-              />
-            </mesh>
-            {/* Buoy cone top */}
-            <mesh position={[0, 2, 0]}>
-              <coneGeometry args={[1.5, 3, 16]} />
-              <meshStandardMaterial
-                color={bz < 0 ? '#ef4444' : '#10b981'}
-              />
-            </mesh>
-            <pointLight
-              position={[0, 4, 0]}
-              distance={50}
-              intensity={1}
-              color={bz < 0 ? '#ef4444' : '#10b981'}
-            />
-          </group>
-        ))}
+        {[-300, -150, 0, 150, 300].map((s) =>
+          [
+            { k: 150, color: '#10b981' },
+            { k: 195, color: '#ef4444' },
+          ].map(({ k, color }) => {
+            const [bx, bz] = bayShift(shoreShift([0, 0], s), k);
+            return (
+              <group key={`buoy-${s}-${k}`} position={[bx, 0, bz]}>
+                {/* Buoy base cylinder */}
+                <mesh position={[0, 0.5, 0]}>
+                  <cylinderGeometry args={[1.5, 1.5, 1, 16]} />
+                  <meshStandardMaterial color={color} />
+                </mesh>
+                {/* Buoy cone top */}
+                <mesh position={[0, 2, 0]}>
+                  <coneGeometry args={[1.5, 3, 16]} />
+                  <meshStandardMaterial color={color} />
+                </mesh>
+                <pointLight
+                  position={[0, 4, 0]}
+                  distance={50}
+                  intensity={1}
+                  color={color}
+                />
+              </group>
+            );
+          })
+        )}
       </group>
 
-      {/* ===== TANKS — placed inland in organized rows ===== */}
+      {/* ===== 석유공사 원유부이 (SPM, 실제는 남동 원해 — 축척 축소 표시) ===== */}
+      <group position={[kx, 0, kz]}>
+        <mesh position={[0, 1, 0]} castShadow>
+          <cylinderGeometry args={[4.5, 5.5, 2.5, 20]} />
+          <meshStandardMaterial color="#f97316" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 3, 0]} castShadow>
+          <sphereGeometry args={[2.2, 20, 16]} />
+          <meshStandardMaterial color="#fb923c" />
+        </mesh>
+        <pointLight position={[0, 6, 0]} distance={60} intensity={1} color="#fdba74" />
+        <Html position={[0, 12, 0]} center zIndexRange={[20, 0]} distanceFactor={320}>
+          <div style={berthLabelStyle}>석유공사 원유부이 (원해 · 축척 축소)</div>
+        </Html>
+      </group>
+
+      {/* ===== 묘박지 (앵커리지 존 표시) ===== */}
+      {Object.entries(ONSAN_ANCHORAGE_3D).map(([id, a]) => (
+        <group key={`anc-${id}`} position={[a.pos[0], 0, a.pos[1]]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.6, 0]}>
+            <ringGeometry args={[a.radius - 1.2, a.radius, 48]} />
+            <meshBasicMaterial color="#ffd166" transparent opacity={0.45} depthWrite={false} />
+          </mesh>
+          <Html position={[0, 14, 0]} center zIndexRange={[20, 0]} distanceFactor={320}>
+            <div style={berthLabelStyle}>{a.name}</div>
+          </Html>
+        </group>
+      ))}
+
+      {/* ===== TANK FARM — 방류벽(dike)으로 둘러싼 저장탱크 단지 (S-Oil 배후지) ===== */}
+      <group>
+        {/* 단지 바닥 패드 */}
+        <mesh position={[tbx, 0.15, tbz]} receiveShadow>
+          <boxGeometry args={[60, 0.5, 78]} />
+          <meshStandardMaterial color="#3f4a5a" roughness={0.95} />
+        </mesh>
+        {/* 방류벽 4면 (누출 시 확산 방지벽) */}
+        <mesh position={[tbx, 1, tbz - 39]} castShadow>
+          <boxGeometry args={[62, 2, 1.5]} />
+          <meshStandardMaterial color="#4b5563" roughness={0.9} />
+        </mesh>
+        <mesh position={[tbx, 1, tbz + 39]} castShadow>
+          <boxGeometry args={[62, 2, 1.5]} />
+          <meshStandardMaterial color="#4b5563" roughness={0.9} />
+        </mesh>
+        <mesh position={[tbx - 30, 1, tbz]} castShadow>
+          <boxGeometry args={[1.5, 2, 78]} />
+          <meshStandardMaterial color="#4b5563" roughness={0.9} />
+        </mesh>
+        <mesh position={[tbx + 30, 1, tbz]} castShadow>
+          <boxGeometry args={[1.5, 2, 78]} />
+          <meshStandardMaterial color="#4b5563" roughness={0.9} />
+        </mesh>
+      </group>
+
       {tanks.map((tank, index) => {
-        // Assign tank to a berth cyclically
-        const berthId = `B00${(index % 8) + 1}`;
-        const berthPos = berthPositions[berthId] || berthPositions['B001'];
-        const [bx, , bz] = berthPos;
-
-        // Tank placement: base X offset 80 units inland from berth
-        // Arrange in 2 rows with 20 unit spacing between rows
-        // Z spacing: 18 units between tanks in same row
-        const row = index % 2; // 0 or 1 (two rows)
-        const col = Math.floor(index / 2); // column position
-
-        const tankX = bx + 80 + row * 20;
-        const tankZ = bz - 18 + col * 18;
+        // 탱크팜 내부 2행 × 3열 정렬 배치
+        const row = Math.floor(index / 3);
+        const col = index % 3;
+        const tankX = tbx - 13 + row * 26;
+        const tankZ = tbz - 26 + col * 26;
 
         return (
           <Tank
@@ -235,6 +711,39 @@ export default function Port() {
         );
       })}
 
+      {/* ===== 육상 배관 랙: 해안선 경로를 따라 각 잔교 배후 연결 ===== */}
+      <group>
+        {ONSAN_SHORE_PATH.slice(0, -1).map((p, i) => {
+          const q = ONSAN_SHORE_PATH[i + 1];
+          const dx = q[0] - p[0];
+          const dz = q[1] - p[1];
+          const len = Math.hypot(dx, dz);
+          if (len < 1) return null;
+          const ang = Math.atan2(dx, dz);
+          return (
+            <group
+              key={`rack-${i}`}
+              position={[(p[0] + q[0]) / 2, 4, (p[1] + q[1]) / 2]}
+              rotation={[0, ang, 0]}
+            >
+              {[0, 1.6].map((off, j) => (
+                <mesh key={j} position={[off, 0, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+                  <cylinderGeometry args={[0.5, 0.5, len + 1, 8]} />
+                  <meshStandardMaterial color="#9ca3af" metalness={0.8} roughness={0.3} />
+                </mesh>
+              ))}
+            </group>
+          );
+        })}
+        {/* 배관 지지대 (각 해안선 꼭짓점) */}
+        {ONSAN_SHORE_PATH.slice(1, -1).map((p, i) => (
+          <mesh key={`support-${i}`} position={[p[0] + 0.8, 2, p[1]]} castShadow>
+            <boxGeometry args={[3.5, 4, 3.5]} />
+            <meshStandardMaterial color="#6b7280" roughness={0.8} />
+          </mesh>
+        ))}
+      </group>
+
       {/* ===== SHIPS ===== */}
       {ships.map((ship) => (
         <Ship
@@ -244,10 +753,28 @@ export default function Port() {
         />
       ))}
 
-      {/* ===== PIPES ===== */}
-      {pipes && pipes.map((pipe) => (
-        <Pipe key={pipe.id} pipe={pipe} />
-      ))}
+      {/* ===== 움직이는 작업 요소: 탱크로리 왕복 · 순찰정 · SPM 원유선 ===== */}
+      <TankTruck path={roadPath} offset={0} speed={9} />
+      <TankTruck path={roadPath} offset={180} speed={7.5} tankColor="#a5b4bc" />
+      <TankTruck path={roadPath} offset={420} speed={10.5} tankColor="#e8d9a0" />
+      <PatrolBoat center={bayShift(shoreShift([0, 0], 30), 160)} />
+      <SPMTanker buoy={ONSAN_KNOC_3D} />
+
+      {/* ===== PIPES: 탱크팜 → 하역 선석 이송 배관 (flowRate 에 따라 발광 흐름) ===== */}
+      {pipes && pipes.map((pipe, i) => {
+        const feedBerthIds = ['CY-OTK1', 'SA-SO1', 'SA-JI1'];
+        const b = ONSAN_BERTHS_3D[feedBerthIds[i % feedBerthIds.length]];
+        const [ex, ez] = bayShift(b.pos, -22);
+        return (
+          <Pipe
+            key={pipe.id}
+            pipe={pipe}
+            start={[tbx, 3, tbz]}
+            end={[ex, 3, ez]}
+            onClick={() => setSelectedObject({ ...pipe, feedTo: b.name })}
+          />
+        );
+      })}
 
       {/* ===== INFO POPUP (HTML Overlay) ===== */}
       {selectedObject && (

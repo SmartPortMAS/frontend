@@ -65,12 +65,52 @@ GET /api/dashboard
 }
 ```
 
+**온산 MVP 에이전트 API (2026-07-20 로컬 프로토타입에 구현·검증 완료, 정식 backend 이식 예정)
+— 아래 응답 형태 그대로 mock 으로 써서 UI 를 먼저 만들 것:**
+
+```json
+GET /api/v1/weather/assess?berth_group=정일1/2부두(산암리)&wind_speed=13&wave_height=1.2
+{
+  "berth_group": "정일1/2부두(산암리)",
+  "status": "하역중단",   // 정상|하역중단|이안|호스분리|판단불가 (5단계 뱃지로 표시)
+  "reasons": ["파고 1.2 m >= 1.0 m -> 하역중단"],
+  "thresholds_used": { "stop": {"wind": 17.0, "wave": 1.0}, "unberth": {"wind": 19.0},
+                       "disconnect": {"wind": 21.0, "wave": 2.0}, "source": "정일_입항정보_9.8" },
+  "forecast_warning": null, "is_stale": false
+}
+
+GET /api/v1/weather/berth-groups   // 선석 선택 드롭다운용
+{ "berth_groups": ["정일1/2부두(산암리)", "OTK1/2부두(처용리)", "..."] }
+
+POST /api/v1/safety/assess         // 신규 입항 안전 판정 카드용
+{
+  "risk_level": "위험",             // 안전|주의|위험|배정불가 (결정론, 색상 매핑)
+  "risk_level_basis": { "rule_engine_floor": "안전", "imdg_segregation_code": 2,
+                        "flammability_grade": "저인화점", "gate_hits": ["R13", "R15"] },
+  "gates": [ { "rule": "R13", "name": "인화성 인접작업 격리", "hit": true,
+               "severity": "HOLD", "reason": "인접 'OTK 2부두' ... 배정 보류" } ],  // 15개 전부 옴
+  "explanation": { "summary": "...", "reasoning": ["[R13] ..."], "checklist": ["..."] }
+}
+
+GET /api/agent/orchestrate?...&dwt=9000&draught=7.5&gt=8000
+{
+  "status": "APPROVED",             // APPROVED|REJECTED|WAITING_ANCHORAGE
+  "berth_assigned": "OTK 2부두",
+  "berth_decision": { "path": "대체",   // 전용|대체|정박지대기 (판단 경로 타임라인 UI 소재)
+                      "anchorage": null,
+                      "trace": ["전용 선석 'OTK 1부두' 점유 중", "대체 선석 'OTK 2부두' 게이트 통과 -> 배정"] },
+  "risk_level": "주의", "safety_assessment": { "...": "POST /api/v1/safety/assess 와 동일 구조" }
+}
+```
+
 ## 5. UI 요구 화면 (우선순위 순)
 
 1. **지도 패널**: react-leaflet(OSM) + 선박 마커(위험물선 강조) + **울산 bbox 사각형 표시**
 2. **입항 목록**: port_call 테이블 (선박명/입출항시각/목적/위험물 여부)
-3. **기상 패널**: 풍속·파고·조위·시정 (임계값 초과 시 색 경고, 예: 풍속 14m/s)
-4. **경고/체크리스트 패널**: alerts 표시 + MSDS 기반 안전 체크리스트
+3. **기상 패널**: 풍속·파고·조위·시정 + **선석별 4단계 판정 뱃지**(정상/하역중단/이안/호스분리
+   — `/api/v1/weather/assess`, 선석 드롭다운은 `/api/v1/weather/berth-groups`)
+4. **경고/체크리스트 패널**: alerts 표시 + 안전 게이트 R1~R15 결과 카드(`risk_level` 색상,
+   히트 게이트 사유) + MSDS 기반 안전 체크리스트
 5. (8월, 후순위) **디지털트윈**: Omniverse WebRTC 스트림을 iframe 으로 임베드
    (기존 방식: 백엔드가 USD 파일 좌표 조작 → 향후 localhost:8111 스트리밍 임베드)
 

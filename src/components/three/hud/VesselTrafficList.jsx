@@ -5,7 +5,7 @@ export default function VesselTrafficList() {
 
   return (
     <div className="vessel-traffic-list" style={{
-      position: 'absolute', top: 200, left: 20, zIndex: 1000,
+      position: 'absolute', top: 226, left: 20, zIndex: 1000,
       width: '320px',
       background: 'rgba(5, 8, 17, 0.85)',
       backdropFilter: 'blur(10px)',

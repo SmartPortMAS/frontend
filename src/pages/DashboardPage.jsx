@@ -3,12 +3,28 @@ import KPICard from '../components/dashboard/KPICard';
 import TankGauge from '../components/dashboard/TankGauge';
 import GanttChart from '../components/dashboard/GanttChart';
 import NegotiationChat from '../components/dashboard/NegotiationChat';
+import WeatherPanel from '../components/dashboard/WeatherPanel';
+import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
+import BerthDecisionPanel from '../components/dashboard/BerthDecisionPanel';
+import PortMap from '../components/dashboard/PortMap';
+import PortCallTable from '../components/dashboard/PortCallTable';
+import AlertCenter from '../components/dashboard/AlertCenter';
+import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import useSensorStore from '../stores/useSensorStore';
-import { FaShip, FaWarehouse, FaTint, FaShieldAlt } from 'react-icons/fa';
+import useDashboardData from '../hooks/useDashboardData';
+import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt } from 'react-icons/fa';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 
 export default function DashboardPage() {
-  const { tanks, systemStatus } = useSensorStore();
+  const { tanks } = useSensorStore();
+  const gateAssessment = useSensorStore((s) => s.gateAssessment);
+  const { data } = useDashboardData();
+
+  const vessels = data?.vessels ?? [];
+  const liquidCount = vessels.filter((v) => v.is_liquid_cargo_vessel).length;
+  const mooredCount = vessels.filter((v) => v.nav_status_category === 'MOORED').length;
+  const anchorCount = vessels.filter((v) => v.nav_status_category === 'AT_ANCHOR').length;
+  const gateHits = gateAssessment?.risk_level_basis?.gate_hits?.length ?? 0;
 
   const chartData = [
     { time: '10:00', load: 45, safe: 100 },
@@ -23,15 +39,57 @@ export default function DashboardPage() {
   return (
     <div className="dashboard-page">
       <div className="kpi-grid">
-        <KPICard title="접안 선박" value={systemStatus.activeShips} unit="척" icon={<FaShip />} change="+1 (전일 대비)" />
+        <KPICard title="관제 선박" value={vessels.length} unit="척" icon={<FaShip />} change={`위험물선 ${liquidCount}척`} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
+        <KPICard title="접안 중" value={mooredCount} unit="척" icon={<FaAnchor />} change={`묘박/정박지 대기 ${anchorCount}척`} trend="neutral" />
         <KPICard title="가동 탱크" value={tanks.filter(t => t.status === 'active').length} unit="기" icon={<FaWarehouse />} change="정상 가동" trend="neutral" />
-        <KPICard title="총 처리량" value="124,500" unit="ton" icon={<FaTint />} change="+5.2%" trend="positive" />
-        <KPICard title="안전 지수" value="98" unit="/ 100" icon={<FaShieldAlt />} change="매우 양호" trend="positive" />
+        <KPICard
+          title="최근 안전 심사"
+          value={gateAssessment?.risk_level ?? '심사 전'}
+          unit=""
+          icon={<FaShieldAlt />}
+          change={gateAssessment ? `게이트 15개 중 ${gateHits}건 히트` : '안전 관제 탭에서 실행'}
+          trend={gateAssessment ? (gateHits > 0 ? 'negative' : 'positive') : 'neutral'}
+        />
+      </div>
+
+      {/* 경고 센터: 확인(ACK) 워크플로 (Full Width) */}
+      <div style={{ marginBottom: '20px' }}>
+        <AlertCenter />
+      </div>
+
+      {/* 기상 패널 (Full Width) */}
+      <div style={{ marginBottom: '20px' }}>
+        <WeatherPanel />
+      </div>
+
+      {/* 선석별 하역 판정 (온산 MVP, Full Width) */}
+      <div style={{ marginBottom: '20px' }}>
+        <BerthWeatherPanel />
+      </div>
+
+      {/* 온산 관제 지도: 선석 + ADJACENT_TO + 선박 (Full Width) */}
+      <div className="glass-card" style={{ marginBottom: '20px', padding: '12px' }}>
+        <div className="glass-card-header">
+          <h3 className="glass-card-title">온산항 관제 지도</h3>
+        </div>
+        <div style={{ height: '440px' }}>
+          <PortMap />
+        </div>
+      </div>
+
+      {/* 선석 배정 시뮬레이션 (Full Width) */}
+      <div style={{ marginBottom: '20px' }}>
+        <BerthDecisionPanel />
       </div>
 
       {/* Gantt Chart (Full Width) */}
       <div style={{ marginBottom: '20px' }}>
         <GanttChart />
+      </div>
+
+      {/* 입항 선박 목록 (Full Width) */}
+      <div style={{ marginBottom: '20px' }}>
+        <PortCallTable />
       </div>
 
       <div className="dashboard-grid">
@@ -78,6 +136,9 @@ export default function DashboardPage() {
         {/* Right Column: Negotiation Chat */}
         <NegotiationChat />
       </div>
+
+      {/* 선박 상세 패널 (지도 마커/입항 목록/경고 센터에서 선박 클릭 시) */}
+      <VesselDetailPanel />
     </div>
   );
 }

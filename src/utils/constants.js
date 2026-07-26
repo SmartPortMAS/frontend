@@ -31,6 +31,40 @@ export const COLORS = {
 };
 
 // ─────────────────────────────────────────────
+// 울산항 관제 구역 bbox (2026-07 실측 재조정값, data-pipeline 과 동일)
+// ─────────────────────────────────────────────
+export const ULSAN_BBOX = {
+  minLat: 35.18,
+  maxLat: 35.82,
+  minLon: 129.22,
+  maxLon: 129.76,
+};
+// react-leaflet Rectangle bounds 형식: [[남서], [북동]]
+export const ULSAN_BBOX_BOUNDS = [
+  [ULSAN_BBOX.minLat, ULSAN_BBOX.minLon],
+  [ULSAN_BBOX.maxLat, ULSAN_BBOX.maxLon],
+];
+export const MAP_CENTER = [35.47, 129.40];
+export const MAP_DEFAULT_ZOOM = 11;
+
+// 선석별 하역 판정 4단계 → 색상 (지도/3D 역연동 하이라이트용)
+export const WEATHER_STATUS_COLORS = {
+  '정상': '#00d4aa',
+  '하역중단': '#ffd166',
+  '이안': '#ff8c42',
+  '호스분리': '#ff4b6e',
+  '판단불가': '#4a6a82',
+};
+
+// AIS 항해 상태 → 한글 라벨/색상
+export const NAV_STATUS = {
+  UNDER_WAY: { label: '항해 중', color: '#3a86ff' },
+  AT_ANCHOR: { label: '묘박 중', color: '#ffd166' },
+  MOORED: { label: '접안 중', color: '#00d4aa' },
+  UNKNOWN: { label: '상태 미상', color: '#8ba3b8' },
+};
+
+// ─────────────────────────────────────────────
 // 3D Scene – Berth Positions
 // ─────────────────────────────────────────────
 export const BERTH_POSITIONS = [

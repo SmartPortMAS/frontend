@@ -1,15 +1,50 @@
 import { useState, useEffect, useRef } from 'react';
 import Scene from '../components/three/Scene';
 import PortMap from '../components/dashboard/PortMap';
+import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import RadarMap from '../components/three/hud/RadarMap';
 import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
+import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import useSensorStore from '../stores/useSensorStore';
 import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
+
+// Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
+// 실행: D:\omniverse\start_twin_stream.bat (Isaac Sim 스트리밍 + 웹 뷰어 동시 기동)
+//
+// 뷰어 포트: Vite 는 5173 이 점유되어 있으면 5174, 5175… 로 올려서 뜬다.
+// 5173 하나만 보고 있으면 "떠 있는데 못 찾는" 상황이 생기므로 후보를 순차 탐색한다.
+const OMNIVERSE_PORTS = [5173, 5174, 5175, 5176];
+const omniverseUrl = (port) => `http://localhost:${port}`;
 
 export default function DigitalTwinPage() {
   const [showMap, setShowMap] = useState(false);
   const [showOmniverseStream, setShowOmniverseStream] = useState(false);
+  // 'checking' | 'ok' | 'unreachable'
+  const [streamStatus, setStreamStatus] = useState('checking');
+  const [omniUrl, setOmniUrl] = useState(omniverseUrl(OMNIVERSE_PORTS[0]));
+  const [streamKey, setStreamKey] = useState(0);   // iframe 재마운트용 (세션 재연결)
+
+  // 웹 뷰어가 떠 있는 포트를 찾는다. no-cors 라 응답 내용은 못 읽지만,
+  // 연결 거부/타임아웃이면 reject 되므로 "떠 있는지"는 판별 가능하다.
+  const checkStream = async () => {
+    setStreamStatus('checking');
+    for (const port of OMNIVERSE_PORTS) {
+      const url = omniverseUrl(port);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2500);
+      try {
+        await fetch(url, { mode: 'no-cors', signal: ctrl.signal });
+        clearTimeout(timer);
+        setOmniUrl(url);
+        setStreamStatus('ok');
+        return;
+      } catch {
+        clearTimeout(timer);   // 다음 포트 시도
+      }
+    }
+    setStreamStatus('unreachable');
+  };
   const predictionOffset = useSensorStore(state => state.predictionOffset);
   const setPredictionOffset = useSensorStore(state => state.setPredictionOffset);
   
@@ -68,19 +103,24 @@ export default function DigitalTwinPage() {
         }
       `}</style>
 
-      {/* HUD Overlays */}
-      {!showMap && (
+      {/* HUD Overlays — 2D 지도/스트리밍 중에는 숨김 */}
+      {!showMap && !showOmniverseStream && (
         <>
           <RadarMap />
           <CCTVPanel />
           <VesselTrafficList />
+          <BerthStatusBar />
         </>
       )}
 
       <div style={{ position: 'absolute', top: 50, right: 20, zIndex: 1000, display: 'flex', gap: '10px' }}>
-        <button 
+        <button
           className="action-btn"
-          onClick={() => setShowOmniverseStream(!showOmniverseStream)}
+          onClick={() => {
+            const next = !showOmniverseStream;
+            setShowOmniverseStream(next);
+            if (next) checkStream();
+          }}
           style={{ 
             padding: '10px 16px', background: showOmniverseStream ? 'rgba(16, 185, 129, 0.8)' : 'rgba(15, 23, 42, 0.8)', 
             backdropFilter: 'blur(10px)', color: showOmniverseStream ? '#fff' : '#10b981', border: '1px solid rgba(16, 185, 129, 0.5)',
@@ -103,26 +143,94 @@ export default function DigitalTwinPage() {
         </button>
       </div>
 
-      {/* Omniverse WebRTC Streaming Player */}
+      {/* Omniverse WebRTC Streaming Player — 티커 아래에서 시작 */}
       {showOmniverseStream && (
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 850, background: '#000' }}>
-          {/* 보통 Omniverse WebRTC는 8011, 8111, 또는 8889 포트를 사용합니다 */}
-          <iframe 
-            src="http://localhost:8111" 
-            style={{ width: '100%', height: '100%', border: 'none' }}
-            title="Omniverse WebRTC Stream"
-            allow="camera; microphone; fullscreen; display-capture"
-          />
+        <div style={{ position: 'absolute', top: 30, left: 0, width: '100%', height: 'calc(100% - 30px)', zIndex: 850, background: '#000' }}>
+          {streamStatus === 'ok' && (
+            <>
+              {/* Isaac Sim 기동 직후에는 인코더가 준비되기 전 첫 프레임이 드롭돼
+                  검은/흰 화면으로 남는 경우가 있다. 그때 세션만 다시 맺으면 복구된다. */}
+              <button
+                onClick={() => setStreamKey((k) => k + 1)}
+                style={{
+                  position: 'absolute', top: 12, left: 12, zIndex: 860,
+                  padding: '7px 14px', background: 'rgba(15,23,42,0.85)',
+                  color: '#38bdf8', border: '1px solid rgba(56,189,248,0.5)',
+                  borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
+                }}
+                title="화면이 비어 있으면 눌러 세션을 다시 맺습니다"
+              >
+                ⟳ 스트림 다시 연결
+              </button>
+              <iframe
+                key={streamKey}
+                src={omniUrl}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                title="Omniverse WebRTC Stream"
+                allow="camera; microphone; fullscreen; display-capture"
+              />
+            </>
+          )}
+
+          {streamStatus === 'checking' && (
+            <div style={{
+              height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#38bdf8', fontSize: '16px', fontWeight: 'bold',
+            }}>
+              Omniverse 스트리밍 서버 연결 확인 중...
+            </div>
+          )}
+
+          {streamStatus === 'unreachable' && (
+            <div style={{
+              height: '100%', display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: '14px',
+              color: '#e8f0f2', textAlign: 'center', padding: '0 24px',
+            }}>
+              <FaExclamationTriangle size={42} color="#f59e0b" />
+              <h2 style={{ margin: 0 }}>Omniverse 스트리밍이 실행되고 있지 않습니다</h2>
+              <p style={{ margin: 0, color: '#94a3b8', maxWidth: '560px', lineHeight: 1.6 }}>
+                웹 뷰어({OMNIVERSE_PORTS.map((p) => `:${p}`).join(', ')})에서 응답이 없습니다.<br />
+                탐색기에서 <strong style={{ color: '#e8f0f2' }}>D:\omniverse\start_twin_stream.bat</strong> 을 실행하면
+                Isaac Sim 스트리밍과 웹 뷰어가 함께 켜집니다. (최초 실행은 셰이더 컴파일로 수 분 소요)
+              </p>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={checkStream}
+                  style={{
+                    padding: '10px 18px', background: '#10b981', color: '#fff',
+                    border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold',
+                  }}
+                >
+                  다시 연결 시도
+                </button>
+                <button
+                  onClick={() => setShowOmniverseStream(false)}
+                  style={{
+                    padding: '10px 18px', background: '#334155', color: '#fff',
+                    border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold',
+                  }}
+                >
+                  3D 시뮬레이션으로 돌아가기
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {showMap && (
-        <div className="map-overlay" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 900 }}>
+        /* 티커(30px) 아래에서 시작 → 지도 내부 버튼(온산확대·줌 등)이 가려지지 않음 */
+        <div className="map-overlay" style={{ position: 'absolute', top: 30, left: 0, right: 0, bottom: 0, zIndex: 900 }}>
           <PortMap />
         </div>
       )}
 
-      {/* Time Travel Slider with Media Controls */}
+      {/* 선박 상세 패널 (2D 지도 마커 클릭 시) */}
+      <VesselDetailPanel />
+
+      {/* Time Travel Slider with Media Controls — 스트리밍 중에는 숨김 */}
+      {!showOmniverseStream && (
       <div className="time-slider-container" style={{ 
         position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)', 
         width: '600px', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(10px)',
@@ -162,6 +270,7 @@ export default function DigitalTwinPage() {
           style={{ width: '100%', cursor: 'pointer', accentColor: '#38bdf8' }}
         />
       </div>
+      )}
     </div>
   );
 }

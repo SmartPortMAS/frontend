@@ -1,4 +1,5 @@
 import SafetyGraph from '../components/safety/SafetyGraph';
+import SafetyGatesPanel from '../components/safety/SafetyGatesPanel';
 import useSensorStore from '../stores/useSensorStore';
 import { FaExclamationTriangle, FaCheckCircle, FaExclamationCircle } from 'react-icons/fa';
 
@@ -8,10 +9,11 @@ export default function SafetyPage() {
 
   return (
     <div className="safety-layout">
-      <div className="safety-graph-container">
+      <div className="safety-graph-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <SafetyGatesPanel />
         <SafetyGraph />
       </div>
-      
+
       <div className="safety-panel">
         <div className="glass-card">
           <div className="glass-card-header">
