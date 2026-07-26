@@ -23,6 +23,7 @@ export default function DigitalTwinPage() {
   // 'checking' | 'ok' | 'unreachable'
   const [streamStatus, setStreamStatus] = useState('checking');
   const [omniUrl, setOmniUrl] = useState(omniverseUrl(OMNIVERSE_PORTS[0]));
+  const [streamKey, setStreamKey] = useState(0);   // iframe 재마운트용 (세션 재연결)
 
   // 웹 뷰어가 떠 있는 포트를 찾는다. no-cors 라 응답 내용은 못 읽지만,
   // 연결 거부/타임아웃이면 reject 되므로 "떠 있는지"는 판별 가능하다.
@@ -146,13 +147,29 @@ export default function DigitalTwinPage() {
       {showOmniverseStream && (
         <div style={{ position: 'absolute', top: 30, left: 0, width: '100%', height: 'calc(100% - 30px)', zIndex: 850, background: '#000' }}>
           {streamStatus === 'ok' && (
-            /* 보통 Omniverse WebRTC는 8011, 8111, 또는 8889 포트를 사용합니다 */
-            <iframe
-              src={omniUrl}
-              style={{ width: '100%', height: '100%', border: 'none' }}
-              title="Omniverse WebRTC Stream"
-              allow="camera; microphone; fullscreen; display-capture"
-            />
+            <>
+              {/* Isaac Sim 기동 직후에는 인코더가 준비되기 전 첫 프레임이 드롭돼
+                  검은/흰 화면으로 남는 경우가 있다. 그때 세션만 다시 맺으면 복구된다. */}
+              <button
+                onClick={() => setStreamKey((k) => k + 1)}
+                style={{
+                  position: 'absolute', top: 12, left: 12, zIndex: 860,
+                  padding: '7px 14px', background: 'rgba(15,23,42,0.85)',
+                  color: '#38bdf8', border: '1px solid rgba(56,189,248,0.5)',
+                  borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
+                }}
+                title="화면이 비어 있으면 눌러 세션을 다시 맺습니다"
+              >
+                ⟳ 스트림 다시 연결
+              </button>
+              <iframe
+                key={streamKey}
+                src={omniUrl}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                title="Omniverse WebRTC Stream"
+                allow="camera; microphone; fullscreen; display-capture"
+              />
+            </>
           )}
 
           {streamStatus === 'checking' && (
