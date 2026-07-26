@@ -288,17 +288,23 @@ def fetch_onsan_vessels():
     conn = psycopg2.connect(**cfg)
     try:
         cur = conn.cursor()
+        # 주의: 박스 필터를 DISTINCT 보다 먼저 걸면 "온산에 있었을 때의 옛 위치"가
+        # 최신으로 뽑혀 실 AIS 레이어와 좌표가 어긋난다. 반드시 선박별 최신 1건을
+        # 먼저 고른 뒤 현재 온산에 있는 배만 남긴다.
         cur.execute("""
-            SELECT DISTINCT ON (callsgn)
-                   callsgn, vessel_name, mmsi, latitude, longitude,
-                   sog, cog, heading, draught, received_at_utc
-            FROM upa_vessel_position
+            SELECT * FROM (
+                SELECT DISTINCT ON (callsgn)
+                       callsgn, vessel_name, mmsi, latitude, longitude,
+                       sog, cog, heading, draught, received_at_utc
+                FROM upa_vessel_position
+                WHERE callsgn IS NOT NULL AND callsgn NOT IN ('', '0', '0000')
+                  AND vessel_name IS NOT NULL AND vessel_name <> ''
+                  AND latitude IS NOT NULL AND longitude IS NOT NULL
+                  AND draught >= %s
+                ORDER BY callsgn, received_at_utc DESC
+            ) latest
             WHERE latitude BETWEEN %s AND %s AND longitude BETWEEN %s AND %s
-              AND callsgn IS NOT NULL AND callsgn NOT IN ('', '0', '0000')
-              AND vessel_name IS NOT NULL AND vessel_name <> ''
-              AND draught >= %s
-            ORDER BY callsgn, received_at_utc DESC
-        """, ONSAN_BOX + (MIN_DRAUGHT_M,))
+        """, (MIN_DRAUGHT_M,) + ONSAN_BOX)
         rows = cur.fetchall()
     finally:
         conn.close()

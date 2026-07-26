@@ -118,7 +118,12 @@ export default function PortMap() {
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const { data } = useDashboardData();
   const vessels = data?.vessels ?? [];
-  const realTraffic = data?.real_traffic ?? []; // 실백엔드(upa_vessel_position) AIS 레이어
+  // 실백엔드(upa_vessel_position) AIS 레이어 — 시나리오로 이미 배 아이콘이 그려진
+  // 선박은 제외해 같은 배가 아이콘·점으로 두 번 찍히지 않게 한다.
+  const realTraffic = useMemo(() => {
+    const shown = new Set(vessels.map((v) => v.callsgn).filter(Boolean));
+    return (data?.real_traffic ?? []).filter((v) => !shown.has(v.callsgn));
+  }, [data, vessels]);
   const [showAis, setShowAis] = useState(false);
   const mapRef = useRef(null);
 
