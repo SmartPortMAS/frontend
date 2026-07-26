@@ -132,6 +132,24 @@ export default function PortMap() {
     [vessels]
   );
 
+  // 실선석 점유 현황 (백엔드 /dashboard/berths — upa_port_call 실측)
+  // 백엔드는 'OTK1부두', 화면은 'OTK 1부두'처럼 띄어쓰기가 달라 공백 제거 후 대조한다.
+  const occupancyByBerth = useMemo(() => {
+    const norm = (s) => String(s || '').replace(/\s+/g, '');
+    const m = new Map();
+    (data?.berth_occupancy ?? []).forEach((b) => m.set(norm(b.wharf_name), b));
+    return m;
+  }, [data]);
+  const occupiedCount = useMemo(
+    () => (data?.berth_occupancy ?? []).filter((b) => b.current_vessel_names?.length).length,
+    [data]
+  );
+  const anchorWaiting = useMemo(
+    () => (data?.anchorage_status ?? []).reduce((s, a) => s + (a.current_occupants || 0), 0),
+    [data]
+  );
+  const berthOcc = (name) => occupancyByBerth.get(String(name || '').replace(/\s+/g, ''));
+
   // 증기운 확산 예상 구역 (8월 시나리오 S3 — 가우시안 원뿔 근사)
   // 선택 선박이 R13(인접 증기 중첩) 히트이면 접안 선석 풍하측에 표시
   const selectedVessel = useSensorStore((s) => s.selectedVessel);
@@ -250,6 +268,22 @@ export default function PortMap() {
                 <p style={{ margin: '2px 0 0', color: '#00755e', fontSize: '11px' }}>
                   기상 임계군: {ONSAN_WEATHER_GROUP[id] || '-'}
                 </p>
+                {(() => {
+                  const occ = berthOcc(b.name);
+                  if (!occ) return null;
+                  const ships = occ.current_vessel_names || [];
+                  return (
+                    <p style={{
+                      margin: '4px 0 0', paddingTop: '4px', borderTop: '1px solid #e2e8f0',
+                      fontSize: '11px', color: ships.length ? '#b45309' : '#4a6a82',
+                    }}>
+                      실시간 점유: <strong>{ships.length ? '점유 중' : '여유'}</strong>
+                      {ships.length > 0 && ` — ${ships.slice(0, 3).join(', ')}`}
+                      <br />
+                      <span style={{ color: '#7a8b99' }}>출처: 입출항 기록 실측</span>
+                    </p>
+                  );
+                })()}
                 {b.rep && <p style={{ margin: '2px 0 0', color: '#4a6a82', fontSize: '11px' }}>※ 터미널 대표 좌표 (표시용 이격)</p>}
               </div>
             </Popup>
@@ -369,6 +403,14 @@ export default function PortMap() {
         <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>
           관제 중 {vessels.length}척 · 위험물선 <span style={{ color: COLORS.red }}>{liquidCount}척</span>
         </div>
+        {occupiedCount > 0 && (
+          <div style={{ marginBottom: '6px', fontSize: '11px', color: COLORS.textSecondary }}>
+            실선석 점유 <strong style={{ color: COLORS.yellow }}>{occupiedCount}</strong>
+            /{(data?.berth_occupancy ?? []).length}
+            {anchorWaiting > 0 && <> · 정박지 대기 <strong>{anchorWaiting}</strong>척</>}
+            <span style={{ color: COLORS.textDim }}> (실측)</span>
+          </div>
+        )}
         {LEGEND_ITEMS.map((item) => (
           <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
             <span style={{
