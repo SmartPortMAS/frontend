@@ -122,8 +122,16 @@ export default function PortMap() {
   // 선박은 제외해 같은 배가 아이콘·점으로 두 번 찍히지 않게 한다.
   const realTraffic = useMemo(() => {
     const shown = new Set(vessels.map((v) => v.callsgn).filter(Boolean));
-    return (data?.real_traffic ?? []).filter((v) => !shown.has(v.callsgn));
+    // PORT-MIS 공식 선종코드로 확인된 액체화물선은 지도에서 붉게 강조한다
+    const liquid = new Set(data?.liquid_callsgns ?? []);
+    return (data?.real_traffic ?? [])
+      .filter((v) => !shown.has(v.callsgn))
+      .map((v) => (liquid.has(v.callsgn) ? { ...v, is_liquid_cargo_vessel: true } : v));
   }, [data, vessels]);
+  const realLiquidCount = useMemo(
+    () => realTraffic.filter((v) => v.is_liquid_cargo_vessel).length,
+    [realTraffic]
+  );
   const [showAis, setShowAis] = useState(false);
   const mapRef = useRef(null);
 
@@ -308,16 +316,21 @@ export default function PortMap() {
           <CircleMarker
             key={v.port_call_id}
             center={[v.latitude, v.longitude]}
-            radius={3.5}
+            radius={v.is_liquid_cargo_vessel ? 5 : 3.5}
             pathOptions={{
-              color: v.nav_status_category === 'UNDER_WAY' ? '#38bdf8' : '#8ba3b8',
-              fillOpacity: 0.85,
-              weight: 1,
+              color: v.is_liquid_cargo_vessel
+                ? COLORS.red
+                : (v.nav_status_category === 'UNDER_WAY' ? '#38bdf8' : '#8ba3b8'),
+              fillOpacity: v.is_liquid_cargo_vessel ? 0.95 : 0.85,
+              weight: v.is_liquid_cargo_vessel ? 2 : 1,
             }}
           >
             <Tooltip>
               {v.vessel_name || v.callsgn} · {v.sog ?? '-'} kn ·{' '}
               {(NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label}
+              {v.is_liquid_cargo_vessel && (
+                <><br /><strong style={{ color: '#b91c1c' }}>액체화물선 (PORT-MIS 선종 확인)</strong></>
+              )}
               <br />수신 {formatKST(v.received_at_utc)} (KST)
             </Tooltip>
           </CircleMarker>
@@ -388,7 +401,7 @@ export default function PortMap() {
               onChange={() => setShowAis((s) => !s)}
               style={{ accentColor: '#38bdf8', cursor: 'pointer' }}
             />
-            실선박 AIS ({realTraffic.length}척)
+            실선박 AIS ({realTraffic.length}척{realLiquidCount > 0 && <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>})
           </label>
         )}
       </div>

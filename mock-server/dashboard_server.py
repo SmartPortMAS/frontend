@@ -264,6 +264,11 @@ def fetch_real():
                 "is_real_record": True,
             })
 
+        # 액체화물선 호출부호 (PORT-MIS 공식 선종코드 기준) — 지도 AIS 레이어 강조용
+        cur.execute("""SELECT DISTINCT callsgn FROM portmis_vessel
+                       WHERE is_liquid_cargo_vessel AND callsgn IS NOT NULL""")
+        liquid_callsgns = [r[0] for r in cur.fetchall()]
+
         # 수집 규모 통계
         cur.execute("SELECT COUNT(*) FROM upa_port_call")
         total_calls = cur.fetchone()[0]
@@ -274,7 +279,7 @@ def fetch_real():
         cur.execute("SELECT COUNT(*) FROM ais_vessel_position")
         ais_rows = cur.fetchone()[0]
         stats = {"total_port_calls": total_calls, "onsan_port_calls": onsan_calls,
-                 "ais_position_rows": ais_rows}
+                 "ais_position_rows": ais_rows, "liquid_callsgns": liquid_callsgns}
         return weather, history, stats
     finally:
         conn.close()
@@ -291,8 +296,12 @@ def fetch_onsan_vessels():
         # 주의: 박스 필터를 DISTINCT 보다 먼저 걸면 "온산에 있었을 때의 옛 위치"가
         # 최신으로 뽑혀 실 AIS 레이어와 좌표가 어긋난다. 반드시 선박별 최신 1건을
         # 먼저 고른 뒤 현재 온산에 있는 배만 남긴다.
+        # PORT-MIS 선종코드(공식 51종 표)로 액체화물선 여부를 확정 조인한다.
+        # AIS ship_type 이 전 행 결측이라 예전엔 흘수로만 추정했는데, 이제
+        # 실제 선종 정보가 있으면 그걸 우선 쓴다(2026-07-26 이영서 코드표 반영).
         cur.execute("""
-            SELECT * FROM (
+            SELECT latest.*, pm.is_liquid, pm.ship_kind
+            FROM (
                 SELECT DISTINCT ON (callsgn)
                        callsgn, vessel_name, mmsi, latitude, longitude,
                        sog, cog, heading, draught, received_at_utc
@@ -303,6 +312,14 @@ def fetch_onsan_vessels():
                   AND draught >= %s
                 ORDER BY callsgn, received_at_utc DESC
             ) latest
+            LEFT JOIN (
+                SELECT callsgn,
+                       bool_or(is_liquid_cargo_vessel) AS is_liquid,
+                       min(ship_kind_nm)               AS ship_kind
+                FROM portmis_vessel
+                WHERE callsgn IS NOT NULL
+                GROUP BY callsgn
+            ) pm ON pm.callsgn = latest.callsgn
             WHERE latitude BETWEEN %s AND %s AND longitude BETWEEN %s AND %s
         """, (MIN_DRAUGHT_M,) + ONSAN_BOX)
         rows = cur.fetchall()
@@ -310,7 +327,7 @@ def fetch_onsan_vessels():
         conn.close()
 
     out = []
-    for cs, name, mmsi, lat, lon, sog, cog, hdg, drft, rec in rows:
+    for cs, name, mmsi, lat, lon, sog, cog, hdg, drft, rec, is_liquid, ship_kind in rows:
         up = (name or "").upper()
         if any(k in up for k in SERVICE_CRAFT):
             continue                      # 도선선·예선 등 서비스선 제외
@@ -320,6 +337,7 @@ def fetch_onsan_vessels():
             "callsgn": cs, "vessel_name": name, "mmsi": int(mmsi) if mmsi else None,
             "latitude": lat, "longitude": lon, "sog": sog,
             "vessel_heading": int(hdg or cog or 0), "draught_m": float(drft or 0),
+            "is_liquid": bool(is_liquid), "ship_kind": ship_kind,
             "received_at_utc": rec.strftime("%Y-%m-%dT%H:%M:%SZ") if rec else None,
             # 정지(<0.5kn) 상태에서 선석에 붙어 있으면 계류, 멀리 있으면 묘박 대기로 본다.
             "_state": ("UNDERWAY" if sog >= 1.5 else
@@ -355,6 +373,11 @@ def scenario_vessels():
                 cand = [v for v in pool if v["callsgn"] not in used]
             if not cand:
                 return None
+            # PORT-MIS 선종으로 액체화물선이 확인된 배가 있으면 그쪽을 우선한다
+            # (화물 시나리오를 얹는 배이므로 실제 탱커일수록 자연스럽다)
+            liquid = [v for v in cand if v.get("is_liquid")]
+            if liquid:
+                cand = liquid
             # 계류 역할은 '그 선석에 가장 가까운 배', 묘박 대기는 '선석에서 가장 먼 배'를
             # 골라 지도상 배치가 이야기와 어긋나지 않게 한다.
             target = BERTH_POS.get(role.get("berth") or "")
@@ -380,6 +403,9 @@ def scenario_vessels():
             "nav_status_category": {"MOORED": "MOORED", "ANCHOR": "AT_ANCHOR"}.get(state, "UNDER_WAY"),
             "arrival_at_utc": v["received_at_utc"],
             "is_liquid_cargo_vessel": True,
+            # 선종 출처 구분: PORT-MIS 실선종 확인분인지, 흘수 추정분인지
+            "ship_kind": v.get("ship_kind"),
+            "vessel_type_source": "PORT-MIS 실선종" if v.get("is_liquid") else "흘수 추정",
             "cargo": role["cargo"],
             "berth": role.get("berth"),
             "anchorage": role.get("anchorage"),
@@ -433,6 +459,8 @@ def build_payload():
         "stats": stats,
         "data_source": src,
         "history_ops": history,
+        # 지도 AIS 레이어에서 액체화물선을 붉게 강조하기 위한 호출부호 목록
+        "liquid_callsgns": (stats or {}).get("liquid_callsgns", []),
     }
     _cache["t"] = time.time()
     _cache["payload"] = payload
