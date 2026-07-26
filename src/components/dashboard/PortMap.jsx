@@ -73,10 +73,24 @@ function VesselPopup({ vessel }) {
         <span style={{ color: status.color, fontWeight: 'bold' }}>{status.label}</span>
         {' '}· <strong>속력</strong> {vessel.sog} kn
       </p>
-      <p style={{ margin: '2px 0' }}><strong>입항</strong> {formatKST(vessel.arrival_at_utc)} (KST)</p>
+      <p style={{ margin: '2px 0' }}>
+        <strong>{vessel.position_source === 'REAL_AIS' ? 'AIS 수신' : '입항'}</strong>{' '}
+        {formatKST(vessel.arrival_at_utc)} (KST)
+      </p>
       {vessel.cargo && (
         <p style={{ margin: '2px 0' }}>
           <strong>화물</strong> {vessel.cargo.name} ({vessel.cargo.un_no})
+          {vessel.cargo_source === 'ASSUMED' && (
+            <span style={{
+              marginLeft: 5, padding: '0 5px', borderRadius: 3, fontSize: 10,
+              background: '#e8eef3', color: '#4a6a82', border: '1px solid #c6d3de',
+            }}>가정</span>
+          )}
+        </p>
+      )}
+      {vessel.position_source === 'REAL_AIS' && (
+        <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#4a6a82' }}>
+          선박·위치는 실측 AIS · 화물은 시나리오 가정 (화물목록 API 미확보)
         </p>
       )}
       <p style={{ margin: '4px 0 0', color: '#4a6a82', fontSize: '11px' }}>{vessel.port_call_id}</p>

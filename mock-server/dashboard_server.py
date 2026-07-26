@@ -115,9 +115,87 @@ MOCK_JOBS = [
      "cargo": "등유", "un_no": "UN1223", "planned_tons": 9800, "begin_off": 2.0, "duration_h": 7.0},
 ]
 
+# ─────────────────────────────────────────────
+# 시나리오 배역 — "실제로 온산에 떠 있는 배"에 화물·선석을 부여한다.
+#
+# 왜: 지도의 실 AIS 선박과 시나리오 선박이 따로 놀면 실시간 연동의 의미가 없다.
+#     선박명·호출부호·MMSI·위치·속력은 실측(upa_vessel_position)을 그대로 쓰고,
+#     화물(UN번호)·선석·하역작업만 가정값으로 얹는다.
+#     → 화물은 upa_cargo_manifest(업체코드 필수)를 못 받아 아직 실데이터가 없기 때문.
+#        manifest 확보 시 cargo_source 만 REAL 로 바뀌면 된다.
+#
+# need: MOORED(계류) | ANCHOR(정박대기) | UNDERWAY(항해중) — 실선박 상태로 매칭
+SCENARIO = [
+    {"need": "MOORED", "cargo": {"name": "에탄올", "un_no": "UN1170"}, "berth": "OTK 1부두",
+     "job": {"planned_tons": 12000, "begin_off": -3.0, "duration_h": 8.0}},
+    {"need": "MOORED", "cargo": {"name": "자일렌", "un_no": "UN1307"}, "berth": "정일 1부두",
+     "job": {"planned_tons": 7500, "begin_off": -1.5, "duration_h": 6.0}},
+    {"need": "MOORED", "cargo": {"name": "등유", "un_no": "UN1223"}, "berth": "S-Oil 1부두",
+     "job": {"planned_tons": 9800, "begin_off": 2.0, "duration_h": 7.0}},
+    {"need": "UNDERWAY", "cargo": {"name": "부타디엔", "un_no": "UN1010"}, "berth": "OTK 2부두"},
+    {"need": "UNDERWAY", "cargo": {"name": "가솔린", "un_no": "UN1203"}, "berth": "S-Oil 2부두"},
+    {"need": "ANCHOR", "cargo": {"name": "톨루엔", "un_no": "UN1294"}, "berth": None,
+     "anchorage": "E2"},
+]
+
+# 온산항 일대 (선박 후보 추출 범위)
+ONSAN_BOX = (35.39, 35.50, 129.29, 129.44)   # lat_min, lat_max, lon_min, lon_max
+
+# 선석 실측 좌표 (frontend/src/utils/geoUtils.js ONSAN_BERTHS 와 동일)
+BERTH_POS = {
+    "OTK 1부두": (35.45661, 129.35119),
+    "정일 1부두": (35.43778, 129.36694),
+    "S-Oil 1부두": (35.45100, 129.35600),
+}
+ANCHOR_POS = (35.428, 129.405)      # E2 묘박지 근사 위치
+
+# 선종 데이터(ship_type)가 전 행 결측이라 흘수로 대형 상선을 근사 식별한다.
+# 6 m 이상이면 도선선·예선·관공선 등 소형 서비스선은 사실상 배제된다.
+MIN_DRAUGHT_M = 6.0
+SERVICE_CRAFT = ("PILOT", "TUG", "도선", "예선", "예인", "방제", "해경", "경비", "소방", "항무")
+
+
+def _dist_km(a_lat, a_lon, b_lat, b_lon):
+    """짧은 거리용 평면 근사 (온산 위도에서 오차 무시 가능)."""
+    dy = (a_lat - b_lat) * 111.0
+    dx = (a_lon - b_lon) * 111.0 * math.cos(math.radians(a_lat))
+    return math.hypot(dx, dy)
+
 
 def iso(ts):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+
+def jobs_for(vessels):
+    """하역 작업을 '지도에 뜬 그 선박' 기준으로 생성.
+
+    시나리오 배역 중 job 정의가 있는 것만 작업으로 만든다. 선박명·선석이
+    지도 마커와 동일해야 Gantt·CCTV·상세패널이 같은 배를 가리킨다.
+    """
+    if not vessels or vessels[0].get("position_source") != "REAL_AIS":
+        return mock_jobs_now()
+    now, out = time.time(), []
+    for i, role in enumerate(SCENARIO):
+        j = role.get("job")
+        if not j or i >= len(vessels):
+            continue
+        v = vessels[i]
+        begin = START + j["begin_off"] * 3600
+        end = begin + j["duration_h"] * 3600
+        progress = max(0.0, min(1.0, (now - begin) / (end - begin)))
+        status = "PLANNED" if now < begin else ("COMPLETED" if now >= end else "IN_PROGRESS")
+        out.append({
+            "job_id": "OP-2026-%d" % (101 + i),
+            "vessel_name": v["vessel_name"], "berth": role.get("berth"),
+            "cargo": role["cargo"]["name"], "un_no": role["cargo"]["un_no"],
+            "planned_tons": j["planned_tons"],
+            "done_tons": round(j["planned_tons"] * progress),
+            "progress_pct": round(progress * 100, 1),
+            "status": status,
+            "begin_utc": iso(begin), "end_utc": iso(end),
+            "is_real_record": False,
+        })
+    return out
 
 
 def mock_jobs_now():
@@ -202,12 +280,122 @@ def fetch_real():
         conn.close()
 
 
+def fetch_onsan_vessels():
+    """온산 일대 실선박의 최신 위치 1건씩 (upa_vessel_position). 실패 시 예외."""
+    cfg = db_config()
+    if not (HAS_PG and cfg):
+        raise RuntimeError("db unavailable")
+    conn = psycopg2.connect(**cfg)
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT ON (callsgn)
+                   callsgn, vessel_name, mmsi, latitude, longitude,
+                   sog, cog, heading, draught, received_at_utc
+            FROM upa_vessel_position
+            WHERE latitude BETWEEN %s AND %s AND longitude BETWEEN %s AND %s
+              AND callsgn IS NOT NULL AND callsgn NOT IN ('', '0', '0000')
+              AND vessel_name IS NOT NULL AND vessel_name <> ''
+              AND draught >= %s
+            ORDER BY callsgn, received_at_utc DESC
+        """, ONSAN_BOX + (MIN_DRAUGHT_M,))
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    out = []
+    for cs, name, mmsi, lat, lon, sog, cog, hdg, drft, rec in rows:
+        up = (name or "").upper()
+        if any(k in up for k in SERVICE_CRAFT):
+            continue                      # 도선선·예선 등 서비스선 제외
+        sog, lat, lon = float(sog or 0), float(lat), float(lon)
+        near_berth = min(_dist_km(lat, lon, *p) for p in BERTH_POS.values())
+        out.append({
+            "callsgn": cs, "vessel_name": name, "mmsi": int(mmsi) if mmsi else None,
+            "latitude": lat, "longitude": lon, "sog": sog,
+            "vessel_heading": int(hdg or cog or 0), "draught_m": float(drft or 0),
+            "received_at_utc": rec.strftime("%Y-%m-%dT%H:%M:%SZ") if rec else None,
+            # 정지(<0.5kn) 상태에서 선석에 붙어 있으면 계류, 멀리 있으면 묘박 대기로 본다.
+            "_state": ("UNDERWAY" if sog >= 1.5 else
+                       ("MOORED" if near_berth <= 1.5 else "ANCHOR")),
+            "_near_berth_km": near_berth,
+        })
+    out.sort(key=lambda v: v["callsgn"])   # 매번 같은 배가 뽑히도록 결정적 정렬
+    return out
+
+
+# 배역 배정은 한 번 정하면 유지한다(폴링마다 배가 바뀌면 시연이 어지럽다).
+# 위치·속력은 매 갱신 시 실측으로 다시 채운다.
+_cast = {"t": 0.0, "map": None}          # map: scenario index -> callsgn
+
+
+def scenario_vessels():
+    """실선박에 시나리오(화물·선석)를 얹어 반환. DB 불가 시 None."""
+    try:
+        pool = fetch_onsan_vessels()
+    except Exception:
+        return None
+    if len(pool) < len(SCENARIO):
+        return None
+
+    by_cs = {v["callsgn"]: v for v in pool}
+    # 30분마다(또는 배정된 배가 사라지면) 재배정
+    stale = time.time() - _cast["t"] > 1800
+    if _cast["map"] is None or stale or any(cs not in by_cs for cs in _cast["map"].values()):
+        used, mapping = set(), {}
+        for i, role in enumerate(SCENARIO):
+            cand = [v for v in pool if v["_state"] == role["need"] and v["callsgn"] not in used]
+            if not cand:   # 해당 상태의 배가 없으면 아무 배나 (상태는 실측값 그대로 표시)
+                cand = [v for v in pool if v["callsgn"] not in used]
+            if not cand:
+                return None
+            # 계류 역할은 '그 선석에 가장 가까운 배', 묘박 대기는 '선석에서 가장 먼 배'를
+            # 골라 지도상 배치가 이야기와 어긋나지 않게 한다.
+            target = BERTH_POS.get(role.get("berth") or "")
+            if role["need"] == "MOORED" and target:
+                pick = min(cand, key=lambda v: _dist_km(v["latitude"], v["longitude"], *target))
+            elif role["need"] == "ANCHOR":
+                pick = max(cand, key=lambda v: v["_near_berth_km"])
+            else:
+                pick = cand[i % len(cand)]
+            used.add(pick["callsgn"])
+            mapping[i] = pick["callsgn"]
+        _cast["map"], _cast["t"] = mapping, time.time()
+
+    out = []
+    for i, role in enumerate(SCENARIO):
+        v = by_cs[_cast["map"][i]]
+        state = v["_state"]
+        out.append({
+            "port_call_id": "%s_2026_S%d" % (v["callsgn"], i + 1),
+            "callsgn": v["callsgn"], "vessel_name": v["vessel_name"], "mmsi": v["mmsi"],
+            "latitude": v["latitude"], "longitude": v["longitude"],
+            "sog": v["sog"], "vessel_heading": v["vessel_heading"],
+            "nav_status_category": {"MOORED": "MOORED", "ANCHOR": "AT_ANCHOR"}.get(state, "UNDER_WAY"),
+            "arrival_at_utc": v["received_at_utc"],
+            "is_liquid_cargo_vessel": True,
+            "cargo": role["cargo"],
+            "berth": role.get("berth"),
+            "anchorage": role.get("anchorage"),
+            # 출처 표기 — 화면에서 '가정' 배지로 노출
+            "position_source": "REAL_AIS",
+            "cargo_source": "ASSUMED",
+        })
+    return out
+
+
 def current_vessels():
+    """실선박 기반 시나리오 우선, DB 불가 시 기존 데모 배치로 폴백."""
+    real = scenario_vessels()
+    if real:
+        return real
     t = time.time() - START
     u = (t % 1500.0) / 1500.0
     out = []
     for v in VESSELS:
         v2 = dict(v)
+        v2["position_source"] = "DEMO"
+        v2["cargo_source"] = "DEMO"
         if v["nav_status_category"] == "UNDER_WAY":
             v2["latitude"] = round(v["latitude"] + (35.452 - v["latitude"]) * u, 5)
             v2["longitude"] = round(v["longitude"] + (129.360 - v["longitude"]) * u, 5)
@@ -223,7 +411,7 @@ def build_payload():
         # 진행률·선박 위치는 캐시와 무관하게 갱신
         p = dict(_cache["payload"])
         p["vessels"] = current_vessels()
-        p["operations"] = mock_jobs_now() + p.get("history_ops", [])
+        p["operations"] = jobs_for(p["vessels"]) + p.get("history_ops", [])
         return p
     weather, history, stats, src = None, [], None, {"weather": "MOCK", "history": "NONE", "stats": "NONE"}
     try:
@@ -244,7 +432,9 @@ def build_payload():
     _cache["payload"] = payload
     p = dict(payload)
     p["vessels"] = current_vessels()
-    p["operations"] = mock_jobs_now() + history
+    p["operations"] = jobs_for(p["vessels"]) + history
+    src["vessels"] = "REAL_AIS+가정화물" if p["vessels"] and p["vessels"][0].get(
+        "position_source") == "REAL_AIS" else "DEMO"
     return p
 
 
