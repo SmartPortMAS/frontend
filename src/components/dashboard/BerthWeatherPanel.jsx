@@ -129,9 +129,28 @@ export default function BerthWeatherPanel() {
                 <span style={{ fontSize: '11px', color: COLORS.textDim, alignSelf: 'center' }}>출처 {th.source}</span>
               )}
             </div>
+            {verdict.observed && (
+              <div style={{ fontSize: '12px', color: COLORS.textSecondary }}>
+                판정 기준 실측:{' '}
+                <strong style={{ color: COLORS.textPrimary }}>
+                  풍속 {verdict.observed.wind ?? '-'} m/s · 파고 {verdict.observed.wave ?? '-'} m
+                </strong>
+                {verdict.observed.station && ` (${verdict.observed.station})`}
+                {verdict.observed.observed_at_utc && ` · ${new Date(verdict.observed.observed_at_utc)
+                  .toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })} KST`}
+                {verdict.observed.is_stale && (
+                  <span style={{ color: COLORS.yellow }}> · 관측 오래됨</span>
+                )}
+              </div>
+            )}
             <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: COLORS.textPrimary, lineHeight: 1.7 }}>
               {(verdict.reasons || []).map((r, i) => <li key={i}>{r}</li>)}
             </ul>
+            <div style={{ fontSize: '11px', color: COLORS.textDim }}>
+              {verdict.is_local_fallback
+                ? '※ 백엔드 미응답 — 로컬 임계표로 계산한 결과입니다 (위 입력값 사용)'
+                : '※ 백엔드 기상 에이전트 판정 — 서버가 DB 실측 관측치로 직접 판단합니다 (위 입력값은 폴백 계산용)'}
+            </div>
             {verdict.forecast_warning && (
               <div style={{ fontSize: '13px', color: COLORS.yellow, display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <FaExclamationTriangle /> {verdict.forecast_warning}
