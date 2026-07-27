@@ -2,7 +2,7 @@ import { useState } from 'react';
 import KPICard from '../components/dashboard/KPICard';
 import TankGauge from '../components/dashboard/TankGauge';
 import GanttChart from '../components/dashboard/GanttChart';
-import NegotiationChat from '../components/dashboard/NegotiationChat';
+import AgentConsole from '../components/dashboard/AgentConsole';
 import WeatherPanel from '../components/dashboard/WeatherPanel';
 import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
 import BerthDecisionPanel from '../components/dashboard/BerthDecisionPanel';
@@ -133,12 +133,15 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Right Column: Negotiation Chat */}
-        <NegotiationChat />
+        {/* 협상 로그는 우하단 플로팅 콘솔(AgentConsole)로 이동했다.
+            기존 NegotiationChat 은 하드코딩 대화라 화면에서 내린다. */}
       </div>
 
       {/* 선박 상세 패널 (지도 마커/입항 목록/경고 센터에서 선박 클릭 시) */}
       <VesselDetailPanel />
+
+      {/* 멀티 에이전트 협상 콘솔 — 판정 진입점 단일화 (우하단 고정 탭) */}
+      <AgentConsole />
     </div>
   );
 }
