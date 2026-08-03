@@ -25,6 +25,109 @@ const CARGO_CAS = {
 
 const cargoRef = (name) => (CARGO_CAS[name] ? { cas_no: CARGO_CAS[name], name_hint: name } : null);
 
+// KOSHA MSDS 16개 섹션. 백엔드 kosha_client.DETAIL_ENDPOINTS 와 같은 이름을 쓴다.
+const MSDS_SECTIONS = {
+  detail01: '화학제품과 회사에 관한 정보', detail02: '유해성·위험성',
+  detail03: '구성성분의 명칭 및 함유량', detail04: '응급조치요령',
+  detail05: '폭발·화재시 대처방법', detail06: '누출사고시 대처방법',
+  detail07: '취급 및 저장방법', detail08: '노출방지 및 개인보호구',
+  detail09: '물리화학적 특성', detail10: '안정성 및 반응성',
+  detail11: '독성에 관한 정보', detail12: '환경에 미치는 영향',
+  detail13: '폐기시 주의사항', detail14: '운송에 필요한 정보',
+  detail15: '법적 규제현황', detail16: '그 밖의 참고사항',
+};
+
+// 질문 키워드 → 우선 조회 섹션. 벡터 검색이 없을 때 쓰는 규칙 기반 라우팅이다.
+const SECTION_KEYWORDS = [
+  [['불', '화재', '소화', '폭발', '연소'], 'detail05'],
+  [['응급', '흡입', '삼켰', '눈에', '피부에', '구조', '응급조치'], 'detail04'],
+  [['누출', '유출', '엎질', '방제'], 'detail06'],
+  [['보관', '저장', '취급', '적재', '보관법'], 'detail07'],
+  [['보호구', '마스크', '장갑', '방독', '보호복', '환기'], 'detail08'],
+  [['인화점', '끓는점', '비점', '증기압', '비중', '밀도', '물성', '녹는점'], 'detail09'],
+  [['반응', '안정성', '금지', '피해야', '혼촉'], 'detail10'],
+  [['독성', '급성', '발암', '유해성 분류'], 'detail11'],
+  [['환경', '수생', '생분해', '오염'], 'detail12'],
+  [['폐기', '처리', '처분'], 'detail13'],
+  [['운송', 'un', '포장등급', '해상운송', 'imdg'], 'detail14'],
+  [['규제', '법규', '법적', '허가', '신고'], 'detail15'],
+  [['위험성', '유해성', 'ghs', '경고표지', '그림문자'], 'detail02'],
+];
+
+const _NULL_VALUES = new Set(['자료없음', '해당없음', '-', '', 'N/A', '없음']);
+
+/** 질문에서 화물명을 찾는다 (등록된 CAS 매핑 기준). */
+function detectCargo(question) {
+  const q = String(question || '');
+  return Object.keys(CARGO_CAS).find((name) => q.includes(name)) || null;
+}
+
+/** 질문 키워드로 조회할 섹션 순서를 정한다. 매칭 없으면 안전관제 기본 5종. */
+function rankSections(question) {
+  const q = String(question || '').toLowerCase();
+  const hits = SECTION_KEYWORDS
+    .filter(([words]) => words.some((w) => q.includes(w)))
+    .map(([, section]) => section);
+  const fallback = ['detail02', 'detail07', 'detail08', 'detail04', 'detail10'];
+  return [...new Set([...hits, ...fallback])];
+}
+
+/**
+ * 규칙 기반 근거 인용 — MSDS 원문 섹션을 그대로 인용해 답한다.
+ * WBS 리스크 대응의 "RAG 미완 시 폴백"을 실제로 구현한 경로다.
+ * 문장을 생성하지 않으므로 환각이 원천적으로 없다(대신 요약은 못 한다).
+ */
+async function localMsdsAnswer({ question, cargoHint }) {
+  const cargoName = cargoHint || detectCargo(question);
+  const cas = cargoName ? CARGO_CAS[cargoName] : null;
+
+  if (!cas) {
+    return {
+      answer: '어떤 화물에 대한 질문인지 확인하지 못했습니다. 화물명을 함께 적어주세요. '
+        + `(조회 가능: ${Object.keys(CARGO_CAS).slice(0, 8).join(', ')} 등)`,
+      citations: [], is_local_fallback: true, source: 'NO_CARGO',
+    };
+  }
+
+  let payload = null;
+  try {
+    const res = await fetch(`${BACKEND_BASE}/msds/${encodeURIComponent(cas)}`);
+    if (res.ok) payload = (await res.json())?.msds_payload;
+  } catch {
+    payload = null;
+  }
+  if (!payload) {
+    return {
+      answer: `'${cargoName}'의 MSDS를 조회하지 못했습니다. 백엔드(8001)가 떠 있는지 확인해주세요.`,
+      citations: [], is_local_fallback: true, source: 'MSDS_UNAVAILABLE',
+    };
+  }
+
+  const citations = [];
+  for (const section of rankSections(question)) {
+    const data = payload[section]?.data;
+    if (!Array.isArray(data)) continue;
+    for (const item of data) {
+      const text = String(item?.itemDetail || '').trim();
+      if (text && !_NULL_VALUES.has(text)) {
+        citations.push({
+          chem_name: cargoName, cas_no: cas, section,
+          section_name: MSDS_SECTIONS[section], text, score: null,
+        });
+      }
+      if (citations.length >= 6) break;
+    }
+    if (citations.length >= 6) break;
+  }
+
+  return {
+    answer: citations.length
+      ? `'${cargoName}' MSDS에서 관련 섹션 ${new Set(citations.map((c) => c.section)).size}개를 찾았습니다. 원문을 그대로 인용합니다.`
+      : `'${cargoName}' MSDS에 해당 내용이 없습니다. (모르는 것은 만들어내지 않습니다)`,
+    citations, is_local_fallback: true, source: 'MSDS_RULE_CITATION',
+  };
+}
+
 // ─── 로컬 폴백 임계 (백엔드 미가동 시에도 데모 가능하게) ───
 // 실측 임계는 berth_weather_thresholds.csv 기준, 미등록 선석군은 기본값.
 const LOCAL_THRESHOLDS = {
@@ -295,5 +398,32 @@ export default function useOnsanApi() {
     [postJson, setOrchestration]
   );
 
-  return { fetchBerthGroups, assessBerthWeather, assessSafetyGates, orchestrate };
+  // ─── 관제사 질의응답 (RAG) ───
+  // 백엔드 /rag/query 가 준비되면 그대로 쓰고, 없으면 MSDS 섹션 직접 인용으로 답한다.
+  // 폴백이라도 "근거 없는 문장"은 만들지 않는다 — 원문 문장을 그대로 인용한다.
+  const ragQuery = useCallback(
+    async ({ question, cargoHint = null }) => {
+      const data = await postJson('/rag/query', {
+        question,
+        cargo_hint: cargoHint ? cargoRef(cargoHint) : null,
+        top_k: 5,
+      });
+      if (data) {
+        return {
+          answer: data.answer,
+          citations: (data.citations || []).map((c) => ({
+            chem_name: c.chem_name, cas_no: c.cas_no,
+            section: c.section, section_name: c.section_name || MSDS_SECTIONS[c.section],
+            text: c.text, score: c.score,
+          })),
+          is_local_fallback: false,
+          source: 'BACKEND_RAG',
+        };
+      }
+      return localMsdsAnswer({ question, cargoHint });
+    },
+    [postJson]
+  );
+
+  return { fetchBerthGroups, assessBerthWeather, assessSafetyGates, orchestrate, ragQuery };
 }
