@@ -42,7 +42,7 @@ const LOCAL_THRESHOLDS = {
   },
 };
 
-function localAssessWeather({ berthGroup, windSpeed, waveHeight, isStale }) {
+function localAssessWeather({ berthGroup, windSpeed, waveHeight, isStale, precipObserved = false, extraCondition = false }) {
   const th = LOCAL_THRESHOLDS[berthGroup] || LOCAL_THRESHOLDS.default;
   if (isStale) {
     return {
@@ -70,6 +70,21 @@ function localAssessWeather({ berthGroup, windSpeed, waveHeight, isStale }) {
     if (over(h, th.stop.wave)) reasons.push(`파고 ${h} m >= ${th.stop.wave} m -> 하역중단`);
   } else {
     reasons.push(`풍속 ${w} m/s · 파고 ${h} m — 모든 임계 미만`);
+  }
+  // 강수·특별조건 — 백엔드 rule_engine 과 같은 순서로 풍속/파고 판정 위에 얹는다
+  const RANK = { '정상': 0, '하역중단': 1, '이안': 2, '호스분리': 3 };
+  if (precipObserved && RANK[status] < RANK['하역중단']) {
+    status = '하역중단';
+    reasons.push('강수 육안 확인 → 하역중단 (산업안전보건기준 규칙 제383조 제2호 준용: 강우 1mm/h 이상 작업중지)');
+  } else if (precipObserved) {
+    reasons.push('강수 육안 확인 — 이미 상위 단계 판정 적용 중');
+  }
+  if (extraCondition && RANK[status] < RANK['하역중단']) {
+    // 백엔드 rule_engine 과 동일: 정성조건 발효 시 최소 '하역중단'으로 상향
+    status = '하역중단';
+    reasons.push('정성조건 발효(대기정체/심한뇌우/태풍경로) -> 최소 하역중단');
+  } else if (extraCondition) {
+    reasons.push('정성조건 발효 — 이미 상위 단계 판정 적용 중');
   }
   return { berth_group: berthGroup, status, reasons, thresholds_used: th, is_local_fallback: true };
 }
@@ -207,7 +222,7 @@ export default function useOnsanApi() {
         extra_condition_active: Boolean(extraCondition),
       });
       const verdict = data ? mapWeather(data, berthGroup)
-        : localAssessWeather({ berthGroup, windSpeed, waveHeight, isStale });
+        : localAssessWeather({ berthGroup, windSpeed, waveHeight, isStale, precipObserved, extraCondition });
       setBerthWeather(verdict);
       return verdict;
     },

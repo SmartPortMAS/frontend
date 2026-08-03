@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import useOnsanApi from '../../hooks/useOnsanApi';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
 import { FaRoute, FaAnchor, FaShip, FaCheck, FaHourglassHalf } from 'react-icons/fa';
@@ -14,34 +12,10 @@ const STATUS_STYLE = {
 
 const PATH_LABEL = { '전용': '전용 선석 배정', '대체': '같은 운영사 대체 배정', '정박지대기': '정박지 대기' };
 
-const CARGOS = ['벤젠', '톨루엔', '메탄올', '에탄올', '황산', '휘발유', '경유', '등유', '나프타'];
-const BERTHS = [
-  'OTK 1부두', 'OTK 2부두', 'UTK 부두', '대한유화 부두', '정일 1부두', '정일 2부두',
-  '효성 부두', 'S-Oil 1부두', 'S-Oil 2부두', 'S-Oil 3부두', 'S-Oil 4부두',
-  'S-Oil 부이', '오일허브 부이', '석유공사 부이',
-];
-
 export default function BerthDecisionPanel() {
-  const { orchestrate } = useOnsanApi();
   const result = useSensorStore((s) => s.orchestration);
-  const [form, setForm] = useState({ cargoName: '에탄올', berthName: 'OTK 1부두', dwt: 9000, draught: 7.5, gt: 8000 });
-  const [loading, setLoading] = useState(false);
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const run = async () => {
-    setLoading(true);
-    await orchestrate(form);
-    setLoading(false);
-  };
-
   const style = STATUS_STYLE[result?.status] || { color: COLORS.textDim, label: result?.status };
   const decision = result?.berth_decision;
-
-  const inputStyle = {
-    width: '100%', background: COLORS.card, color: COLORS.textPrimary,
-    border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '7px 10px', fontSize: '13px',
-  };
-  const labelStyle = { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: COLORS.textSecondary };
 
   return (
     <div className="glass-card">
@@ -52,34 +26,19 @@ export default function BerthDecisionPanel() {
         <span style={{ fontSize: '12px', color: COLORS.textDim }}>기상 → 스케줄링 → 안전 게이트 순차 실행</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '12px' }}>
-        <label style={labelStyle}>화물
-          <select value={form.cargoName} onChange={set('cargoName')} style={inputStyle}>
-            {CARGOS.map((c) => <option key={c}>{c}</option>)}
-          </select>
-        </label>
-        <label style={labelStyle}>희망 선석
-          <select value={form.berthName} onChange={set('berthName')} style={inputStyle}>
-            {BERTHS.map((b) => <option key={b}>{b}</option>)}
-          </select>
-        </label>
-        <label style={labelStyle}>DWT
-          <input type="number" value={form.dwt} onChange={set('dwt')} style={inputStyle} />
-        </label>
-        <label style={labelStyle}>흘수 (m)
-          <input type="number" step="0.1" value={form.draught} onChange={set('draught')} style={inputStyle} />
-        </label>
-        <label style={labelStyle}>GT
-          <input type="number" value={form.gt} onChange={set('gt')} style={inputStyle} />
-        </label>
-        <button onClick={run} disabled={loading} style={{
-          alignSelf: 'flex-end', background: `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`, color: '#04222b',
-          border: 'none', borderRadius: '8px', padding: '9px 16px', fontWeight: 700,
-          cursor: loading ? 'wait' : 'pointer', fontSize: '14px', opacity: loading ? 0.6 : 1,
+      {/* 판정 진입점은 우하단 '에이전트 협상 로그' 콘솔 하나로 통일했다.
+          (같은 판단을 세 패널에서 각각 실행하던 중복 버튼 제거 — 2026-07-27)
+          이 패널은 그 결과 중 '선석 배정 경로'만 자세히 보여준다. */}
+      {!result && (
+        <div style={{
+          padding: '14px 16px', background: COLORS.card, borderRadius: '10px',
+          fontSize: '13px', color: COLORS.textSecondary, lineHeight: 1.7, marginBottom: '12px',
         }}>
-          {loading ? '실행 중…' : '배정 실행'}
-        </button>
-      </div>
+          우하단 <strong style={{ color: COLORS.teal }}>에이전트 협상 로그</strong>에서 선박을 고르고
+          <strong style={{ color: COLORS.teal }}> 종합 판정</strong>을 실행하면
+          기상 → 스케줄링 → 안전 판단을 거친 배정 경로가 여기에 표시됩니다.
+        </div>
+      )}
 
       {result && (
         <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>

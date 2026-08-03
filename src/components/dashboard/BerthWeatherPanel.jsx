@@ -37,6 +37,10 @@ export default function BerthWeatherPanel() {
   const [berthGroup, setBerthGroup] = useState('');
   const [windSpeed, setWindSpeed] = useState('13');
   const [waveHeight, setWaveHeight] = useState('1.2');
+  // 시나리오 ② — 강수는 실황 관측 소스가 없어 관제사 육안 확인을 입력으로 쓴다
+  // (백엔드 WeatherAssessmentRequest.precip_observed → 산안법 383조 제2호 기준 적용)
+  const [precipObserved, setPrecipObserved] = useState(false);
+  const [extraCondition, setExtraCondition] = useState(false);
   const [flash, setFlash] = useState(false);
   const rootRef = useRef(null);
 
@@ -59,11 +63,17 @@ export default function BerthWeatherPanel() {
   }, [selectedBerthGroup]);
 
   useEffect(() => {
-    if (berthGroup) assessBerthWeather({ berthGroup, windSpeed, waveHeight });
+    if (berthGroup) assessBerthWeather({ berthGroup, windSpeed, waveHeight, precipObserved, extraCondition });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [berthGroup]);
 
-  const run = () => assessBerthWeather({ berthGroup, windSpeed, waveHeight });
+  // 체크박스는 토글 즉시 재판정 — "비가 온다고 표시했는데 판정이 안 바뀌는" 상태를 남기지 않는다
+  useEffect(() => {
+    if (berthGroup) assessBerthWeather({ berthGroup, windSpeed, waveHeight, precipObserved, extraCondition });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [precipObserved, extraCondition]);
+
+  const run = () => assessBerthWeather({ berthGroup, windSpeed, waveHeight, precipObserved, extraCondition });
   const style = LEVEL_STYLE[verdict?.status] || LEVEL_STYLE['판단불가'];
   const th = verdict?.thresholds_used;
 
@@ -102,6 +112,26 @@ export default function BerthWeatherPanel() {
           파고 (m)
           <input type="number" step="0.1" value={waveHeight} onChange={(e) => setWaveHeight(e.target.value)} style={inputStyle} />
         </label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12.5px' }}>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer',
+            color: precipObserved ? COLORS.yellow : COLORS.textSecondary, fontWeight: precipObserved ? 700 : 400,
+          }}>
+            <input type="checkbox" checked={precipObserved}
+              onChange={(e) => setPrecipObserved(e.target.checked)}
+              style={{ accentColor: COLORS.yellow, width: 15, height: 15, cursor: 'pointer' }} />
+            🌧 강수 육안 확인 (관제사)
+          </label>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer',
+            color: extraCondition ? COLORS.red : COLORS.textSecondary, fontWeight: extraCondition ? 700 : 400,
+          }}>
+            <input type="checkbox" checked={extraCondition}
+              onChange={(e) => setExtraCondition(e.target.checked)}
+              style={{ accentColor: COLORS.red, width: 15, height: 15, cursor: 'pointer' }} />
+            ⚠ 특별 기상조건 (뇌우·태풍경로 등)
+          </label>
+        </div>
         <button onClick={run} style={{
           background: `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`, color: '#04222b',
           border: 'none', borderRadius: '8px', padding: '9px 20px', fontWeight: 700, cursor: 'pointer', fontSize: '14px',
@@ -146,6 +176,16 @@ export default function BerthWeatherPanel() {
             <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: COLORS.textPrimary, lineHeight: 1.7 }}>
               {(verdict.reasons || []).map((r, i) => <li key={i}>{r}</li>)}
             </ul>
+            {precipObserved && (
+              <div style={{
+                fontSize: '12px', color: COLORS.yellow, background: `${COLORS.yellow}14`,
+                border: `1px solid ${COLORS.yellow}44`, borderRadius: '8px', padding: '7px 10px', lineHeight: 1.6,
+              }}>
+                🌧 <strong>강수 판정 근거</strong> — 산업안전보건기준에 관한 규칙 제383조 제2호 준용
+                (강우 1mm/h 이상 작업중지 · 20mm/h 이안 · 30mm/h 호스분리).
+                강수 실황은 관측 API가 없어 <strong>관제사 육안 확인</strong>을 입력으로 사용합니다.
+              </div>
+            )}
             <div style={{ fontSize: '11px', color: COLORS.textDim }}>
               {verdict.is_local_fallback
                 ? '※ 백엔드 미응답 — 로컬 임계표로 계산한 결과입니다 (위 입력값 사용)'
