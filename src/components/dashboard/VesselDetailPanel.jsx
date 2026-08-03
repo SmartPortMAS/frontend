@@ -2,12 +2,15 @@ import { useMemo, useState } from 'react';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS, WEATHER_STATUS_COLORS } from '../../utils/constants';
 import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP } from '../../utils/geoUtils';
-import { assessVesselSafety } from '../../mocks/mockAssessment';
+import useVesselSafety from '../../hooks/useVesselSafety';
 import useDashboardData from '../../hooks/useDashboardData';
 import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs } from 'react-icons/fa';
 import { API_BASE } from '../../utils/constants';
 
-const RISK_COLORS = { '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red };
+const RISK_COLORS = {
+  '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red,
+  '배정불가': COLORS.red, '판단불가': COLORS.textDim,
+};
 
 const STEPS = ['안전 심사', '선석 배정', '입항', '접안', '하역', '출항'];
 
@@ -64,10 +67,7 @@ export default function VesselDetailPanel() {
   const ackAlert = useSensorStore((s) => s.ackAlert);
   const { data } = useDashboardData();
 
-  const assessment = useMemo(
-    () => (vessel ? assessVesselSafety(vessel) : null),
-    [vessel]
-  );
+  const { assessment, loading: safetyLoading } = useVesselSafety(vessel);
 
   if (!vessel) return null;
 
@@ -80,7 +80,7 @@ export default function VesselDetailPanel() {
     berthWeather && weatherGroup && berthWeather.berth_group === weatherGroup
       ? berthWeather.status
       : null;
-  const riskColor = RISK_COLORS[assessment.risk_level] || COLORS.textDim;
+  const riskColor = RISK_COLORS[assessment?.risk_level] || COLORS.textDim;
   const vesselAlerts = (data?.alerts || []).filter(
     (a) => a.port_call_id === vessel.port_call_id
   );
@@ -187,39 +187,78 @@ export default function VesselDetailPanel() {
         );
       })()}
 
-      {/* 안전 심사 (게이트 R1~R15) */}
-      <SectionTitle icon={<FaShieldAlt />}>안전 심사 — 게이트 R1~R15</SectionTitle>
-      <div style={{
-        display: 'inline-block', padding: '4px 14px', borderRadius: '999px',
-        border: `2px solid ${riskColor}`, color: riskColor, fontWeight: 800, fontSize: '15px', marginBottom: '8px',
-      }}>
-        {assessment.risk_level}
-      </div>
-      {assessment.gates_hit.length > 0 ? (
-        <ul style={{ margin: '4px 0', paddingLeft: '16px', fontSize: '12.5px', lineHeight: 1.7 }}>
-          {assessment.gates_hit.map((g) => (
-            <li key={g.rule}>
-              <strong style={{ color: g.severity === 'HOLD' ? COLORS.red : COLORS.yellow }}>{g.rule}</strong>{' '}
-              {g.reason}
-            </li>
-          ))}
-        </ul>
+      {/* 안전 심사 — 백엔드 안전 에이전트 (MSDS 혼재금지 + IMDG 격리) */}
+      <SectionTitle icon={<FaShieldAlt />}>안전 심사 — 혼재금지 · IMDG 격리</SectionTitle>
+      {!assessment ? (
+        <div style={{ fontSize: '13px', color: COLORS.textDim, lineHeight: 1.7 }}>
+          안전 에이전트 조회 중…
+          <div style={{ fontSize: '11px' }}>처음 조회하는 물질은 MSDS 수집에 1~2분 걸릴 수 있습니다</div>
+        </div>
       ) : (
-        <div style={{ fontSize: '13px', color: COLORS.textSecondary }}>게이트 15개 전체 통과 — 히트 없음</div>
-      )}
-      {assessment.checklist.length > 0 && (
         <>
-          <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, margin: '10px 0 4px' }}>
-            하역 전 안전 체크리스트 (MSDS 기반)
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <div style={{
+              display: 'inline-block', padding: '4px 14px', borderRadius: '999px',
+              border: `2px solid ${riskColor}`, color: riskColor, fontWeight: 800, fontSize: '15px',
+            }}>
+              {assessment.risk_level}
+            </div>
+            {safetyLoading && <span style={{ fontSize: '11px', color: COLORS.textDim }}>갱신 중…</span>}
           </div>
-          <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
-            {assessment.checklist.map((c) => <li key={c}>{c}</li>)}
-          </ul>
+
+          {assessment.summary && (
+            <div style={{ fontSize: '12.5px', color: COLORS.textPrimary, lineHeight: 1.65, marginBottom: '8px' }}>
+              {assessment.summary}
+            </div>
+          )}
+
+          {assessment.gates_hit.length > 0 ? (
+            <ul style={{ margin: '4px 0', paddingLeft: '16px', fontSize: '12.5px', lineHeight: 1.7 }}>
+              {assessment.gates_hit.map((g, i) => (
+                <li key={`${g.rule}-${i}`}>
+                  <strong style={{ color: g.severity === 'BLOCK' ? COLORS.red : g.severity === 'HOLD' ? '#ff8c42' : COLORS.yellow }}>
+                    {g.rule}
+                  </strong>{' '}{g.reason}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div style={{ fontSize: '13px', color: COLORS.textSecondary }}>
+              인접 선석 화물과 혼재금지·격리 충돌 없음
+            </div>
+          )}
+
+          {assessment.hazards?.length > 0 && (
+            <>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, margin: '10px 0 4px' }}>
+                주요 유해성 (MSDS)
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
+                {assessment.hazards.map((h, i) => <li key={i}>{h}</li>)}
+              </ul>
+            </>
+          )}
+
+          {assessment.checklist.length > 0 && (
+            <>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, margin: '10px 0 4px' }}>
+                하역 전 안전 체크리스트 (MSDS 근거)
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
+                {assessment.checklist.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </>
+          )}
+
+          <div style={{ fontSize: '11px', color: COLORS.textDim, marginTop: '6px', lineHeight: 1.6 }}>
+            {assessment.is_local_fallback
+              ? '※ 백엔드 안전 에이전트 미응답 — 판단 보류(fail-safe). 임의로 안전 판정하지 않습니다'
+              : '※ 백엔드 안전 에이전트 판정 — MSDS 반응성 + IMDG 7.2 격리표 기준'}
+            {assessment.msds_sections_used?.length > 0
+              && ` · 근거 섹션 ${assessment.msds_sections_used.length}개`}
+          </div>
         </>
       )}
-      <div style={{ fontSize: '11px', color: COLORS.textDim, marginTop: '6px' }}>
-        ※ mock 결과 — 백엔드 연동 시 /api/v1/safety/assess 응답으로 교체
-      </div>
 
       {/* 선석 기상 판정 연동 */}
       {weatherGroup && (

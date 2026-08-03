@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, CircleMarker, Rectangle, Tooltip, Polyline, Polygon } from 'react-leaflet';
-import { assessVesselSafety } from '../../mocks/mockAssessment';
+import useVesselSafety from '../../hooks/useVesselSafety';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import useSensorStore from '../../stores/useSensorStore';
@@ -161,11 +161,13 @@ export default function PortMap() {
   // 증기운 확산 예상 구역 (8월 시나리오 S3 — 가우시안 원뿔 근사)
   // 선택 선박이 R13(인접 증기 중첩) 히트이면 접안 선석 풍하측에 표시
   const selectedVessel = useSensorStore((s) => s.selectedVessel);
+  const { assessment: safety } = useVesselSafety(selectedVessel);
   const vaporCone = useMemo(() => {
     const v = selectedVessel;
     if (!v?.is_liquid_cargo_vessel || !v.berth) return null;
-    const a = assessVesselSafety(v);
-    if (!a.gates_hit.some((g) => g.rule === 'R13')) return null;
+    // 인접 선석과 혼재/격리 충돌이 실제로 잡힌 선박만 증기운을 그린다
+    // (백엔드 안전 에이전트가 낸 MSDS/IMDG 게이트 히트 기준)
+    if (!safety?.gates_hit?.some((g) => g.rule.startsWith('MSDS') || g.rule.startsWith('IMDG'))) return null;
     const berthId = Object.keys(ONSAN_BERTHS).find((k) => ONSAN_BERTHS[k].name === v.berth);
     if (!berthId) return null;
     const [lat, lon] = onsanDisplayPos(ONSAN_BERTHS[berthId]);
@@ -183,7 +185,7 @@ export default function PortMap() {
       positions: [[lat, lon], pt(L, dir - half), pt(L * 1.1, dir), pt(L, dir + half)],
       cargo: v.cargo?.name, windMs, windDir, lengthM: Math.round(L * 1.1),
     };
-  }, [selectedVessel, data]);
+  }, [selectedVessel, data, safety]);
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%', borderRadius: '16px', overflow: 'hidden' }}>
