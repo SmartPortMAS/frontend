@@ -280,6 +280,26 @@ def fetch_real():
         ais_rows = cur.fetchone()[0]
         stats = {"total_port_calls": total_calls, "onsan_port_calls": onsan_calls,
                  "ais_position_rows": ais_rows, "liquid_callsgns": liquid_callsgns}
+
+        # 데이터 신선도 (mart.pipeline_health — 이영서 수집기 생존 신호)
+        # "수집기가 죽었는가"와 "원천(공공데이터포털)이 멈췄는가"를 구분한다.
+        # 2026-08-04 실증: 포털 무응답 8.8일간 수집기는 OK, 원천만 정지 —
+        # 이 구분 없이는 시연 중 "왜 배가 안 움직이죠?"에 답할 수 없다.
+        try:
+            cur.execute("""SELECT pipeline_state, collect_age_min, source_age_min,
+                                  last_source_at_utc
+                           FROM mart.pipeline_health""")
+            ph = cur.fetchone()
+            if ph:
+                stats["pipeline_health"] = {
+                    "state": ph[0],
+                    "collect_age_min": int(ph[1]) if ph[1] is not None else None,
+                    "source_age_min": int(ph[2]) if ph[2] is not None else None,
+                    "last_source_at_utc": ph[3].strftime("%Y-%m-%dT%H:%M:%SZ") if ph[3] else None,
+                }
+        except Exception:
+            conn.rollback()  # 뷰가 아직 없는 환경(구 DB)에서도 나머지 응답은 유지
+
         return weather, history, stats
     finally:
         conn.close()
