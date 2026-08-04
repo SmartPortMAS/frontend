@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
-import { FaExclamationTriangle, FaCloudSun } from 'react-icons/fa';
+import { FaExclamationTriangle, FaCloudSun, FaDatabase } from 'react-icons/fa';
 
 const kstTime = (utc) => {
   if (!utc) return null;
@@ -9,6 +9,32 @@ const kstTime = (utc) => {
     hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul',
   });
 };
+
+// ─────────────────────────────────────────────
+// 데이터 신선도 배지 (mart.pipeline_health)
+// "수집기가 죽었는가"와 "원천(공공데이터포털)이 멈췄는가"는 다른 사고다.
+// 2026-08-04 실증: 포털 무응답 8.8일 동안 수집기는 정상 — 이 구분이 없으면
+// 시연 중 "왜 배가 안 움직이죠?"에 답할 수 없다. fail-safe 설계의 시각적 증거.
+// ─────────────────────────────────────────────
+const ageLabel = (min) => {
+  if (min == null) return '기록 없음';
+  if (min < 60) return `${min}분 전`;
+  if (min < 60 * 24) return `${Math.round(min / 60)}시간 전`;
+  return `${(min / 60 / 24).toFixed(1)}일 전`;
+};
+
+function freshness(ph) {
+  if (!ph) return null;
+  // 수집기 자체가 멈춤 (2시간 이상 수집 기록 없음) — 우리 쪽 장애
+  if (ph.collect_age_min == null || ph.collect_age_min > 120) {
+    return { color: '#ff4b6e', label: '수집기 정지', detail: `마지막 수집 ${ageLabel(ph.collect_age_min)}` };
+  }
+  // 수집은 도는데 원천 데이터가 오래됨 — 공공데이터포털 쪽 장애
+  if (ph.source_age_min != null && ph.source_age_min > 60 * 24) {
+    return { color: '#f59e0b', label: `원천 정지 ${ageLabel(ph.source_age_min)}`, detail: '수집기는 정상 — 공공데이터포털 원천 데이터가 갱신되지 않고 있습니다' };
+  }
+  return { color: '#20e3b2', label: '수집 정상', detail: `원천 관측 ${ageLabel(ph.source_age_min)} · 수집 ${ageLabel(ph.collect_age_min)}` };
+}
 
 export default function Header() {
   const alerts = useSensorStore(state => state.alerts);
@@ -18,6 +44,7 @@ export default function Header() {
   const connected = !error && !!data;
   const w = data?.weather;
   const observedKst = kstTime(w?.observed_at_utc);
+  const fresh = freshness(data?.stats?.pipeline_health);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -48,6 +75,13 @@ export default function Header() {
             )}
           </span>
         </div>
+
+        {fresh && (
+          <div className="header-badge" title={fresh.detail}>
+            <FaDatabase color={fresh.color} />
+            <span style={{ color: fresh.color, fontSize: '12px' }}>{fresh.label}</span>
+          </div>
+        )}
 
         <div className="header-badge alert-badge" title={`${alerts.length}개 알림`}>
           <FaExclamationTriangle color={alerts.length > 0 ? '#ff4b6e' : '#8ba3b8'} />
