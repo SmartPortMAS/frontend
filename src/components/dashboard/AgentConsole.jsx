@@ -3,7 +3,7 @@ import {
   FaCloudSun, FaRoute, FaShieldAlt, FaRobot, FaComments, FaTimes, FaPlay, FaSpinner,
   FaSearch, FaPaperPlane, FaBookOpen, FaUser,
 } from 'react-icons/fa';
-import useOnsanApi from '../../hooks/useOnsanApi';
+import useOnsanApi, { namesAnyCargo } from '../../hooks/useOnsanApi';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
@@ -27,6 +27,13 @@ const AGENTS = {
   safety: { name: '안전관제 에이전트', icon: FaShieldAlt, color: '#f59e0b' },
   orchestrator: { name: '종합 오케스트레이터', icon: FaRobot, color: COLORS.teal },
 };
+
+// 근거 신뢰도 — LLM이 아니라 근거 종류로 백엔드 코드가 산정한 값
+const CONFIDENCE_LABEL = { high: '높음', medium: '보통', low: '낮음 (근거 부족)' };
+
+const RISK_COLOR = (lv) => ({
+  '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red, '배정불가': COLORS.red,
+}[lv] || COLORS.textDim);
 
 const VERDICT_COLOR = {
   APPROVED: COLORS.teal, WAITING_ANCHORAGE: COLORS.yellow,
@@ -160,8 +167,15 @@ export default function AgentConsole() {
     setQaLog((prev) => [...prev, { role: 'user', text: q }]);
     setQaLoading(true);
     try {
-      // 선택된 선박의 화물을 힌트로 넘겨 "이 배 화물" 같은 질문도 받게 한다
-      const res = await ragQuery({ question: q, cargoHint: target?.cargo?.name });
+      // cargo_hint 는 질문이 물질을 스스로 지목하지 않을 때만 붙인다.
+      // "이 선박 화물의 보호구는?" 처럼 화면 맥락에 기대는 질문에는 도움이 되지만,
+      // "황산과 벤젠을 같이 둬도 되나?" 처럼 물질이 문장에 있는 질문에 선택 선박의
+      // 화물을 끼워 넣으면 엉뚱한 물질로 해석될 수 있다.
+      const mentionsChemical = /[가-힣A-Za-z]{2,}/.test(q) && namesAnyCargo(q);
+      const res = await ragQuery({
+        question: q,
+        cargoHint: mentionsChemical ? null : target?.cargo?.name,
+      });
       setQaLog((prev) => [...prev, { role: 'agent', ...res }]);
     } catch (err) {
       setQaLog((prev) => [...prev, {
@@ -420,17 +434,61 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
                 {m.answer}
               </div>
 
+              {/* 혼재 판정 결과 — 답변 문장이 아니라 이 등급이 결론이다 (규칙엔진 하한 보정본) */}
+              {m.assessment && (
+                <div style={{
+                  marginTop: 7, padding: '8px 11px', borderRadius: 8,
+                  background: `${RISK_COLOR(m.assessment.risk_level)}1a`,
+                  border: `1px solid ${RISK_COLOR(m.assessment.risk_level)}66`,
+                }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: RISK_COLOR(m.assessment.risk_level) }}>
+                    판정: {m.assessment.risk_level}
+                    <span style={{ fontSize: 10.5, fontWeight: 400, color: COLORS.textDim }}>
+                      {' '}· 규칙엔진 하한 {m.assessment.rule_engine_floor} (LLM이 낮출 수 없음)
+                    </span>
+                  </div>
+                  {m.assessment.reasoning && (
+                    <div style={{ fontSize: 11.5, color: COLORS.textSecondary, marginTop: 3, lineHeight: 1.55 }}>
+                      {m.assessment.reasoning}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* DB 미등재 — "혼재금지 관계 없음(안전)"이 아니라 "판정 불가"다 */}
+              {m.unresolved?.length > 0 && (
+                <div style={{
+                  marginTop: 7, padding: '8px 11px', borderRadius: 8, fontSize: 12,
+                  background: `${COLORS.yellow}14`, border: `1px solid ${COLORS.yellow}55`,
+                  color: COLORS.yellow, lineHeight: 1.6,
+                }}>
+                  ⚠ <strong>판정 불가</strong> — {m.unresolved.join(', ')}는 MSDS DB에 없습니다.
+                  <div style={{ color: COLORS.textSecondary, fontSize: 11.5 }}>
+                    “혼재금지 관계가 없다(안전)”는 뜻이 아닙니다. 관제사 확인이 필요합니다.
+                  </div>
+                </div>
+              )}
+
               {m.citations?.length > 0 && (
                 <div style={{ marginTop: 7, display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {m.citations.map((c, j) => (
                     <div key={j} style={{
                       background: COLORS.card, border: `1px solid ${COLORS.border}`,
-                      borderLeft: `3px solid ${COLORS.teal}`, borderRadius: 8, padding: '8px 11px',
+                      // 확정값(정형 컬럼·그래프 관계)은 벡터 발췌보다 신뢰도가 높다 — 색으로 구분
+                      borderLeft: `3px solid ${c.is_exact ? COLORS.teal : COLORS.info}`,
+                      borderRadius: 8, padding: '8px 11px',
                     }}>
-                      <div style={{ fontSize: 11, color: COLORS.teal, fontWeight: 700, marginBottom: 3 }}>
+                      <div style={{ fontSize: 11, color: c.is_exact ? COLORS.teal : COLORS.info, fontWeight: 700, marginBottom: 3 }}>
                         {c.chem_name} · {c.section_name}
                         {c.cas_no && <span style={{ color: COLORS.textDim, fontWeight: 400 }}> (CAS {c.cas_no})</span>}
-                        {c.score != null && <span style={{ color: COLORS.textDim, fontWeight: 400 }}> · 유사도 {c.score.toFixed(2)}</span>}
+                        {c.is_exact ? (
+                          <span style={{
+                            marginLeft: 5, padding: '1px 6px', borderRadius: 5, fontSize: 10,
+                            background: `${COLORS.teal}2e`, color: COLORS.teal, fontWeight: 700,
+                          }}>확정값</span>
+                        ) : (
+                          <span style={{ color: COLORS.textDim, fontWeight: 400 }}> · 유사도 {c.score.toFixed(2)}</span>
+                        )}
                       </div>
                       <div style={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.6 }}>{c.text}</div>
                     </div>
@@ -441,7 +499,9 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
               <div style={{ fontSize: 10.5, color: COLORS.textDim, marginTop: 5 }}>
                 {m.is_local_fallback
                   ? '※ 규칙 기반 인용 — MSDS 원문 섹션을 그대로 표시합니다 (벡터 검색 미연결)'
-                  : '※ RAG 검색 결과 — 임베딩 유사도 상위 근거입니다'}
+                  : `※ GraphRAG 근거 — MSDS 원문·지식그래프·정형값${
+                      m.confidence ? ` · 신뢰도 ${CONFIDENCE_LABEL[m.confidence] || m.confidence}` : ''
+                    }`}
               </div>
             </div>
           </div>

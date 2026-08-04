@@ -28,6 +28,10 @@ const CARGO_CAS = {
 
 const cargoRef = (name) => (CARGO_CAS[name] ? { cas_no: CARGO_CAS[name], name_hint: name } : null);
 
+/** 질문 문장이 화물명을 스스로 지목하는가 — cargo_hint 를 붙일지 판단하는 데 쓴다 */
+export const namesAnyCargo = (text) =>
+  Object.keys(CARGO_CAS).some((name) => text.includes(name));
+
 // KOSHA MSDS 16개 섹션. 백엔드 kosha_client.DETAIL_ENDPOINTS 와 같은 이름을 쓴다.
 const MSDS_SECTIONS = {
   detail01: '화학제품과 회사에 관한 정보', detail02: '유해성·위험성',
@@ -404,21 +408,36 @@ export default function useOnsanApi() {
   // ─── 관제사 질의응답 (RAG) ───
   // 백엔드 /rag/query 가 준비되면 그대로 쓰고, 없으면 MSDS 섹션 직접 인용으로 답한다.
   // 폴백이라도 "근거 없는 문장"은 만들지 않는다 — 원문 문장을 그대로 인용한다.
+  // 요청 계약 주의 3가지 (backend app/agents/chatbot/schemas.py)
+  //  - top_k 는 보내지 않는다. extra="forbid" 라 422로 거절되고, 애초에 근거 청크 수는
+  //    intent별로 서버가 튜닝한다(일반 8 / 혼재판정 4 / 그 외 6). 더 보여주는 건 UI 문제다.
+  //  - cargo_hint 는 화면이 화물을 이미 특정한 경우에만. 자유 채팅에선 생략한다
+  //    (사용자는 CAS번호를 모르고, LLM 플래너가 질문에서 물질명을 뽑는다).
+  //  - cargo_hint 를 보낼 땐 chem_id 우선. cas_no 는 msds_chemical 에서 nullable 이다.
   const ragQuery = useCallback(
     async ({ question, cargoHint = null }) => {
-      const data = await postJson('/rag/query', {
-        question,
-        cargo_hint: cargoHint ? cargoRef(cargoHint) : null,
-        top_k: 5,
-      });
+      const hint = cargoHint ? cargoRef(cargoHint) : null;
+      const body = { question };
+      if (hint?.chem_id) body.cargo_hint = { chem_id: hint.chem_id };
+      else if (hint?.cas_no) body.cargo_hint = { cas_no: hint.cas_no };
+
+      const data = await postJson('/rag/query', body);
       if (data) {
         return {
           answer: data.answer,
           citations: (data.citations || []).map((c) => ({
             chem_name: c.chem_name, cas_no: c.cas_no,
             section: c.section, section_name: c.section_name || MSDS_SECTIONS[c.section],
-            text: c.text, score: c.score,
+            text: c.text,
+            // score === null 은 유사도가 낮은 게 아니라 '확정값'(정형 컬럼·그래프 관계)이다.
+            // 벡터 발췌보다 신뢰도가 높으므로 화면에서 유사도 뱃지와 구분해야 한다.
+            score: c.score ?? null,
+            is_exact: c.score === null || c.score === undefined,
           })),
+          confidence: data.confidence || null,
+          // 비어 있지 않으면 "혼재금지 관계 없음(안전)"이 아니라 "판정 불가"다 — 경고 대상
+          unresolved: data.unresolved || [],
+          assessment: data.assessment || null,
           is_local_fallback: false,
           source: 'BACKEND_RAG',
         };
