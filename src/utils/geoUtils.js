@@ -139,9 +139,21 @@ export function onsanDisplayPos(b) {
   return [b.lat + dLat, b.lon + dLon];
 }
 
+// 실DB 선석명(VTS/화물 매니페스트 표기, 공백·붙임 표기가 제각각 — 예: '정일1부두',
+// 'S-Oil 1부두')을 ONSAN_BERTHS 큐레이션 키로 찾는다. 공백만 제거하고 비교한다
+// (백엔드 mart.norm_facility()와 같은 원칙 — 정규화 규칙을 늘리면 다른 선석과
+// 잘못 묶일 수 있어 공백 제거 하나로만 제한한다).
+const normBerthName = (s) => (s || '').replace(/\s+/g, '');
+
+export function findBerthIdByName(berthName) {
+  const target = normBerthName(berthName);
+  if (!target) return null;
+  return Object.keys(ONSAN_BERTHS).find((k) => normBerthName(ONSAN_BERTHS[k].name) === target) || null;
+}
+
 // 선석명 → ADJACENT_TO 인접 선석명 목록 (안전 게이트 R13 인접작업 입력용)
 export function onsanAdjacentBerthNames(berthName) {
-  const id = Object.keys(ONSAN_BERTHS).find((k) => ONSAN_BERTHS[k].name === berthName);
+  const id = findBerthIdByName(berthName);
   if (!id) return [];
   const names = [];
   for (const { a, b } of ONSAN_ADJACENCY) {

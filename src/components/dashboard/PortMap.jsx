@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
-import { ONSAN_BERTHS, ONSAN_ADJACENCY, ONSAN_WEATHER_GROUP, onsanDisplayPos } from '../../utils/geoUtils';
+import { ONSAN_BERTHS, ONSAN_ADJACENCY, ONSAN_WEATHER_GROUP, onsanDisplayPos, findBerthIdByName } from '../../utils/geoUtils';
 import {
   COLORS,
   ULSAN_BBOX_BOUNDS,
@@ -90,7 +90,9 @@ function VesselPopup({ vessel }) {
       )}
       {vessel.position_source === 'REAL_AIS' && (
         <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#4a6a82' }}>
-          선박·위치는 실측 AIS · 화물은 시나리오 가정 (화물목록 API 미확보)
+          {vessel.cargo_source === 'REAL'
+            ? '선박·위치·화물 모두 실측 (AIS + 재항 신고 위험물)'
+            : '선박·위치는 실측 AIS · 화물은 시나리오 가정 (화물목록 API 미확보)'}
         </p>
       )}
       <p style={{ margin: '4px 0 0', color: '#4a6a82', fontSize: '11px' }}>{vessel.port_call_id}</p>
@@ -117,9 +119,20 @@ export default function PortMap() {
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const { data } = useDashboardData();
-  const vessels = data?.vessels ?? [];
-  // 실백엔드(upa_vessel_position) AIS 레이어 — 시나리오로 이미 배 아이콘이 그려진
-  // 선박은 제외해 같은 배가 아이콘·점으로 두 번 찍히지 않게 한다.
+  // 아이콘(클릭 시 상세패널) 레이어 — 실AIS + berth-cargo 실화물 조인 선박을 우선 쓰고,
+  // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
+  // AgentConsole과 동일한 원칙. arrival_at_utc는 팝업이 그 필드로 시각을 표시해서 맞춰준다.
+  const realCargoVessels = useMemo(
+    () => (data?.real_traffic ?? [])
+      .filter((v) => v.cargo)
+      .map((v) => ({
+        ...v, position_source: 'REAL_AIS', cargo_source: 'REAL', arrival_at_utc: v.received_at_utc,
+      })),
+    [data]
+  );
+  const vessels = realCargoVessels.length > 0 ? realCargoVessels : (data?.vessels ?? []);
+  // 실백엔드(upa_vessel_position) AIS 레이어 — 위 아이콘으로 이미 표시된 선박은
+  // 제외해 같은 배가 아이콘·점으로 두 번 찍히지 않게 한다.
   const realTraffic = useMemo(() => {
     const shown = new Set(vessels.map((v) => v.callsgn).filter(Boolean));
     // PORT-MIS 공식 선종코드로 확인된 액체화물선은 지도에서 붉게 강조한다
@@ -168,7 +181,7 @@ export default function PortMap() {
     // 인접 선석과 혼재/격리 충돌이 실제로 잡힌 선박만 증기운을 그린다
     // (백엔드 안전 에이전트가 낸 MSDS/IMDG 게이트 히트 기준)
     if (!safety?.gates_hit?.some((g) => g.rule.startsWith('MSDS') || g.rule.startsWith('IMDG'))) return null;
-    const berthId = Object.keys(ONSAN_BERTHS).find((k) => ONSAN_BERTHS[k].name === v.berth);
+    const berthId = findBerthIdByName(v.berth);
     if (!berthId) return null;
     const [lat, lon] = onsanDisplayPos(ONSAN_BERTHS[berthId]);
     const w = data?.weather;
