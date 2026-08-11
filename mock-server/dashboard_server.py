@@ -15,6 +15,7 @@
 백엔드(FastAPI)가 완성되면 이 서버를 끄기만 하면 된다 (동일 계약).
 실행: python dashboard_server.py  (포트 8000)
 """
+import calendar
 import json
 import math
 import os
@@ -28,7 +29,11 @@ except ImportError:
     HAS_PG = False
 
 START = time.time()
-ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "backend", ".env")
+# 컨테이너에서는 .env 파일 대신 환경변수로 주입한다 (SMARTPORT_ENV_PATH 로 경로 변경 가능)
+ENV_PATH = os.getenv(
+    "SMARTPORT_ENV_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "backend", ".env"),
+)
 
 _env_cache = None
 
@@ -46,11 +51,18 @@ def db_config():
                         env[k] = v
         except OSError:
             pass
+        # 파일에 없는 값은 환경변수에서 채운다 (컨테이너는 .env 파일이 없다)
+        for k in ("POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"):
+            if not env.get(k) and os.getenv(k):
+                env[k] = os.environ[k]
         _env_cache = env
     e = _env_cache
     if not e.get("POSTGRES_DB"):
         return None
-    return dict(host="localhost", port=5433, dbname=e["POSTGRES_DB"],
+    # 컨테이너 배포에서는 DB 가 다른 호스트에 있다 (로컬 실행은 기존 값 그대로).
+    return dict(host=os.getenv("PGHOST", "localhost"),
+                port=int(os.getenv("PGPORT", "5433")),
+                dbname=e["POSTGRES_DB"],
                 user=e["POSTGRES_USER"], password=e["POSTGRES_PASSWORD"], connect_timeout=2)
 
 
@@ -300,9 +312,85 @@ def fetch_real():
         except Exception:
             conn.rollback()  # 뷰가 아직 없는 환경(구 DB)에서도 나머지 응답은 유지
 
-        return weather, history, stats
+        alerts = real_alerts(cur, conn, stats.get("pipeline_health"), weather)
+
+        return weather, history, stats, alerts
     finally:
         conn.close()
+
+
+def real_alerts(cur, conn, health, weather):
+    """실데이터에서 경고를 만든다 (하드코딩 경고 대체).
+
+    원칙: **여기서 새로 판정하지 않는다.** 이미 다른 곳이 내린 결론(mart 뷰의
+    draught_verdict, pipeline_health)과 관측 시각만 읽어서 문장으로 옮긴다.
+    혼재금지(IMDG) 판정은 백엔드 안전 에이전트가 유일한 권위이므로, 여기서는
+    "같은 부두에 등급이 다른 위험물이 함께 있다"는 사실만 알리고 판정은 하지 않는다.
+    위험이 없으면 빈 목록이 정상이다 (없는 경고를 지어내지 않는다).
+    """
+    out = []
+    try:
+        cur.execute("""SELECT callsgn, facility_name, ukc_m, draught_verdict
+                       FROM mart.berth_draught_check
+                       WHERE draught_verdict IN ('NOT_ALLOWED', 'MARGINAL')
+                       ORDER BY ukc_m NULLS LAST LIMIT 5""")
+        for callsgn, facility, ukc, verdict in cur.fetchall():
+            danger = verdict == "NOT_ALLOWED"
+            ukc_txt = f"UKC {ukc:.2f} m" if ukc is not None else "UKC 산출 불가"
+            out.append({
+                "level": "DANGER" if danger else "WARNING",
+                "type": "DRAUGHT",
+                "message": f"{facility or '부두 미상'}: {callsgn} 흘수 여유 부족 "
+                           f"({ukc_txt}, {verdict})",
+                "port_call_id": None,
+                "created_at_utc": _utc_now(),
+            })
+    except Exception:
+        conn.rollback()
+
+    try:
+        cur.execute("""SELECT facility_name, count(DISTINCT imdg_class)
+                       FROM mart.berth_current_cargo
+                       WHERE imdg_class IS NOT NULL AND facility_name IS NOT NULL
+                       GROUP BY facility_name HAVING count(DISTINCT imdg_class) > 1
+                       ORDER BY 2 DESC LIMIT 3""")
+        for facility, n in cur.fetchall():
+            out.append({
+                "level": "WARNING",
+                "type": "SEGREGATION",
+                "message": f"{facility}: IMDG 등급 {n}종 동시 재항 — 혼재 판정 확인 필요",
+                "port_call_id": None,
+                "created_at_utc": _utc_now(),
+            })
+    except Exception:
+        conn.rollback()
+
+    # 수집 상태·관측 노후는 화면 신뢰도에 직결되므로 경고로 올린다
+    if health and health.get("state") and health["state"] != "OK":
+        out.append({
+            "level": "WARNING", "type": "PIPELINE",
+            "message": f"데이터 수집 상태: {health['state']} "
+                       f"(수집 {health.get('collect_age_min')}분 전)",
+            "port_call_id": None, "created_at_utc": _utc_now(),
+        })
+    if weather and weather.get("observed_at_utc"):
+        age_h = (time.time() - _epoch(weather["observed_at_utc"])) / 3600
+        if age_h > 3:
+            out.append({
+                "level": "WARNING", "type": "WEATHER",
+                "message": f"기상 관측값이 {age_h:.0f}시간 전 값입니다 "
+                           f"(원천 관측소 결측 — 판정 시 참고)",
+                "port_call_id": None, "created_at_utc": _utc_now(),
+            })
+    return out
+
+
+def _utc_now():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _epoch(iso_utc):
+    return calendar.timegm(time.strptime(iso_utc, "%Y-%m-%dT%H:%M:%SZ"))
 
 
 def fetch_onsan_vessels():
@@ -465,17 +553,21 @@ def build_payload():
         p["vessels"] = current_vessels()
         p["operations"] = jobs_for(p["vessels"]) + p.get("history_ops", [])
         return p
-    weather, history, stats, src = None, [], None, {"weather": "MOCK", "history": "NONE", "stats": "NONE"}
+    weather, history, stats, src = None, [], None, {"weather": "MOCK", "history": "NONE",
+                                                    "stats": "NONE", "alerts": "MOCK"}
+    alerts = None
     try:
-        weather, history, stats = fetch_real()
+        weather, history, stats, alerts = fetch_real()
         src = {"weather": "REAL" if weather else "MOCK",
                "history": "REAL" if history else "NONE",
-               "stats": "REAL" if stats else "NONE"}
+               "stats": "REAL" if stats else "NONE",
+               # 실경고가 0건인 것과 DB 를 못 읽은 것은 다르다 — 0건도 REAL 이다
+               "alerts": "REAL" if alerts is not None else "MOCK"}
     except Exception:
         pass
     payload = {
         "weather": weather or MOCK_WEATHER,
-        "alerts": ALERTS,
+        "alerts": ALERTS if alerts is None else alerts,
         "stats": stats,
         "data_source": src,
         "history_ops": history,
@@ -603,6 +695,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", 8000), Handler)
-    print("dashboard server: http://127.0.0.1:8000/api/dashboard (실DB 연결 시 실데이터)")
+    # 로컬은 127.0.0.1 고정(외부 노출 없음). 컨테이너는 다른 컨테이너가 붙어야 하므로
+    # BIND_HOST=0.0.0.0 으로 띄운다 — 인터넷 노출은 앞단 nginx 만 담당한다.
+    host = os.getenv("BIND_HOST", "127.0.0.1")
+    port = int(os.getenv("BIND_PORT", "8000"))
+    server = ThreadingHTTPServer((host, port), Handler)
+    print(f"dashboard server: http://{host}:{port}/api/dashboard (실DB 연결 시 실데이터)")
     server.serve_forever()
