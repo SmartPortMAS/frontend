@@ -4,11 +4,8 @@ import DigitalTwinPage from './pages/DigitalTwinPage';
 import DashboardPage from './pages/DashboardPage';
 import SafetyPage from './pages/SafetyPage';
 import SensorPage from './pages/SensorPage';
-import useWebSocket from './hooks/useWebSocket';
 
 export default function App() {
-  useWebSocket();
-
   return (
     <Routes>
       <Route element={<Layout />}>
