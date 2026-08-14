@@ -27,6 +27,16 @@ GETS = {
     "/api/v1/dashboard/vessels": f"{BACKEND}/dashboard/vessels",
     "/api/v1/dashboard/berths": f"{BACKEND}/dashboard/berths",
     "/api/v1/dashboard/anchorages": f"{BACKEND}/dashboard/anchorages",
+    # 2026-08-15 확장 — 화면이 부르는 GET 이 늘 때마다 여기도 같이 늘려야 한다.
+    # 빠뜨리면 스냅샷 배포본에서 그 패널만 503 폴백(빈 화면/오류 문구)이 된다.
+    "/api/v1/dashboard/berth-cargo": f"{BACKEND}/dashboard/berth-cargo",
+    "/api/v1/dashboard/draught-check": f"{BACKEND}/dashboard/draught-check",
+    "/api/v1/dashboard/history": f"{BACKEND}/dashboard/history",
+    "/api/v1/dashboard/pipeline-health": f"{BACKEND}/dashboard/pipeline-health",
+    "/api/v1/dashboard/stats": f"{BACKEND}/dashboard/stats",
+    "/api/v1/dashboard/alerts": f"{BACKEND}/dashboard/alerts",
+    "/api/v1/dashboard/safety-index": f"{BACKEND}/dashboard/safety-index",
+    "/api/v1/chatbot/chemicals": f"{BACKEND}/chatbot/chemicals",
 }
 
 # 선석 그룹 목록은 API 가 아니라 프론트 상수(geoUtils.ONSAN_WEATHER_GROUP)에서 온다.

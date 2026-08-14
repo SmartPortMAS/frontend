@@ -60,7 +60,10 @@ async function doRefresh() {
         ...base,
         // 기상은 백엔드(실 API) 우선 — 단 풍향은 백엔드 미제공이라 기존 값 유지
         weather: backend?.weather
-          ? { ...backend.weather, wind_dir_deg: base.weather?.wind_dir_deg ?? null }
+          // 풍향은 백엔드(mart.weather_now — 풍속과 같은 관측소 값) 우선.
+          // 예전엔 백엔드가 풍향을 안 줘서 mock-server 값으로 덮었는데, 지금 그 순서를
+          // 유지하면 풍속(백엔드)과 풍향(mock)이 서로 다른 관측 시각에서 온 짝이 된다.
+          ? { ...backend.weather, wind_dir_deg: backend.weather.wind_dir_deg ?? base.weather?.wind_dir_deg ?? null }
           : base.weather,
         real_traffic: backend?.realTraffic ?? [],
         berth_occupancy: backend?.berthOccupancy ?? [],
