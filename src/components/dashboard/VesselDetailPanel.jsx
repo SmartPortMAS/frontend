@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS, WEATHER_STATUS_COLORS } from '../../utils/constants';
-import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP } from '../../utils/geoUtils';
+import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 import useVesselSafety from '../../hooks/useVesselSafety';
 import useDashboardData from '../../hooks/useDashboardData';
 import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs } from 'react-icons/fa';
@@ -24,8 +24,7 @@ function journeyIndex(vessel) {
   }
 }
 
-const berthIdByName = (name) =>
-  Object.keys(ONSAN_BERTHS).find((k) => ONSAN_BERTHS[k].name === name);
+const berthIdByName = (name) => findBerthIdByName(name);
 
 const formatKST = (utc) =>
   utc ? new Date(utc).toLocaleString('ko-KR', {
@@ -54,7 +53,14 @@ function SectionTitle({ icon, children }) {
 }
 
 const MOOR_VERDICT_COLORS = { '정상': COLORS.teal, '주의': COLORS.yellow, '경고': '#ff8c42', '위험': COLORS.red };
-const ASSUMED_DWT = 20000; // 케미컬 탱커 가정값 (AIS static 연동 시 실값으로 교체)
+const ASSUMED_DWT = 20000; // 케미컬 탱커 가정값 (하드코딩 유지 — 실DWT 소스 없음)
+
+const DRAUGHT_VERDICT_STYLE = {
+  NOT_ALLOWED: { label: '접안 불가', color: COLORS.red },
+  MARGINAL: { label: '여유 부족', color: COLORS.yellow },
+  UNKNOWN: { label: '판정 불가', color: COLORS.textDim },
+  OK: { label: '정상', color: COLORS.teal },
+};
 
 export default function VesselDetailPanel() {
   const vessel = useSensorStore((s) => s.selectedVessel);
@@ -159,6 +165,17 @@ export default function VesselDetailPanel() {
           {berthInfo.operator} · 최대 {berthInfo.maxDwt.toLocaleString()} DWT · 수심 {berthInfo.depthM}m
         </Row>
       )}
+      {(() => {
+        const dc = (data?.draught_checks || []).find((r) => r.callsgn === vessel.callsgn);
+        if (!dc) return null;
+        const v = DRAUGHT_VERDICT_STYLE[dc.draught_verdict] || DRAUGHT_VERDICT_STYLE.UNKNOWN;
+        return (
+          <Row label="흘수·UKC (조위 반영)">
+            <span style={{ color: v.color, fontWeight: 700 }}>{v.label}</span>
+            {dc.ukc_m != null && ` · UKC ${dc.ukc_m}m (필요 ${dc.ukc_required_m}m)`}
+          </Row>
+        );
+      })()}
 
       {/* 하역 작업 진행률 */}
       {(() => {

@@ -20,7 +20,9 @@ export default function DashboardPage() {
   const gateAssessment = useSensorStore((s) => s.gateAssessment);
   const { data } = useDashboardData();
 
-  const vessels = data?.vessels ?? [];
+  // KPI는 실AIS(+실화물 조인) 기준으로 센다 — data.vessels는 데모 시나리오 선박(mock-server
+  // 전용, 지금 꺼져있어 항상 브라우저 내장 mock으로 폴백)이라 실제 재항 척수와 무관하다.
+  const vessels = data?.real_traffic ?? [];
   const liquidCount = vessels.filter((v) => v.is_liquid_cargo_vessel).length;
   const mooredCount = vessels.filter((v) => v.nav_status_category === 'MOORED').length;
   const anchorCount = vessels.filter((v) => v.nav_status_category === 'AT_ANCHOR').length;

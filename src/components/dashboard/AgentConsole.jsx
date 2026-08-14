@@ -7,7 +7,7 @@ import useOnsanApi, { namesAnyCargo } from '../../hooks/useOnsanApi';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
-import { ONSAN_WEATHER_GROUP, ONSAN_BERTHS } from '../../utils/geoUtils';
+import { ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 
 // ─────────────────────────────────────────────
 // 멀티 에이전트 협상 콘솔 (우하단 플로팅 탭)
@@ -123,17 +123,29 @@ export default function AgentConsole() {
   const orchestration = useSensorStore((s) => s.orchestration);
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const selectedVessel = useSensorStore((s) => s.selectedVessel);
-  const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const { data } = useDashboardData();
 
-  // 지도에 떠 있는 실 AIS 기반 시나리오 선박이 판정 대상
-  const vessels = useMemo(
-    () => (data?.vessels ?? []).filter((v) => v.is_liquid_cargo_vessel),
+  // 이 콘솔 안에서만 쓰는 선택 상태. 전역 selectedVessel(지도/입항목록 클릭)을
+  // setSelectedVessel로 되돌려 쓰지 않는다 — 그러면 VesselDetailPanel이 selectedVessel
+  // 하나만 보고 뜨는 조건이라, 콘솔 드롭박스에서 선박만 골라도 그 큰 상세 패널이
+  // 뒤에서 같이 열려버렸다(지도/목록 클릭 때와 똑같은 조건을 공유해서 생긴 부작용).
+  const [localTarget, setLocalTarget] = useState(null);
+
+  // 판정 대상: 실AIS + berth-cargo(실 신고 위험물) 조인 결과를 우선 쓰고,
+  // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
+  const realCargoVessels = useMemo(
+    () => (data?.real_traffic ?? []).filter((v) => v.is_liquid_cargo_vessel && v.cargo),
     [data]
   );
-  const target = selectedVessel && vessels.some((v) => v.port_call_id === selectedVessel.port_call_id)
-    ? selectedVessel
-    : vessels[0];
+  const vessels = realCargoVessels.length > 0
+    ? realCargoVessels
+    : (data?.vessels ?? []).filter((v) => v.is_liquid_cargo_vessel);
+  // 우선순위: 콘솔에서 직접 고른 선박 > 지도/목록에서 클릭한 선박(전역) > 첫 번째 후보
+  const target = localTarget && vessels.some((v) => v.port_call_id === localTarget.port_call_id)
+    ? localTarget
+    : selectedVessel && vessels.some((v) => v.port_call_id === selectedVessel.port_call_id)
+      ? selectedVessel
+      : vessels[0];
 
   const messages = useMemo(
     () => toMessages({ orchestration, berthWeather, vessel: target }),
@@ -146,13 +158,14 @@ export default function AgentConsole() {
     setLoading(true);
     setApproved(false);
     try {
-      const berthId = Object.keys(ONSAN_BERTHS).find((k) => ONSAN_BERTHS[k].name === target.berth);
+      const berthId = findBerthIdByName(target.berth);
       const group = berthId ? ONSAN_WEATHER_GROUP[berthId] : null;
       if (group) await assessBerthWeather({ berthGroup: group });
       await orchestrate({
         cargoName: target.cargo?.name,
-        dwt: 20000,
-        draught: 7.5,
+        casNo: target.cargo?.cas_no, // 실 신고 화물이면 CAS를 이미 알고 있음 — 데모 이름사전 우회
+        dwt: null, // 실AIS 위치 데이터엔 DWT가 없음 — 미상으로 보내 오케스트레이터가 보수적으로 판단하게 함
+        draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
       });
     } finally {
@@ -267,7 +280,7 @@ export default function AgentConsole() {
       <div style={{ padding: '10px 14px', borderBottom: `1px solid ${COLORS.glassBorder}`, display: 'flex', gap: 8 }}>
         <select
           value={target?.port_call_id || ''}
-          onChange={(e) => setSelectedVessel(vessels.find((v) => v.port_call_id === e.target.value))}
+          onChange={(e) => setLocalTarget(vessels.find((v) => v.port_call_id === e.target.value))}
           style={{
             flex: 1, background: COLORS.card, color: COLORS.textPrimary,
             border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12.5,
@@ -377,14 +390,107 @@ export default function AgentConsole() {
   );
 }
 
+// LLM 답변이 "1. **소제목**: 내용 2. **소제목**: ..." 처럼 줄바꿈 없이 번호매김만
+// 있는 경우가 많아, 그대로 찍으면 별표가 글자 그대로 보이고 목록이 한 문단으로
+// 뭉친다. 번호 항목 앞에 줄바꿈을 넣고 **굵게**만 최소 파싱해서 표시한다
+// (전체 마크다운 라이브러리를 새로 추가하지 않고 이 정도만 처리).
+function formatAnswer(text) {
+  if (!text) return null;
+  const withBreaks = text.replace(/(\d+)\.\s*(?=\*\*)/g, (match, _num, offset) => (offset === 0 ? match : `\n${match}`));
+  return withBreaks.split('\n').map((line, i) => {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    const parts = trimmed.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+    return (
+      <div key={i} style={{ marginTop: i === 0 ? 0 : 6 }}>
+        {parts.map((p, j) => (p.startsWith('**') && p.endsWith('**')
+          ? <strong key={j}>{p.slice(2, -2)}</strong>
+          : <span key={j}>{p}</span>))}
+      </div>
+    );
+  });
+}
+
+// 근거 본문이 "[화학물질명 - 섹션명] 내용" 형태로 오는 경우가 있는데, 그 화학물질명·
+// 섹션명은 이미 칩/헤더에 표시하므로 본문에서는 중복 제거한다.
+function stripCitationPrefix(text) {
+  return (text || '').replace(/^\[[^\]]*\]\s*/, '');
+}
+
+// KOSHA MSDS 원문은 "인체를 보호하기 위해 필요한 조치사항 및 보호구: ..." 같은 항목별
+// 라벨이 개행 없이 항목마다 반복되며 그대로 이어붙어 온다(항목 하나하나가 원래는
+// 별도 행이었는데 citation.text 하나로 합쳐져서 온 것으로 보임). 첫 콜론 앞부분을
+// 라벨로 보고, 그 라벨이 2번 이상 반복되면 라벨 기준으로 다시 잘라 항목마다 줄을
+// 나눈다 — 라벨이 없거나 한 번만 나오는 일반 문장은 손대지 않는다.
+function splitRepeatedLabel(text) {
+  const colonIdx = text.indexOf(':');
+  if (colonIdx < 0 || colonIdx > 40) return [text];
+  const label = text.slice(0, colonIdx + 1);
+  const chunks = text.split(label).filter((c) => c.trim());
+  if (chunks.length < 2) return [text];
+  return chunks.map((c) => `${label}${c}`.trim());
+}
+
+// 확정값(score 없음 — 정형 컬럼·그래프 관계)이 벡터 발췌보다 신뢰도가 높으므로 항상
+// 우선하고, 그다음 유사도 높은 순으로 정렬해 상위 limit개만 남긴다.
+function pickTopCitations(citations, limit = 2) {
+  const sorted = [...citations].sort((a, b) => {
+    if (a.is_exact !== b.is_exact) return a.is_exact ? -1 : 1;
+    return (b.score ?? 0) - (a.score ?? 0);
+  });
+  return { shown: sorted.slice(0, limit), hiddenCount: Math.max(0, sorted.length - limit) };
+}
+
+// 근거를 전부 나열하면 답변 아래에 카드가 줄줄이 쌓여 가독성이 떨어졌다 — 한 줄 칩만
+// 보여주고, 눌렀을 때 원문을 어떻게 보여줄지는 호출부(onOpen)가 결정한다.
+function CitationList({ citations, onOpen }) {
+  const { shown, hiddenCount } = pickTopCitations(citations);
+  return (
+    <div style={{ marginTop: 7, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {shown.map((c, j) => (
+        <button key={j} onClick={() => onOpen(c)} style={{
+          display: 'flex', alignItems: 'center', gap: 6, textAlign: 'left', cursor: 'pointer',
+          background: COLORS.card, border: `1px solid ${COLORS.border}`,
+          borderLeft: `3px solid ${c.is_exact ? COLORS.teal : COLORS.info}`,
+          borderRadius: 8, padding: '6px 10px', fontSize: 11.5, color: COLORS.textSecondary,
+        }}>
+          <FaBookOpen size={10} style={{ flexShrink: 0, color: c.is_exact ? COLORS.teal : COLORS.info }} />
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <strong style={{ color: c.is_exact ? COLORS.teal : COLORS.info }}>{c.chem_name}</strong> · {c.section_name}
+            {c.cas_no && ` (CAS ${c.cas_no})`}
+          </span>
+          {c.is_exact ? (
+            <span style={{
+              flexShrink: 0, padding: '1px 6px', borderRadius: 5, fontSize: 10,
+              background: `${COLORS.teal}2e`, color: COLORS.teal, fontWeight: 700,
+            }}>확정값</span>
+          ) : (
+            <span style={{ flexShrink: 0, color: COLORS.textDim }}>유사도 {c.score.toFixed(2)}</span>
+          )}
+        </button>
+      ))}
+      {hiddenCount > 0 && (
+        <div style={{ fontSize: 10.5, color: COLORS.textDim }}>
+          근거 {shown.length + hiddenCount}개 중 상위 {shown.length}개만 표시 (나머지 {hiddenCount}개 생략)
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────
 // 질의응답 패널 — 관제사가 규정·MSDS를 자연어로 묻는다.
 //
 // 답변은 반드시 근거(citation)와 함께 나온다. 백엔드 RAG(/rag/query)가 준비되면
 // 그 결과를, 아직이면 MSDS 원문 섹션을 그대로 인용한다. 어느 쪽인지 화면에 표시해
 // "무엇을 근거로 답했는지"를 관제사가 항상 알 수 있게 한다.
+//
+// 근거는 채팅 안에서 아코디언으로 펼치지 않는다 — 로그가 계속 쌓이는 채팅에서는
+// 펼친 뒤 다시 접으려면 스크롤을 거슬러 올라가야 해서 번거롭다. 대신 한 줄 칩만
+// 보여주고 클릭하면 콘솔 위에 오버레이로 띄운다 — 닫아도 채팅 스크롤 위치가 그대로다.
 // ─────────────────────────────────────────────
 function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }) {
+  const [activeCitation, setActiveCitation] = useState(null);
   return (
     <>
       <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -431,7 +537,7 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
                 background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: '9px 12px',
                 fontSize: 13, color: COLORS.textPrimary, lineHeight: 1.55,
               }}>
-                {m.answer}
+                {formatAnswer(m.answer)}
               </div>
 
               {/* 혼재 판정 결과 — 답변 문장이 아니라 이 등급이 결론이다 (규칙엔진 하한 보정본) */}
@@ -470,30 +576,7 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
               )}
 
               {m.citations?.length > 0 && (
-                <div style={{ marginTop: 7, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {m.citations.map((c, j) => (
-                    <div key={j} style={{
-                      background: COLORS.card, border: `1px solid ${COLORS.border}`,
-                      // 확정값(정형 컬럼·그래프 관계)은 벡터 발췌보다 신뢰도가 높다 — 색으로 구분
-                      borderLeft: `3px solid ${c.is_exact ? COLORS.teal : COLORS.info}`,
-                      borderRadius: 8, padding: '8px 11px',
-                    }}>
-                      <div style={{ fontSize: 11, color: c.is_exact ? COLORS.teal : COLORS.info, fontWeight: 700, marginBottom: 3 }}>
-                        {c.chem_name} · {c.section_name}
-                        {c.cas_no && <span style={{ color: COLORS.textDim, fontWeight: 400 }}> (CAS {c.cas_no})</span>}
-                        {c.is_exact ? (
-                          <span style={{
-                            marginLeft: 5, padding: '1px 6px', borderRadius: 5, fontSize: 10,
-                            background: `${COLORS.teal}2e`, color: COLORS.teal, fontWeight: 700,
-                          }}>확정값</span>
-                        ) : (
-                          <span style={{ color: COLORS.textDim, fontWeight: 400 }}> · 유사도 {c.score.toFixed(2)}</span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.6 }}>{c.text}</div>
-                    </div>
-                  ))}
-                </div>
+                <CitationList citations={m.citations} onOpen={setActiveCitation} />
               )}
 
               <div style={{ fontSize: 10.5, color: COLORS.textDim, marginTop: 5 }}>
@@ -537,6 +620,40 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
           cursor: loading || !question.trim() ? 'default' : 'pointer',
         }}><FaPaperPlane /></button>
       </div>
+
+      {/* 근거 원문 오버레이 — 채팅 스크롤과 분리되어 있어 닫아도 로그 위치가 안 흔들린다 */}
+      {activeCitation && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 20,
+          background: 'rgba(8,15,24,0.98)', display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+            padding: '11px 14px', borderBottom: `1px solid ${COLORS.glassBorder}`,
+          }}>
+            <div>
+              <div style={{
+                fontSize: 12.5, fontWeight: 800,
+                color: activeCitation.is_exact ? COLORS.teal : COLORS.info,
+              }}>
+                {activeCitation.chem_name} · {activeCitation.section_name}
+              </div>
+              <div style={{ fontSize: 11, color: COLORS.textDim, marginTop: 2 }}>
+                {activeCitation.cas_no && `CAS ${activeCitation.cas_no} · `}
+                {activeCitation.is_exact ? '확정값' : `유사도 ${activeCitation.score.toFixed(2)}`}
+              </div>
+            </div>
+            <button onClick={() => setActiveCitation(null)} style={{
+              background: 'none', border: 'none', color: COLORS.textDim, cursor: 'pointer', fontSize: 16, flexShrink: 0,
+            }}><FaTimes /></button>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.7 }}>
+            {splitRepeatedLabel(stripCitationPrefix(activeCitation.text)).map((para, i) => (
+              <p key={i} style={{ margin: i === 0 ? 0 : '10px 0 0' }}>{para}</p>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }

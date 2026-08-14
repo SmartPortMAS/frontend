@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BACKEND_BASE } from '../api/backendAdapter';
 import { ONSAN_WEATHER_GROUP } from '../utils/geoUtils';
 import useSensorStore from '../stores/useSensorStore';
@@ -18,7 +18,7 @@ import useSensorStore from '../stores/useSensorStore';
 // (처음 조회하는 물질은 응답이 1~2분 걸리고, 이후에는 DB 캐시로 즉시 응답)
 const CARGO_CAS = {
   '에탄올': '64-17-5', '메탄올': '67-56-1', '톨루엔': '108-88-3', '벤젠': '71-43-2',
-  '자일렌': '1330-20-7', '황산': '7664-93-9', '부타디엔': '106-99-0',
+  '자일렌': '1330-20-7', '스티렌': '100-42-5', '황산': '7664-93-9', '부타디엔': '106-99-0',
   '휘발유': '86290-81-5', '가솔린': '86290-81-5', '경유': '68334-30-5',
   '등유': '8008-20-6', '나프타': '64742-49-0',
   // 위반 시나리오 7종 화물 (violation_scenarios.csv) — 시나리오 ① 판정 대상
@@ -28,9 +28,46 @@ const CARGO_CAS = {
 
 const cargoRef = (name) => (CARGO_CAS[name] ? { cas_no: CARGO_CAS[name], name_hint: name } : null);
 
+// chem_id/cas_no를 이미 아는 호출자(화물 마스터 목록에서 고르거나, 실화물 조인 결과에서
+// 온 경우)는 그걸 그대로 CargoRef로 쓴다 — CARGO_CAS 이름 사전을 안 거치므로 표기
+// 불일치로 인한 매핑 실패가 없다. target/adjacent 양쪽에서 같은 우선순위로 써서 하나로 뺐다.
+const resolveCargoRef = ({ chem_id, cas_no, cargo_name }) => {
+  if (chem_id) return { chem_id, name_hint: cargo_name };
+  if (cas_no) return { cas_no, name_hint: cargo_name };
+  return cargoRef(cargo_name);
+};
+
 /** 질문 문장이 화물명을 스스로 지목하는가 — cargo_hint 를 붙일지 판단하는 데 쓴다 */
 export const namesAnyCargo = (text) =>
   Object.keys(CARGO_CAS).some((name) => text.includes(name));
+
+// ─── 화물 마스터 목록 (GET /chatbot/chemicals) ───
+// 위 CARGO_CAS는 채팅 자유 텍스트에서 화물명을 스스로 찾아낼 때 쓰는 소규모 사전이고,
+// 이거는 지식그래프에 실제 등재된 전체 화물 목록이다(현재 36종) — "판정까지 가능한
+// 화물"의 정본. 신규 입항 안전 심사(SafetyGatesPanel) 같은 화면은 하드코딩된 목록
+// 대신 이걸 써야 한다: 화면 목록이 실제 DB/그래프와 어긋나면(이름 표기 불일치,
+// 새로 추가된 화물 누락 등) 골라도 "CAS 매핑 없음"으로 항상 실패하는 문제가 있었다.
+// 여러 컴포넌트가 같은 요청을 반복하지 않도록 모듈 스코프에 한 번만 캐시한다.
+let _chemicalsPromise = null;
+function fetchChemicalList() {
+  if (!_chemicalsPromise) {
+    _chemicalsPromise = fetch(`${BACKEND_BASE}/chatbot/chemicals`)
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => []);
+  }
+  return _chemicalsPromise;
+}
+
+/** @returns {Array<{chem_id:string, name_ko:string, name_en:string, cas_no:string, un_no:string}>} */
+export function useChemicalList() {
+  const [chemicals, setChemicals] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchChemicalList().then((list) => { if (!cancelled) setChemicals(list); });
+    return () => { cancelled = true; };
+  }, []);
+  return chemicals;
+}
 
 // KOSHA MSDS 16개 섹션. 백엔드 kosha_client.DETAIL_ENDPOINTS 와 같은 이름을 쓴다.
 const MSDS_SECTIONS = {
@@ -105,7 +142,7 @@ async function localMsdsAnswer({ question, cargoHint }) {
   }
   if (!payload) {
     return {
-      answer: `'${cargoName}'의 MSDS를 조회하지 못했습니다. 백엔드(8001)가 떠 있는지 확인해주세요.`,
+      answer: `'${cargoName}'의 MSDS를 조회하지 못했습니다. 백엔드(8000)가 떠 있는지 확인해주세요.`,
       citations: [], is_local_fallback: true, source: 'MSDS_UNAVAILABLE',
     };
   }
@@ -298,7 +335,6 @@ function mapOrchestration(r) {
 export default function useOnsanApi() {
   const setBerthGroups = useSensorStore((s) => s.setBerthGroups);
   const setBerthWeather = useSensorStore((s) => s.setBerthWeather);
-  const setGateAssessment = useSensorStore((s) => s.setGateAssessment);
   const setOrchestration = useSensorStore((s) => s.setOrchestration);
 
   const postJson = useCallback(async (path, body) => {
@@ -339,13 +375,19 @@ export default function useOnsanApi() {
     [postJson, setBerthWeather]
   );
 
-  // 안전 판정 — MSDS 혼재금지 + IMDG 격리 + LLM 근거 생성
+  // 안전 판정 — MSDS 혼재금지 + IMDG 격리 + LLM 근거 생성.
+  // 스토어에 결과를 쓰지 않는다(순수 fetch) — SafetyGatesPanel(수동 R1~R15 심사)과
+  // useVesselSafety(선박 선택 시 자동 판정)가 둘 다 이 함수를 쓰는데, 예전엔 여기서
+  // 바로 setGateAssessment 하는 바람에 지도/목록에서 선박만 클릭해도 SafetyGatesPanel·
+  // DashboardPage KPI에 표시되던 "최근 안전 심사" 결과가 다른 선박 값으로 조용히
+  // 덮어써졌다. 이제 전역 상태에 반영할지는 호출자가 결정한다
+  // (SafetyGatesPanel만 반영 — useVesselSafety는 자기 로컬 state만 씀).
   const assessSafetyGates = useCallback(
     async (req) => {
-      const target = cargoRef(req.cargo_name);
+      const target = resolveCargoRef(req);
       const adj = (req.adjacent_operations || [])
         .map((o) => {
-          const c = cargoRef(o.cargo_name);
+          const c = resolveCargoRef(o);
           return c ? { berth_name: o.berth_name, cargo: c } : null;
         })
         .filter(Boolean);
@@ -366,16 +408,17 @@ export default function useOnsanApi() {
         is_local_fallback: true,
         source: 'LOCAL_FALLBACK',
       };
-      setGateAssessment(result);
       return result;
     },
-    [postJson, setGateAssessment]
+    [postJson]
   );
 
   // 오케스트레이터 — 기상 → 스케줄링(전용/대체/정박지) → 안전 순차 판단
+  // casNo가 오면(실AIS+berth-cargo 조인으로 이미 CAS를 아는 경우) 데모용 이름사전
+  // cargoRef()를 거치지 않고 그대로 쓴다 — 실물질명은 사전 12종 밖일 수 있어서다.
   const orchestrate = useCallback(
-    async ({ cargoName, dwt, draught, vesselName = '신규 입항선' }) => {
-      const cargo = cargoRef(cargoName);
+    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선' }) => {
+      const cargo = resolveCargoRef({ cas_no: casNo, cargo_name: cargoName });
       const now = Date.now();
       const data = cargo
         ? await postJson('/orchestrator/assess', {

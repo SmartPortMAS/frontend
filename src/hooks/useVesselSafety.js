@@ -41,17 +41,21 @@ export default function useVesselSafety(vessel) {
   const [state, setState] = useState({ assessment: null, loading: false });
 
   const cargoName = vessel?.cargo?.name || null;
+  const cargoCasNo = vessel?.cargo?.cas_no || null;
   const berth = vessel?.berth || null;
   const isLiquid = Boolean(vessel?.is_liquid_cargo_vessel);
 
-  // 인접 선석에 실제로 접안 중인 선박의 화물 — 혼재 판정 입력
+  // 인접 선석에 실제로 접안 중인 선박의 화물 — 혼재 판정 입력.
+  // data.real_traffic(실AIS+실화물 조인)을 써야 한다 — data.vessels는 mock 데모
+  // 선박 목록이라 여기서 찾으면 실제로 접안 중인 선박과 거의 겹치지 않아 인접
+  // 화물이 항상 빈 배열로 잡히고(=혼재 검사가 사실상 무력화), cas_no도 없다.
   const adjacent = (() => {
     if (!berth) return [];
     const names = onsanAdjacentBerthNames(berth);
-    return (data?.vessels || [])
+    return (data?.real_traffic || [])
       .filter((v) => v.berth && names.includes(v.berth) && v.cargo?.name
         && v.port_call_id !== vessel?.port_call_id)
-      .map((v) => ({ berth_name: v.berth, cargo_name: v.cargo.name }));
+      .map((v) => ({ berth_name: v.berth, cargo_name: v.cargo.name, cas_no: v.cargo.cas_no }));
   })();
 
   const adjacentKey = adjacent.map((a) => `${a.berth_name}:${a.cargo_name}`).join('|');
@@ -64,7 +68,10 @@ export default function useVesselSafety(vessel) {
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
 
-    assessSafetyGates({ cargo_name: cargoName, adjacent_operations: adjacent })
+    // cas_no는 실화물 조인(mart.berth_current_cargo)에서 이미 확정된 값이라
+    // 그대로 넘긴다 — 화물명 하드코딩 사전(cargoRef)을 안 거치므로 표기 불일치로
+    // 인한 "CAS 매핑 없음" 오탐이 없다.
+    assessSafetyGates({ cargo_name: cargoName, cas_no: cargoCasNo, adjacent_operations: adjacent })
       .then((res) => {
         if (!cancelled) setState({ assessment: toPanelShape(res), loading: false });
       })
@@ -85,7 +92,7 @@ export default function useVesselSafety(vessel) {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargoName, berth, isLiquid, adjacentKey]);
+  }, [cargoName, cargoCasNo, berth, isLiquid, adjacentKey]);
 
   // 액체화물선이 아니거나 화물 정보가 없으면 판정 대상이 아니다
   if (!isLiquid || !cargoName) return { assessment: EMPTY, loading: false };

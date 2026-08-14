@@ -132,11 +132,11 @@ export default function GanttChart() {
     <div className="glass-card full-width">
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
         <h3 className="glass-card-title">하역 작업 현황 (선석 스케줄)</h3>
-        {stats && (
+        {stats?.total_port_calls != null && (
           <span style={{ fontSize: '12px', color: COLORS.textSecondary }}>
             실수집 기반: 입출항 <strong style={{ color: COLORS.teal }}>{stats.total_port_calls.toLocaleString()}</strong>건
-            · 온산 <strong style={{ color: COLORS.teal }}>{stats.onsan_port_calls}</strong>건
-            · AIS {stats.ais_position_rows.toLocaleString()}행
+            {stats.onsan_port_calls != null && <> · 온산 <strong style={{ color: COLORS.teal }}>{stats.onsan_port_calls}</strong>건</>}
+            {stats.ais_position_rows != null && <> · AIS {stats.ais_position_rows.toLocaleString()}행</>}
           </span>
         )}
       </div>

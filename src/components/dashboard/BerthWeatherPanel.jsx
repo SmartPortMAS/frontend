@@ -81,6 +81,14 @@ export default function BerthWeatherPanel() {
     width: '80px', background: COLORS.card, color: COLORS.textPrimary,
     border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '8px 10px', fontSize: '14px',
   };
+  // 백엔드가 응답 중일 땐 서버가 DB 실측치로 직접 판정하고 이 값은 요청에 아예 안 실린다
+  // (postJson('/weather/assess', ...) 참고, wind_speed/wave_height 필드 자체가 없음) —
+  // 그런데도 입력창이 활성화돼 있으면 "값을 바꿔도 판정이 안 바뀐다"는 오해를 산다.
+  // 백엔드 미응답(로컬 폴백)일 때만 실제로 이 값을 쓰므로 그때만 편집 가능하게 한다.
+  const usingBackend = Boolean(verdict && !verdict.is_local_fallback);
+  const disabledInputStyle = usingBackend
+    ? { ...inputStyle, opacity: 0.5, cursor: 'not-allowed' }
+    : inputStyle;
 
   return (
     <div
@@ -104,13 +112,21 @@ export default function BerthWeatherPanel() {
             {berthGroups.map((g) => <option key={g} value={g}>{g}</option>)}
           </select>
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: COLORS.textSecondary }}>
+        <label
+          style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: COLORS.textSecondary }}
+          title={usingBackend ? '서버가 DB 실측 관측치로 직접 판정 중 — 이 입력은 백엔드 미응답(폴백) 시에만 사용됩니다' : undefined}
+        >
           풍속 (m/s)
-          <input type="number" step="0.1" value={windSpeed} onChange={(e) => setWindSpeed(e.target.value)} style={inputStyle} />
+          <input type="number" step="0.1" value={windSpeed} disabled={usingBackend}
+            onChange={(e) => setWindSpeed(e.target.value)} style={disabledInputStyle} />
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: COLORS.textSecondary }}>
+        <label
+          style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: COLORS.textSecondary }}
+          title={usingBackend ? '서버가 DB 실측 관측치로 직접 판정 중 — 이 입력은 백엔드 미응답(폴백) 시에만 사용됩니다' : undefined}
+        >
           파고 (m)
-          <input type="number" step="0.1" value={waveHeight} onChange={(e) => setWaveHeight(e.target.value)} style={inputStyle} />
+          <input type="number" step="0.1" value={waveHeight} disabled={usingBackend}
+            onChange={(e) => setWaveHeight(e.target.value)} style={disabledInputStyle} />
         </label>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12.5px' }}>
           <label style={{

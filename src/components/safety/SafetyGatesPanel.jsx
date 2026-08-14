@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import useOnsanApi from '../../hooks/useOnsanApi';
+import { useEffect, useState } from 'react';
+import useOnsanApi, { useChemicalList } from '../../hooks/useOnsanApi';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
 import { onsanAdjacentBerthNames } from '../../utils/geoUtils';
@@ -13,7 +13,6 @@ const RISK_STYLE = {
   '배정불가': { color: COLORS.red },
 };
 
-const CARGOS = ['벤젠', '톨루엔', '자일렌(혼합)', '스티렌', '메탄올', '에탄올', '황산', '휘발유', '경유', '등유', '나프타'];
 const BERTHS = [
   'OTK 1부두', 'OTK 2부두', 'UTK 부두', '대한유화 부두', '정일 1부두', '정일 2부두',
   '효성 부두', 'S-Oil 1부두', 'S-Oil 2부두', 'S-Oil 3부두', 'S-Oil 4부두',
@@ -22,16 +21,33 @@ const BERTHS = [
 
 export default function SafetyGatesPanel() {
   const { assessSafetyGates } = useOnsanApi();
+  // 이 패널의 판정 결과는 DashboardPage "최근 안전 심사" KPI가 참조하므로
+  // 여기서만 전역 스토어(gateAssessment)에 반영한다 — 다른 화면에서 선박을
+  // 클릭할 때 자동으로 도는 useVesselSafety는 이 스토어를 건드리지 않는다.
   const result = useSensorStore((s) => s.gateAssessment);
+  const setGateAssessment = useSensorStore((s) => s.setGateAssessment);
+
+  // 지식그래프 등재 화물 전체(현재 36종) — 하드코딩 목록 대신 DB/그래프에서 직접 불러온다.
+  const chemicals = useChemicalList();
 
   const [form, setForm] = useState({
-    cargo_name: '벤젠', berth_name: 'OTK 1부두',
+    cargo_chem_id: '', berth_name: 'OTK 1부두',
     dwt: 9000, gt: 8000, draught_m: 7.5, loa_m: 120,
     sire_valid: true, cdi_valid: true, work_hour: 14,
-    adjacent_berth: '', adjacent_cargo: '', // 인접 선석 동시작업 (ADJACENT_TO 기반)
+    adjacent_berth: '', adjacent_chem_id: '', // 인접 선석 동시작업 (ADJACENT_TO 기반)
   });
+  // 목록이 로드되면 첫 화물을 기본 선택값으로 채운다 (로딩 전엔 빈 값)
+  useEffect(() => {
+    if (chemicals.length && !form.cargo_chem_id) {
+      setForm((f) => ({ ...f, cargo_chem_id: chemicals[0].chem_id }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chemicals]);
   const [showAllGates, setShowAllGates] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+
+  const selectedCargo = chemicals.find((c) => c.chem_id === form.cargo_chem_id);
+  const adjacentCargo = chemicals.find((c) => c.chem_id === form.adjacent_chem_id);
 
   // 선택한 선석의 실제 ADJACENT_TO 인접 선석만 후보로 제시
   const adjacentOptions = onsanAdjacentBerthNames(form.berth_name);
@@ -39,12 +55,13 @@ export default function SafetyGatesPanel() {
     ? form.adjacent_berth
     : (adjacentOptions[0] || '');
 
-  const run = () => {
-    const adjacent_operations = adjacentBerth && form.adjacent_cargo
-      ? [{ berth_name: adjacentBerth, cargo_name: form.adjacent_cargo, activity: '하역중' }]
+  const run = async () => {
+    const adjacent_operations = adjacentBerth && adjacentCargo
+      ? [{ berth_name: adjacentBerth, chem_id: adjacentCargo.chem_id, cargo_name: adjacentCargo.name_ko, activity: '하역중' }]
       : [];
-    assessSafetyGates({
-      cargo_name: form.cargo_name,
+    const res = await assessSafetyGates({
+      cargo_name: selectedCargo?.name_ko,
+      chem_id: form.cargo_chem_id,
       berth_name: form.berth_name,
       dwt: Number(form.dwt), gt: Number(form.gt),
       draught_m: Number(form.draught_m), loa_m: Number(form.loa_m),
@@ -52,6 +69,7 @@ export default function SafetyGatesPanel() {
       work_hour: Number(form.work_hour),
       adjacent_operations,
     });
+    setGateAssessment(res);
   };
 
   const style = RISK_STYLE[result?.risk_level] || { color: COLORS.textDim };
@@ -76,8 +94,9 @@ export default function SafetyGatesPanel() {
       {/* 입항 정보 폼 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '12px' }}>
         <label style={labelStyle}>화물
-          <select value={form.cargo_name} onChange={set('cargo_name')} style={inputStyle}>
-            {CARGOS.map((c) => <option key={c}>{c}</option>)}
+          <select value={form.cargo_chem_id} onChange={set('cargo_chem_id')} style={inputStyle} disabled={chemicals.length === 0}>
+            {chemicals.length === 0 && <option value="">불러오는 중…</option>}
+            {chemicals.map((c) => <option key={c.chem_id} value={c.chem_id}>{c.name_ko}</option>)}
           </select>
         </label>
         <label style={labelStyle}>선석
@@ -110,10 +129,10 @@ export default function SafetyGatesPanel() {
           )}
         </label>
         <label style={labelStyle}>인접 선석 하역화물 (없으면 비움)
-          <select value={form.adjacent_cargo} onChange={set('adjacent_cargo')} style={inputStyle}
+          <select value={form.adjacent_chem_id} onChange={set('adjacent_chem_id')} style={inputStyle}
             disabled={adjacentOptions.length === 0}>
             <option value="">작업 없음</option>
-            {CARGOS.map((c) => <option key={c}>{c}</option>)}
+            {chemicals.map((c) => <option key={c.chem_id} value={c.chem_id}>{c.name_ko}</option>)}
           </select>
         </label>
       </div>
