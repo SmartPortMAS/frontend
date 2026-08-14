@@ -14,8 +14,11 @@
 import { ULSAN_BBOX } from '../utils/constants';
 
 const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-// 로컬: 8000 (mock 서버와 통합). 배포: nginx가 /api/v1 프록시.
-export const BACKEND_BASE = isDev ? 'http://localhost:8000/api/v1' : '/api/v1';
+// 로컬: uvicorn 8001. 8000은 mock-server(GET /api/dashboard) 가 이미 쓰고 있어서
+// 백엔드를 8000으로 잡으면 /api/v1/* 이 전부 mock-server 로 가 404 가 된다
+// (관제시스템_시작.bat 이 띄우는 구성: mock 8000 + 백엔드 8001).
+// 배포: nginx가 /api/v1은 backend, /api는 mockserver로 프록시(deploy/nginx.cloud.conf).
+export const BACKEND_BASE = isDev ? 'http://localhost:8001/api/v1' : '/api/v1';
 
 // AIS 항해상태 코드(ITU-R M.1371 숫자) → UI 카테고리 — ais_vessel_position(레거시 소스) 행에서만 옴
 const NAV_CODE_TO_CATEGORY = {
@@ -136,7 +139,7 @@ async function getJson(path) {
  * 기상+선박 둘 다 실패하면 null (백엔드 다운으로 간주 — 호출측이 기존 소스 유지).
  */
 export async function fetchBackendDashboard() {
-  const [weather, vessels, berths, anchorages, berthCargo, draughtCheck, history, pipelineHealth, stats] =
+  const [weather, vessels, berths, anchorages, berthCargo, draughtCheck, history, pipelineHealth, stats, alerts] =
     await Promise.allSettled([
       getJson('/dashboard/weather'),
       getJson('/dashboard/vessels'),
@@ -147,6 +150,7 @@ export async function fetchBackendDashboard() {
       getJson('/dashboard/history'),
       getJson('/dashboard/pipeline-health'),
       getJson('/dashboard/stats'),
+      getJson('/dashboard/alerts'),
     ]).then((rs) => rs.map((r) => (r.status === 'fulfilled' ? r.value : null)));
 
   if (!weather && !vessels) return null;
@@ -179,5 +183,9 @@ export async function fetchBackendDashboard() {
     // total_port_calls/port_calls_by_facility_type/liquid_callsgns
     // (mock-server 전용이던 onsan_port_calls/ais_position_rows는 백엔드에 없음 — 그대로 없이 둔다)
     stats: stats ?? null,
+    // 관제 경고 — 백엔드가 safety 규칙엔진(Neo4j 혼재금지 + IMDG 격리표)을 재항 화물에
+    // 돌려 만든 실판정. 응답이 빈 배열([])인 것과 호출 실패(null)는 다르다:
+    // 전자는 "위험 없음"이고 후자는 "모름"이라, 호출측이 구분할 수 있게 그대로 넘긴다.
+    alerts: alerts ?? null,
   };
 }

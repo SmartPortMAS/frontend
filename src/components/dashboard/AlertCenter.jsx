@@ -15,6 +15,12 @@ const formatKST = (utc) =>
     hour12: false, timeZone: 'Asia/Seoul',
   }) : '-';
 
+// 확인(ACK) 식별자. 백엔드 경고(GET /dashboard/alerts)는 재항 현황을 매번 다시
+// 판정해 만들기 때문에 생성시각이 없다 — 시각을 키에 쓰면 같은 유형 경고가 전부
+// 한 덩어리로 묶여 하나만 확인해도 전부 확인 처리된다. 내용(message)까지 넣어야
+// 경고 하나하나가 구분된다.
+const alertId = (a) => `${a.type}-${a.berth_name ?? ''}-${a.message ?? a.created_at_utc ?? ''}`;
+
 export default function AlertCenter() {
   const { data } = useDashboardData();
   const alertAcks = useSensorStore((s) => s.alertAcks);
@@ -23,7 +29,9 @@ export default function AlertCenter() {
 
   const alerts = data?.alerts ?? [];
   const vessels = data?.vessels ?? [];
-  const unackedCount = alerts.filter((a) => !alertAcks[`${a.type}-${a.created_at_utc}`]).length;
+  const unackedCount = alerts.filter((a) => !alertAcks[alertId(a)]).length;
+  // 규칙엔진 실판정인지, 백엔드가 죽어 mock-server 폴백인지 화면에 드러낸다
+  const fromRuleEngine = data?.data_source?.alerts === 'REAL_RULE_ENGINE';
 
   return (
     <div className="glass-card">
@@ -41,7 +49,9 @@ export default function AlertCenter() {
           )}
         </h3>
         <span style={{ fontSize: '12px', color: COLORS.textDim }}>
-          확인(ACK) 이력은 세션 내 보존 · 백엔드 연동 시 DB 기록
+          {fromRuleEngine
+            ? '혼재금지·IMDG 격리·흘수 판정 (safety 규칙엔진) · 확인 이력은 세션 내 보존'
+            : '확인(ACK) 이력은 세션 내 보존 · 백엔드 연동 시 DB 기록'}
         </span>
       </div>
 
@@ -50,7 +60,7 @@ export default function AlertCenter() {
           <div style={{ color: COLORS.textDim, fontSize: '13px' }}>활성 경고 없음</div>
         )}
         {alerts.map((a) => {
-          const id = `${a.type}-${a.created_at_utc}`;
+          const id = alertId(a);
           const ack = alertAcks[id];
           const style = LEVEL_STYLE[a.level] || LEVEL_STYLE.INFO;
           const vessel = a.port_call_id ? vessels.find((v) => v.port_call_id === a.port_call_id) : null;
@@ -67,9 +77,23 @@ export default function AlertCenter() {
                 {style.label}
               </span>
               <div style={{ flex: 1, minWidth: '220px' }}>
-                <div style={{ fontSize: '13.5px', fontWeight: 600 }}>{a.message}</div>
+                <div style={{ fontSize: '13.5px', fontWeight: 600 }}>
+                  {a.message}
+                  {/* 규칙엔진이 낸 최종 등급 — 문장 안에도 있지만 눈에 먼저 띄게 뱃지로 */}
+                  {a.risk_level && (
+                    <span style={{
+                      marginLeft: '8px', fontSize: '11px', fontWeight: 800, color: style.color,
+                      border: `1px solid ${style.color}`, borderRadius: '4px', padding: '1px 6px',
+                    }}>
+                      {a.risk_level}
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginTop: '2px' }}>
-                  {a.type} · {formatKST(a.created_at_utc)} (KST)
+                  {a.type}
+                  {/* 근거를 숨기지 않는다 — 관제사가 무엇을 믿고 조치하는지 알아야 한다 */}
+                  {a.basis ? ` · ${a.basis}` : ''}
+                  {a.created_at_utc ? ` · ${formatKST(a.created_at_utc)} (KST)` : ''}
                   {ack && <span style={{ color: COLORS.teal, marginLeft: '10px' }}>✓ {ack.by} · {formatKST(ack.at)} 확인</span>}
                 </div>
               </div>

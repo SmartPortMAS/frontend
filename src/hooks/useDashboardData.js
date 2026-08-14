@@ -80,10 +80,17 @@ async function doRefresh() {
           pipeline_health: backend?.pipelineHealth ?? base.stats?.pipeline_health ?? null,
         },
         liquid_callsgns: backend?.stats?.liquid_callsgns ?? base.liquid_callsgns ?? [],
+        // 경고는 백엔드(safety 규칙엔진 실판정) 우선. 백엔드가 응답했다면 0건이어도
+        // 그걸 쓴다 — "위험 없음"을 mock 경고로 덮으면 없는 위험을 지어내는 셈이다.
+        // 백엔드가 죽었을 때만 mock-server 의 뷰 기반 경고로 폴백한다.
+        alerts: backend?.alerts ?? base.alerts ?? [],
         data_source: {
           ...(base.data_source ?? {}),
           backend: backend ? 'CONNECTED' : 'DOWN',
           history: backend?.history?.length ? 'REAL' : (base.data_source?.history ?? null),
+          alerts: backend?.alerts
+            ? 'REAL_RULE_ENGINE'
+            : (base.data_source?.alerts ?? null),
         },
       };
       dataRef = merged;
