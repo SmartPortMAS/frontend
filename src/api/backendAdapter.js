@@ -119,7 +119,11 @@ function mapHistoryRecord(row) {
 function mapWeather(w) {
   return {
     wind_speed_ms: w.wind?.value ?? null,
-    wind_dir_deg: null,
+    // 예전 백엔드는 풍향을 안 줘서 null 고정이었다. mart.weather_now 전환 후
+    // 풍향·돌풍이 응답에 생겼는데 여기서 버리면 mock-server 가 죽은 구성(클라우드
+    // 배포 등)에서 풍향이 영영 비게 된다 — 그대로 통과시킨다.
+    wind_dir_deg: w.wind_dir_deg ?? null,
+    gust_ms: w.gust_ms ?? null,
     wave_height_sig_m: w.wave?.value ?? null,
     tide_level_cm: w.tide?.value ?? null,
     visibility_m: w.visibility_m ?? null,
