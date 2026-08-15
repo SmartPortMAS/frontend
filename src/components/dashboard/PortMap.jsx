@@ -149,13 +149,13 @@ export default function PortMap() {
   // 제외해 같은 배가 아이콘·점으로 두 번 찍히지 않게 한다.
   const realTraffic = useMemo(() => {
     const shown = new Set(vessels.map((v) => v.callsgn).filter(Boolean));
-    // PORT-MIS 공식 선종코드로 확인된 액체화물선은 지도에서 붉게 강조한다
-    const liquid = new Set(data?.liquid_callsgns ?? []);
     // 액체화물선만 보는 필터는 뒀다가 뺐다 — 화물 배정을 액체화물선 전수로
     // 넓히면서(2026-08-15) 관제 대상이 배 아이콘으로 충분히 드러나 필요가 없어졌다.
-    return (data?.real_traffic ?? [])
-      .filter((v) => !shown.has(v.callsgn))
-      .map((v) => (liquid.has(v.callsgn) ? { ...v, is_liquid_cargo_vessel: true } : v));
+    //
+    // liquid_callsgns 로 선종 액체화물선을 덧칠하던 보정도 뺐다. 같은 판정(PORT-MIS
+    // portmis_vessel.is_liquid_cargo_vessel)을 backendAdapter.mapVessel 이 이미 하고
+    // 있어서, 여기서 한 번 더 하면 같은 기준이 두 군데 살아 있게 된다.
+    return (data?.real_traffic ?? []).filter((v) => !shown.has(v.callsgn));
   }, [data, vessels]);
   const realLiquidCount = useMemo(
     () => realTraffic.filter((v) => v.is_liquid_cargo_vessel).length,
@@ -179,9 +179,17 @@ export default function PortMap() {
     (data?.berth_occupancy ?? []).forEach((b) => m.set(norm(b.wharf_name), b));
     return m;
   }, [data]);
-  const occupiedCount = useMemo(
-    () => (data?.berth_occupancy ?? []).filter((b) => b.current_vessel_names?.length).length,
+  // 이 지도는 온산 선석만 그린다. 점유 수도 온산 기준으로 세야 KPI("온산 선석 점유")와
+  // 같은 숫자가 된다 — 예전엔 여기서 울산 전 항만 69개 선석을 세고, 판정 기준도
+  // occupancy_status 가 아니라 current_vessel_names 유무로 달라서 한 화면에 서로
+  // 다른 점유 수가 떴다.
+  const onsanBerths = useMemo(
+    () => (data?.berth_occupancy ?? []).filter((b) => b.port_name === '온산항'),
     [data]
+  );
+  const occupiedCount = useMemo(
+    () => onsanBerths.filter((b) => b.occupancy_status === '점유').length,
+    [onsanBerths]
   );
   const anchorWaiting = useMemo(
     () => (data?.anchorage_status ?? []).reduce((s, a) => s + (a.current_occupants || 0), 0),
@@ -190,7 +198,7 @@ export default function PortMap() {
   const berthOcc = (name) => occupancyByBerth.get(String(name || '').replace(/\s+/g, ''));
 
   // 증기운 확산 예상 구역 (8월 시나리오 S3 — 가우시안 원뿔 근사)
-  // 선택 선박이 R13(인접 증기 중첩) 히트이면 접안 선석 풍하측에 표시
+  // 선택 선박에 혼재금지·IMDG 격리 충돌이 잡히면 접안 선석 풍하측에 표시
   const selectedVessel = useSensorStore((s) => s.selectedVessel);
   const { assessment: safety } = useVesselSafety(selectedVessel);
   const vaporCone = useMemo(() => {
@@ -341,7 +349,7 @@ export default function PortMap() {
             pathOptions={{ color: '#ff8c42', weight: 2, dashArray: '6 5', fillColor: '#ff8c42', fillOpacity: 0.22 }}
           >
             <Tooltip sticky>
-              {vaporCone.cargo} 증기 확산 예상 구역 (R13) — 풍향 {vaporCone.windDir}° · 풍속 {vaporCone.windMs}m/s 기준 약 {vaporCone.lengthM}m (가우시안 원뿔 근사)
+              {vaporCone.cargo} 증기 확산 예상 구역 — 풍향 {vaporCone.windDir}° · 풍속 {vaporCone.windMs}m/s 기준 약 {vaporCone.lengthM}m (가우시안 원뿔 근사 · 실측 아님)
             </Tooltip>
           </Polygon>
         )}
@@ -468,8 +476,8 @@ export default function PortMap() {
         </div>
         {occupiedCount > 0 && (
           <div style={{ marginBottom: '6px', fontSize: '11px', color: COLORS.textSecondary }}>
-            실선석 점유 <strong style={{ color: COLORS.yellow }}>{occupiedCount}</strong>
-            /{(data?.berth_occupancy ?? []).length}
+            온산 선석 점유 <strong style={{ color: COLORS.yellow }}>{occupiedCount}</strong>
+            /{onsanBerths.length}
             {anchorWaiting > 0 && <> · 정박지 대기 <strong>{anchorWaiting}</strong>척</>}
             <span style={{ color: COLORS.textDim }}> (실측)</span>
           </div>

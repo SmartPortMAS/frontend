@@ -5,7 +5,8 @@ import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../util
 import useVesselSafety from '../../hooks/useVesselSafety';
 import useDashboardData from '../../hooks/useDashboardData';
 import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs } from 'react-icons/fa';
-import { API_BASE } from '../../utils/constants';
+import { simulateMooring } from '../../utils/mooringPhysics';
+import { alertId } from '../../utils/alertUtils';
 
 const RISK_COLORS = {
   '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red,
@@ -66,6 +67,7 @@ export default function VesselDetailPanel() {
   const vessel = useSensorStore((s) => s.selectedVessel);
   const [moorSim, setMoorSim] = useState(null);
   const [simLoading, setSimLoading] = useState(false);
+  const [moorDwt, setMoorDwt] = useState(ASSUMED_DWT);
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const setSelectedBerthGroup = useSensorStore((s) => s.setSelectedBerthGroup);
   const berthWeather = useSensorStore((s) => s.berthWeather);
@@ -87,9 +89,16 @@ export default function VesselDetailPanel() {
       ? berthWeather.status
       : null;
   const riskColor = RISK_COLORS[assessment?.risk_level] || COLORS.textDim;
-  const vesselAlerts = (data?.alerts || []).filter(
-    (a) => a.port_call_id === vessel.port_call_id
-  );
+  // 이 선박에 걸린 경고.
+  //
+  // 예전엔 port_call_id 로 대조했는데 백엔드 경고에는 그 값이 절대 없어(경고는
+  // 요청형 판정이 아니라 재항 전수 판정에서 나온다) "관련 경고"가 영구히 0건이었다.
+  // 지금은 경고가 callsgns 를 실어 보내므로 그걸로 찾는다. 접안 선석이 같은 경고도
+  // 이 배와 무관하지 않으므로 함께 본다.
+  const vesselAlerts = (data?.alerts || []).filter((a) => {
+    if (vessel.callsgn && (a.callsgns || []).includes(vessel.callsgn)) return true;
+    return Boolean(vessel.berth) && a.berth_name === vessel.berth;
+  });
 
   return (
     <div style={{
@@ -143,9 +152,14 @@ export default function VesselDetailPanel() {
           );
         })}
       </div>
+      {/* anchorage(정박지 코드)는 AIS·PORT-MIS 어느 쪽에서도 오지 않는다
+          (backendAdapter.mapVessel 이 만들지 않는 필드). 예전엔 그대로 찍어
+          "정박지 undefined 에서 선석 대기 중"이 떴다. 아는 것만 말한다. */}
       {vessel.nav_status_category === 'AT_ANCHOR' && (
         <div style={{ fontSize: '12px', color: COLORS.yellow, textAlign: 'center', marginTop: '6px' }}>
-          정박지 {vessel.anchorage} 에서 선석 대기 중
+          {vessel.anchorage
+            ? `정박지 ${vessel.anchorage} 에서 선석 대기 중`
+            : '묘박 중 — 정박지 코드는 수집 소스 없음'}
         </div>
       )}
 
@@ -155,11 +169,19 @@ export default function VesselDetailPanel() {
         <span style={{ color: status.color, fontWeight: 700 }}>{status.label}</span> · {vessel.sog} kn
       </Row>
       <Row label="호출부호 / MMSI">{vessel.callsgn} / {vessel.mmsi}</Row>
-      <Row label="화물">{vessel.cargo ? `${vessel.cargo.name} (${vessel.cargo.un_no})` : '일반화물'}</Row>
-      <Row label="입항시각 (KST)">{formatKST(vessel.arrival_at_utc)}</Row>
-      <Row label="배정 선석">
-        {vessel.berth || (vessel.anchorage ? `정박지 ${vessel.anchorage} 대기` : '-')}
+      <Row label="화물">
+        {vessel.cargo
+          ? `${vessel.cargo.name} (${vessel.cargo.un_no})`
+          : vessel.liquid_by_ship_type === true ? '액체화물선 · 화물 미신고'
+            : vessel.liquid_by_ship_type === false ? '일반화물' : '미확인'}
       </Row>
+      {vessel.ship_kind_nm && <Row label="선종 (PORT-MIS)">{vessel.ship_kind_nm}</Row>}
+      {/* arrival_at_utc 는 지도 마커로 연 경우에만 채워진다(PortMap 이 붙여준다).
+          목록·경고에서 연 경우엔 없으므로 AIS 최근 수신 시각을 대신 보여준다. */}
+      <Row label={vessel.arrival_at_utc ? '입항시각 (KST)' : 'AIS 최근 수신 (KST)'}>
+        {formatKST(vessel.arrival_at_utc || vessel.received_at_utc)}
+      </Row>
+      <Row label="배정 선석">{vessel.berth || '미배정'}</Row>
       {berthInfo && (
         <Row label="선석 제원">
           {berthInfo.operator} · 최대 {berthInfo.maxDwt.toLocaleString()} DWT · 수심 {berthInfo.depthM}m
@@ -200,6 +222,11 @@ export default function VesselDetailPanel() {
                 {(op.done_tons ?? 0).toLocaleString()} / {op.planned_tons.toLocaleString()} t · {op.cargo}
               </div>
             )}
+            {/* 간트차트에는 "진행률은 데모값" 고지가 있는데 여기엔 없어서, 같은
+                데이터가 한 화면에선 데모, 다른 화면에선 실측처럼 보였다. */}
+            <div style={{ fontSize: '11px', color: COLORS.yellow, marginTop: '6px' }}>
+              데모값 — 유량계 미도입으로 실시간 진행률 수집 소스가 없습니다
+            </div>
           </div>
         );
       })()}
@@ -304,23 +331,24 @@ export default function VesselDetailPanel() {
       {vessel.berth && (
         <>
           <SectionTitle icon={<FaCogs />}>계류 안정성 물리 검증</SectionTitle>
+          {/* 예전엔 mock-server(:8000)의 /sim/mooring 을 호출했는데, mock-server 를
+              걷어낸 뒤로는 그 주소가 죽어 항상 "응답 없음"만 떴다. 같은 상수·같은
+              식을 utils/mooringPhysics.js 로 옮겨 화면에서 계산한다(순수 함수라
+              서버 왕복이 필요 없다). */}
           <button
-            disabled={simLoading}
-            onClick={async () => {
+            disabled={simLoading || !data?.weather}
+            onClick={() => {
               setSimLoading(true);
               try {
-                const res = await fetch(`${API_BASE}/v1/sim/mooring`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    dwt: ASSUMED_DWT,
-                    wind_speed: data?.weather?.wind_speed_ms ?? 10,
-                    wave_height: data?.weather?.wave_height_sig_m ?? 0.5,
-                  }),
-                });
-                setMoorSim(await res.json());
-              } catch {
-                setMoorSim({ error: '시뮬레이션 서버(8000) 응답 없음' });
+                const wind = data?.weather?.wind_speed_ms;
+                const wave = data?.weather?.wave_height_sig_m;
+                if (wind == null) {
+                  // 관측이 없으면 임의값으로 계산하지 않는다 — 없는 근거로 낸
+                  // "정상"은 가장 위험한 종류의 답이다.
+                  setMoorSim({ error: '풍속 관측값이 없어 계산할 수 없습니다 (판단 보류)' });
+                } else {
+                  setMoorSim(simulateMooring(moorDwt, wind, wave ?? 0));
+                }
               } finally {
                 setSimLoading(false);
               }
@@ -331,8 +359,27 @@ export default function VesselDetailPanel() {
               color: COLORS.info, fontWeight: 700, cursor: 'pointer', fontSize: '13px',
             }}
           >
-            {simLoading ? '계산 중...' : `현재 기상으로 계류삭 장력 검증 (DWT ${ASSUMED_DWT.toLocaleString()} 가정)`}
+            {simLoading ? '계산 중...' : '현재 기상으로 계류삭 장력 검증'}
           </button>
+          {/* DWT 는 AIS·PORT-MIS 어느 쪽도 수집하지 않는다. 고정 가정값을 숨기고
+              쓰면 "이 배의 실제 계산"으로 오해하므로, 가정값임을 드러내고 조정도
+              할 수 있게 한다. */}
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            fontSize: '11.5px', color: COLORS.textDim, marginTop: '7px',
+          }}>
+            DWT 가정값
+            <input
+              type="number" step="1000" min="1000" value={moorDwt}
+              onChange={(e) => { setMoorDwt(Number(e.target.value) || ASSUMED_DWT); setMoorSim(null); }}
+              style={{
+                width: '92px', background: COLORS.card, color: COLORS.textPrimary,
+                border: `1px solid ${COLORS.border}`, borderRadius: '6px',
+                padding: '3px 7px', fontSize: '11.5px',
+              }}
+            />
+            <span>t — 실 DWT 미수집(AIS·PORT-MIS 모두 없음)</span>
+          </label>
           {moorSim && !moorSim.error && (
             <div style={{ marginTop: '8px', padding: '10px 12px', background: COLORS.card, borderRadius: '10px', border: `1px solid ${MOOR_VERDICT_COLORS[moorSim.verdict] || COLORS.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
@@ -367,7 +414,11 @@ export default function VesselDetailPanel() {
         <div style={{ fontSize: '13px', color: COLORS.textDim }}>이 선박 관련 경고 없음</div>
       )}
       {vesselAlerts.map((a) => {
-        const id = `${a.type}-${a.created_at_utc}`;
+        // ACK 키는 공용 규칙(alertUtils.alertId) 하나만 쓴다. 예전엔 여기만
+        // `${type}-${created_at_utc}` 라는 두 번째 규칙을 갖고 있어서, 헤더 벨에서
+        // 확인한 경고가 여기서는 미확인으로 남았다(게다가 백엔드 경고엔
+        // created_at_utc 가 없어 같은 유형이 전부 한 키로 뭉쳤다).
+        const id = alertId(a);
         const ack = alertAcks[id];
         return (
           <div key={id} style={{

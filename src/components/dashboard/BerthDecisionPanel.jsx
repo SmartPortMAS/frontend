@@ -44,10 +44,10 @@ export default function BerthDecisionPanel() {
         <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
           {/* 결과 카드 */}
           <div style={{
-            minWidth: '190px', padding: '14px 16px', background: COLORS.card,
+            minWidth: '230px', padding: '20px 22px', background: COLORS.card,
             border: `2px solid ${style.color}`, borderRadius: '12px', textAlign: 'center',
           }}>
-            <div style={{ fontSize: '22px', fontWeight: 800, color: style.color }}>{style.label}</div>
+            <div style={{ fontSize: '28px', fontWeight: 800, color: style.color, lineHeight: 1.2 }}>{style.label}</div>
             <div style={{ fontSize: '13px', color: COLORS.textPrimary, marginTop: '6px', display: 'flex', justifyContent: 'center', gap: '6px', alignItems: 'center' }}>
               {result.berth_assigned
                 ? <><FaShip color={COLORS.teal} /> {result.berth_assigned}</>
@@ -89,7 +89,7 @@ export default function BerthDecisionPanel() {
                         </div>
                         {!last && <div style={{ width: '2px', flex: 1, minHeight: '14px', background: COLORS.border }} />}
                       </div>
-                      <div style={{ fontSize: '13px', color: COLORS.textPrimary, paddingBottom: '12px', lineHeight: 1.5 }}>
+                      <div style={{ fontSize: '14px', color: COLORS.textPrimary, paddingBottom: '14px', lineHeight: 1.6 }}>
                         <span style={{ color: COLORS.textDim, marginRight: '8px' }}>{i + 1}단계</span>
                         {step}
                       </div>
@@ -98,7 +98,11 @@ export default function BerthDecisionPanel() {
                 })}
               </div>
             ) : (
-              <div style={{ fontSize: '13px', color: COLORS.textSecondary }}>{result.reason}</div>
+              // 오케스트레이터 응답 필드는 summary 다(reason 은 존재한 적 없다) —
+              // trace 가 비면 빈 칸만 남던 자리
+              <div style={{ fontSize: '13px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
+                {result.summary || '판단 경로가 반환되지 않았습니다.'}
+              </div>
             )}
           </div>
         </div>

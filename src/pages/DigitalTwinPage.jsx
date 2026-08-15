@@ -273,11 +273,26 @@ export default function DigitalTwinPage() {
             {predictionOffset === 0 ? '실시간 관제 중' : `예측 시뮬레이션: +${Math.floor(predictionOffset / 60)}시간 ${predictionOffset % 60}분 뒤`}
           </span>
         </div>
-        
+
         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '11px', marginTop: '-4px' }}>
           <span>Live</span>
           <span>+12h</span>
         </div>
+
+        {/* 슬라이더를 밀면 실AIS 선박이 움직인다. 무엇이 실측이고 무엇이 연출인지
+            밝혀 둔다 — 하역 소요시간 예측 모델은 아직 없다. 현재 위치·상태는 실측이고,
+            미래 이동(접안→출항)은 시나리오 애니메이션이다. */}
+        {predictionOffset > 0 && (
+          <div style={{
+            fontSize: '11px', color: '#fbbf24', background: 'rgba(251,191,36,0.10)',
+            border: '1px solid rgba(251,191,36,0.35)', borderRadius: '6px',
+            padding: '6px 10px', lineHeight: 1.5, marginTop: '-2px',
+          }}>
+            ※ 선박의 <strong>현재 위치·항해상태는 실측(AIS)</strong>이지만, 미래 이동은
+            데모 시나리오입니다 — 하역 소요시간 예측 모델은 아직 없습니다.
+            일조/조명 변화만 시각 기준으로 실제 반영됩니다.
+          </div>
+        )}
         
         <input 
           type="range" 

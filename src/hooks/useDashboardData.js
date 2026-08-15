@@ -68,6 +68,8 @@ async function doRefresh() {
         // 지도 상한(200척)과 무관한 실제 척수 — KPI 가 이 값을 쓴다
         real_traffic_total: backend?.realTrafficTotal ?? 0,
         real_traffic_liquid_total: backend?.realTrafficLiquidTotal ?? 0,
+        // 선종 대조가 안 돼 "모르는" 배 — 액체화물선의 나머지가 아니다
+        real_traffic_unknown_total: backend?.realTrafficUnknownTotal ?? 0,
         berth_occupancy: backend?.berthOccupancy ?? [],
         anchorage_status: backend?.anchorages ?? [],
         draught_checks: backend?.draughtChecks ?? [],

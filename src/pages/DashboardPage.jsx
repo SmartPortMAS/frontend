@@ -1,22 +1,17 @@
-import { useState } from 'react';
-import KPICard from '../components/dashboard/KPICard';
-import TankGauge from '../components/dashboard/TankGauge';
 import GanttChart from '../components/dashboard/GanttChart';
+import KPICard from '../components/dashboard/KPICard';
 import AgentConsole from '../components/dashboard/AgentConsole';
 import WeatherPanel from '../components/dashboard/WeatherPanel';
 import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
 import BerthDecisionPanel from '../components/dashboard/BerthDecisionPanel';
 import PortMap from '../components/dashboard/PortMap';
 import PortCallTable from '../components/dashboard/PortCallTable';
-import AlertCenter from '../components/dashboard/AlertCenter';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import useSensorStore from '../stores/useSensorStore';
 import useDashboardData from '../hooks/useDashboardData';
 import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt } from 'react-icons/fa';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 
 export default function DashboardPage() {
-  const { tanks } = useSensorStore();
   const gateAssessment = useSensorStore((s) => s.gateAssessment);
   const { data } = useDashboardData();
 
@@ -29,122 +24,83 @@ export default function DashboardPage() {
   const vesselTotal = data?.real_traffic_total ?? vessels.length;
   const liquidCount = data?.real_traffic_liquid_total
     ?? vessels.filter((v) => v.is_liquid_cargo_vessel).length;
+  // "액체화물선 66척"의 나머지를 일반화물선으로 읽으면 안 된다 — 대부분은 PORT-MIS
+  // 대조가 안 돼 선종을 모르는 배다. 그 수를 KPI 부제에 같이 적어 오해를 막는다.
+  const unknownCount = data?.real_traffic_unknown_total ?? 0;
   const mooredCount = vessels.filter((v) => v.nav_status_category === 'MOORED').length;
   const anchorCount = vessels.filter((v) => v.nav_status_category === 'AT_ANCHOR').length;
   const gateHits = gateAssessment?.risk_level_basis?.gate_hits?.length ?? 0;
 
-  const chartData = [
-    { time: '10:00', load: 45, safe: 100 },
-    { time: '11:00', load: 52, safe: 98 },
-    { time: '12:00', load: 60, safe: 95 },
-    { time: '13:00', load: 78, safe: 85 },
-    { time: '14:00', load: 65, safe: 90 },
-    { time: '15:00', load: 55, safe: 95 },
-    { time: '16:00', load: 82, safe: 80 },
-  ];
+  // 온산 선석 점유 — 백엔드 /dashboard/berths(upa_port_call 실측 재항 기준).
+  // 예전 "가동 탱크"는 useSensorStore의 하드코딩 탱크 4기를 세던 값이라
+  // 실데이터 화면에 mock 숫자가 섞여 있었다.
+  const onsanBerths = (data?.berth_occupancy ?? []).filter((b) => b.port_name === '온산항');
+  const occupiedBerths = onsanBerths.filter((b) => b.occupancy_status === '점유').length;
 
   return (
     <div className="dashboard-page">
       <div className="kpi-grid">
-        <KPICard title="관제 선박" value={vesselTotal} unit="척" icon={<FaShip />} change={`위험물선 ${liquidCount}척`} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
+        <KPICard title="관제 선박" value={vesselTotal} unit="척" icon={<FaShip />} change={`액체화물선 ${liquidCount}척 · 선종 미확인 ${unknownCount}척`} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
         <KPICard title="접안 중" value={mooredCount} unit="척" icon={<FaAnchor />} change={`묘박/정박지 대기 ${anchorCount}척`} trend="neutral" />
-        <KPICard title="가동 탱크" value={tanks.filter(t => t.status === 'active').length} unit="기" icon={<FaWarehouse />} change="정상 가동" trend="neutral" />
+        <KPICard title="온산 선석 점유" value={occupiedBerths} unit="개" icon={<FaWarehouse />} change={`온산 선석 ${onsanBerths.length}개 중 재항 중`} trend="neutral" />
         <KPICard
           title="최근 안전 심사"
           value={gateAssessment?.risk_level ?? '심사 전'}
           unit=""
           icon={<FaShieldAlt />}
-          change={gateAssessment ? `게이트 15개 중 ${gateHits}건 히트` : '안전 관제 탭에서 실행'}
+          change={gateAssessment ? (gateHits > 0 ? `혼재·격리 위반 ${gateHits}건` : '위반 없음') : '안전 관제 탭에서 실행'}
           trend={gateAssessment ? (gateHits > 0 ? 'negative' : 'positive') : 'neutral'}
         />
       </div>
 
-      {/* 경고 센터: 확인(ACK) 워크플로 (Full Width) */}
-      <div style={{ marginBottom: '20px' }}>
-        <AlertCenter />
-      </div>
+      {/* 경고 센터는 헤더 알림 벨(AlertBell)로 옮겼다 — 재항 전수 판정으로 경고가
+          36건까지 늘면서 첫 화면을 통째로 덮어, 지도·기상·선석 판정이 스크롤 아래로
+          밀렸기 때문. 미확인 건수는 벨 배지에 항상 떠 있어 놓치지 않는다. */}
 
       {/* 기상 패널 (Full Width) */}
-      <div style={{ marginBottom: '20px' }}>
+      <div className="dash-section">
         <WeatherPanel />
       </div>
 
       {/* 선석별 하역 판정 (온산 MVP, Full Width) */}
-      <div style={{ marginBottom: '20px' }}>
+      <div className="dash-section">
         <BerthWeatherPanel />
       </div>
 
-      {/* 온산 관제 지도: 선석 + ADJACENT_TO + 선박 (Full Width) */}
-      <div className="glass-card" style={{ marginBottom: '20px', padding: '12px' }}>
+      {/* 온산 관제 지도 — 이 화면에서 가장 많이 들여다보는 패널이라 크게 잡는다.
+          뷰포트에 맞춰 늘리되(62vh) 작은 화면에서도 지도 구실을 하도록 하한을 둔다. */}
+      <div className="glass-card dash-section">
         <div className="glass-card-header">
           <h3 className="glass-card-title">온산항 관제 지도</h3>
         </div>
-        <div style={{ height: '440px' }}>
+        <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
           <PortMap />
         </div>
       </div>
 
       {/* 선석 배정 시뮬레이션 (Full Width) */}
-      <div style={{ marginBottom: '20px' }}>
+      <div className="dash-section">
         <BerthDecisionPanel />
       </div>
 
       {/* Gantt Chart (Full Width) */}
-      <div style={{ marginBottom: '20px' }}>
+      <div className="dash-section">
         <GanttChart />
       </div>
 
       {/* 입항 선박 목록 (Full Width) */}
-      <div style={{ marginBottom: '20px' }}>
+      <div className="dash-section">
         <PortCallTable />
       </div>
 
-      <div className="dashboard-grid">
-        {/* Left Column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div className="glass-card">
-            <div className="glass-card-header">
-              <h3 className="glass-card-title">탱크 저장 현황 (Level %)</h3>
-            </div>
-            <div className="tank-gauge-grid">
-              {tanks.slice(0, 4).map(tank => (
-                <TankGauge key={tank.id} tank={tank} />
-              ))}
-            </div>
-          </div>
-          
-          <div className="glass-card">
-            <div className="glass-card-header">
-              <h3 className="glass-card-title">시간대별 처리량 및 안전 지수</h3>
-            </div>
-            <div className="chart-container">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorLoad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#00d4aa" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#00d4aa" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(78, 205, 196, 0.1)" />
-                  <XAxis dataKey="time" stroke="#8ba3b8" fontSize={12} tickLine={false} />
-                  <YAxis stroke="#8ba3b8" fontSize={12} tickLine={false} axisLine={false} />
-                  <RechartsTooltip 
-                    contentStyle={{ backgroundColor: 'rgba(13, 27, 42, 0.9)', border: '1px solid rgba(78, 205, 196, 0.2)', borderRadius: '8px' }}
-                    itemStyle={{ color: '#e8f0f2', fontSize: '13px' }}
-                  />
-                  <Area type="monotone" dataKey="load" stroke="#00d4aa" fillOpacity={1} fill="url(#colorLoad)" strokeWidth={2} name="처리량 (ton)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
+      {/* 화면에서 내린 것들 —
+          · 탱크 저장 현황: 센서 데이터 탭의 탱크 센서와 같은 값을 두 번 그리고 있었다.
+          · 시간대별 처리량/안전지수 차트: chartData가 코드에 박힌 고정 배열이었다.
+            유량계가 없어 처리량 실측 소스가 없는데 그럴듯한 곡선을 그리면,
+            실데이터로 채운 나머지 화면까지 같이 의심받는다.
+          · 협상 로그(NegotiationChat): 하드코딩 대화 — 우하단 AgentConsole로 대체. */}
 
-        {/* 협상 로그는 우하단 플로팅 콘솔(AgentConsole)로 이동했다.
-            기존 NegotiationChat 은 하드코딩 대화라 화면에서 내린다. */}
-      </div>
-
-      {/* 선박 상세 패널 (지도 마커/입항 목록/경고 센터에서 선박 클릭 시) */}
+      {/* 선박 상세 패널 (지도 마커/입항 목록/경고 벨에서 선박 클릭 시) */}
       <VesselDetailPanel />
 
       {/* 멀티 에이전트 협상 콘솔 — 판정 진입점 단일화 (우하단 고정 탭) */}

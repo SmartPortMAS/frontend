@@ -6,7 +6,7 @@ import {
 import useOnsanApi, { namesAnyCargo } from '../../hooks/useOnsanApi';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
-import { COLORS } from '../../utils/constants';
+import { COLORS, OPERATOR_NAME } from '../../utils/constants';
 import { ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 
 // ─────────────────────────────────────────────
@@ -81,11 +81,22 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   }
 
   // 3) 안전 — 혼재/IMDG/LLM 근거
+  //
+  // 근거를 반드시 함께 싣는다. 예전엔 detail: [] 고정이라 "안전 판정: 위험" 한 줄로
+  // 끝났다 — 기상·스케줄링 발화는 근거를 보여주는데 안전만 비어 있어서, 정작 이
+  // 시스템의 핵심인 "왜 위험한가"를 협상 로그에서 확인할 수 없었다.
   if (orchestration.risk_level) {
+    const detail = [
+      ...(orchestration.safety_imdg || []),
+      ...(orchestration.safety_conflicts || []),
+      ...(orchestration.safety_reasoning ? [orchestration.safety_reasoning] : []),
+      ...(orchestration.safety_hazards?.length
+        ? [`주요 위험성: ${orchestration.safety_hazards.join(' · ')}`] : []),
+    ];
     msgs.push({
       agent: 'safety', time: at(3),
       text: `안전 판정: ${orchestration.risk_level}`,
-      detail: [],
+      detail: detail.length ? detail : ['인접·동시 작업 화물과 혼재금지·IMDG 격리 충돌 없음'],
     });
   }
 
@@ -112,7 +123,12 @@ export default function AgentConsole() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('negotiation'); // negotiation | qa
   const [loading, setLoading] = useState(false);
-  const [approved, setApproved] = useState(false);
+  // 관제사 최종 결정 — null(미결정) | 'APPROVED' | 'REJECTED'.
+  //
+  // 예전엔 boolean 이라 "반려" 버튼이 setApproved(false) 였는데, 그 버튼이 보이는
+  // 조건 자체가 approved === false 여서 눌러도 아무 변화가 없었다(이미 false).
+  // 결정은 세 상태다 — 아직 안 정함 / 승인 / 반려.
+  const [decision, setDecision] = useState(null);
   const { orchestrate, assessBerthWeather, ragQuery } = useOnsanApi();
 
   // 질의응답 탭 상태
@@ -156,7 +172,7 @@ export default function AgentConsole() {
   const run = async () => {
     if (!target) return;
     setLoading(true);
-    setApproved(false);
+    setDecision(null);   // 새로 판정하면 이전 결정은 무효다
     try {
       const berthId = findBerthIdByName(target.berth);
       const group = berthId ? ONSAN_WEATHER_GROUP[berthId] : null;
@@ -358,20 +374,32 @@ export default function AgentConsole() {
           padding: '10px 14px', borderTop: `1px solid ${COLORS.glassBorder}`,
           display: 'flex', gap: 8, alignItems: 'center',
         }}>
-          {approved ? (
-            <span style={{ color: COLORS.teal, fontSize: 12.5, fontWeight: 700 }}>
-              ✓ 관제사(함현우) 승인 완료 — 하역 개시 지시됨
-            </span>
+          {decision ? (
+            <>
+              <span style={{
+                flex: 1, fontSize: 12.5, fontWeight: 700,
+                color: decision === 'APPROVED' ? COLORS.teal : COLORS.red,
+              }}>
+                {decision === 'APPROVED'
+                  ? `✓ ${OPERATOR_NAME} 승인 — 하역 개시`
+                  : `✕ ${OPERATOR_NAME} 반려 — 배정 취소`}
+              </span>
+              {/* 결정을 되돌릴 수 없으면 잘못 눌렀을 때 화면을 다시 열 수밖에 없다 */}
+              <button onClick={() => setDecision(null)} style={{
+                background: 'transparent', color: COLORS.textDim, border: `1px solid ${COLORS.border}`,
+                borderRadius: 8, padding: '5px 10px', fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
+              }}>결정 취소</button>
+            </>
           ) : (
             <>
               <span style={{ flex: 1, fontSize: 11.5, color: COLORS.textDim }}>
-                최종 결정은 관제사가 합니다
+                최종 결정은 관제사가 합니다 (기록은 세션 내 보존)
               </span>
-              <button onClick={() => setApproved(true)} style={{
+              <button onClick={() => setDecision('APPROVED')} style={{
                 background: COLORS.teal, color: '#04222b', border: 'none', borderRadius: 8,
                 padding: '7px 14px', fontWeight: 800, fontSize: 12.5, cursor: 'pointer',
               }}>승인</button>
-              <button onClick={() => setApproved(false)} style={{
+              <button onClick={() => setDecision('REJECTED')} style={{
                 background: 'transparent', color: COLORS.red, border: `1px solid ${COLORS.red}`,
                 borderRadius: 8, padding: '7px 12px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer',
               }}>반려</button>

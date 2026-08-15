@@ -74,17 +74,50 @@ function isRecentlyPresent(row) {
   return row.presence_state === 'PRESENT' || row.presence_state === 'STALE';
 }
 
+// PORT-MIS 선종 대조 결과는 3상태다 — true(액체화물선)/false(비액체)/null(대조 실패).
+// null 을 false 로 접으면 "선종을 모르는 배"가 화면에서 "일반화물선"으로 둔갑한다.
+// 실측(2026-08-15, 재항 356척): true 66 / false 19 / null 271.
+// null 이 압도적인 이유는 조인 키 문제다 — PORT-MIS 에는 MMSI 컬럼이 없어 호출부호로만
+// 붙일 수 있는데, AIS 호출부호는 선택 필드라 74척이 아예 빈 값이다.
+function liquidByShipType(row) {
+  return row.is_liquid_cargo_vessel == null ? null : Boolean(row.is_liquid_cargo_vessel);
+}
+
 /** upa_vessel_position 행 → 기존 vessels 계약 필드 (+ is_real_ais 플래그)
  * cargoByCallsgn: /dashboard/berth-cargo (mart.berth_current_cargo, 실 신고 위험물)를
- * callsgn으로 조인 — 위치 API 자체엔 화물 정보가 없어 이걸로 보강한다. */
-function mapVessel(row, cargoByCallsgn) {
-  const cargo = cargoByCallsgn?.get(row.callsgn) || null;
+ * callsgn으로 조인 — 위치 API 자체엔 화물 정보가 없어 이걸로 보강한다.
+ * ambiguousCallsgns: 재항 선박 중 둘 이상이 같은 호출부호를 쓰는 값들(아래 설명). */
+function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
+  // 호출부호가 여러 배에 걸리면 화물을 붙이지 않는다. 붙이면 옆 배 위험물이
+  // 엉뚱한 배에 표시되고, 그 배가 혼재·흘수 판정 입력으로까지 들어간다.
+  // 모르는 것을 아는 척하느니 비워 두는 편이 맞다.
+  const ambiguous = row.callsgn ? ambiguousCallsgns.has(row.callsgn) : false;
+  const cargo = (!ambiguous && cargoByCallsgn?.get(row.callsgn)) || null;
+  const byShipType = ambiguous ? null : liquidByShipType(row);
   return {
-    port_call_id: `AIS_${row.callsgn || row.mmsi}`,
+    // 식별자는 MMSI 우선(vessel_key = mart.vessel_identity 의 MMSI-First vessel_uid).
+    //
+    // 예전엔 `AIS_{호출부호||MMSI}` 였는데, AIS 호출부호에는 '500'·'301'·'ABCD'
+    // 같은 쓰레기값이 있어 서로 다른 배가 같은 id 를 받았다(실측 4쌍). 그 결과
+    // 입항 목록에서 React key 가 충돌해 같은 배가 두 줄로 보였다
+    // (예: DAESU HO / 500 — 실제로는 EOHANG DONGHAE 3HO 와 다른 배다).
+    port_call_id: `AIS_${row.vessel_key ?? row.mmsi ?? row.callsgn}`,
+    vessel_key: row.vessel_key ?? null,
     callsgn: row.callsgn,
+    // 이 호출부호로는 선종·화물을 붙일 수 없다는 사실 자체를 화면이 알게 한다
+    callsgn_ambiguous: ambiguous,
     vessel_name: row.vessel_name,
     mmsi: row.mmsi,
-    is_liquid_cargo_vessel: Boolean(cargo), // berth_current_cargo는 위험물(dg_un_no NOT NULL)만 담고 있어 매칭=위험물선 확정
+    // 선종명(PORT-MIS 공식 51개 코드) — "석유제품 운반선"처럼 근거를 그대로 보여준다
+    ship_kind_nm: row.ship_kind_nm ?? null,
+    // 근거를 두 개로 나눠 보존한다. 예전엔 두 개를 is_liquid_cargo_vessel 하나에
+    // 눌러 담아, 같은 이름이 화면마다 다른 뜻이었다(KPI는 선종 기준 66척, 목록은
+    // 화물 매칭 기준 58척 — 둘 다 "위험물선"이라고 적혀 있었다).
+    liquid_by_ship_type: byShipType,          // PORT-MIS 선종 기준 (true/false/null)
+    has_dg_cargo: Boolean(cargo),             // 재항 위험물 신고가 실제로 붙었는가
+    // 액체화물 하역 대상 = 선종이 액체화물선이거나, 위험물 화물이 확인된 배.
+    // (2026-08-15 결정: 액체화물을 싣는 배는 전부 하역 대상으로 본다)
+    is_liquid_cargo_vessel: Boolean(cargo) || byShipType === true,
     latitude: row.latitude,
     longitude: row.longitude,
     sog: row.sog,
@@ -175,6 +208,24 @@ export async function fetchBackendDashboard() {
     .filter(isRecentlyPresent)
     .sort((a, b) => new Date(b.received_at_utc) - new Date(a.received_at_utc));
 
+  // 호출부호는 AIS 에서 선택 입력이라 '500'·'301'·'1263'·'ABCD' 같은 값이 실제로
+  // 들어온다(실측 4쌍이 서로 다른 배끼리 겹쳤다). 화물·선종을 이 키로 붙이므로,
+  // 겹치는 호출부호를 먼저 찾아 두고 그런 배에는 아무것도 붙이지 않는다.
+  const callsgnCount = new Map();
+  for (const r of presentVessels) {
+    const cs = r.callsgn;
+    if (cs) callsgnCount.set(cs, (callsgnCount.get(cs) ?? 0) + 1);
+  }
+  const ambiguousCallsgns = new Set(
+    [...callsgnCount.entries()].filter(([, n]) => n > 1).map(([cs]) => cs)
+  );
+
+  // KPI 분류 — mapVessel 과 같은 판정을 쓴다. 두 곳이 갈리면 KPI 와 목록 숫자가
+  // 어긋나고, 어느 쪽이 맞는지 화면만 봐서는 알 수 없게 된다.
+  const isAmbiguous = (r) => Boolean(r.callsgn) && ambiguousCallsgns.has(r.callsgn);
+  const hasCargo = (r) => !isAmbiguous(r) && cargoByCallsgn.has(r.callsgn);
+  const shipType = (r) => (isAmbiguous(r) ? null : liquidByShipType(r));
+
   return {
     weather: weather ? mapWeather(weather) : null,
     // 지도 성능 때문에 200척만 그린다. 다만 KPI 까지 200 으로 보이면 "관제 선박이
@@ -182,12 +233,19 @@ export async function fetchBackendDashboard() {
     // 화면이 "몇 척 중 몇 척을 그리는 중"인지 정직하게 말할 수 있게 한다.
     realTraffic: presentVessels
       .slice(0, MAP_VESSEL_LIMIT)
-      .map((row) => mapVessel(row, cargoByCallsgn)),
+      .map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns)),
     realTrafficTotal: presentVessels.length,
     // 선석별 재항 위험물 화물 원본 — 안전 심사 폼이 "재항 선박에서 불러오기"에 쓴다.
     // (화물을 수기로 고르는 대신 지금 실제로 붙어 있는 배를 선택하게 하기 위함)
     berthCargo: berthCargo ?? [],
-    realTrafficLiquidTotal: presentVessels.filter((r) => r.is_liquid_cargo_vessel).length,
+    // KPI 는 지도 상한(200척)과 무관하게 전체를 세야 하므로 매핑 전 원본에서 센다.
+    realTrafficLiquidTotal: presentVessels.filter(
+      (r) => shipType(r) === true || hasCargo(r)
+    ).length,
+    // 선종을 "모르는" 배 — 나머지를 일반화물선으로 읽는 오해를 막으려고 따로 센다.
+    realTrafficUnknownTotal: presentVessels.filter(
+      (r) => shipType(r) === null && !hasCargo(r)
+    ).length,
     berthOccupancy: berths ?? [],
     anchorages: anchorages ?? [],
     // 조위 반영 흘수·UKC 판정 (mart.berth_draught_check) — callsgn별 원본 그대로 노출,
