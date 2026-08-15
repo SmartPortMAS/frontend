@@ -103,13 +103,15 @@ function VesselPopup({ vessel }) {
 // 지도에 겹치는 두 레이어를 범례에서 구분한다 — 둘 다 실 AIS 지만 아는 정보가 다르다.
 //   배 아이콘 : 위치 + 재항 화물까지 확인된 배 (클릭 -> 상세·안전판정)
 //   점       : 위치만 확인된 배
+// 화면에 실제로 그려지는 것만 적는다. 범례에 있는데 화면에 없거나 그 반대면
+// 사용자가 지도를 못 믿게 된다.
 const LEGEND_ITEMS = [
-  { color: COLORS.red, label: '🚢 배 아이콘 — 화물까지 확인 (클릭 시 판정)' },
+  { color: COLORS.red, label: '🚢 배 아이콘 — 화물까지 확인 (클릭 시 안전 판정)' },
   { color: COLORS.red, label: '● 액체화물선 (PORT-MIS 선종 확인)' },
   { color: '#38bdf8', label: '● 항해 중 (선종 미확인)' },
   { color: '#8ba3b8', label: '● 정박·계류 중 (선종 미확인)' },
-  { color: COLORS.info, label: '온산 액체화물 선석 (12개소 표시)' },
-  { color: COLORS.yellow, label: 'ADJACENT_TO 혼재감시 쌍' },
+  { color: COLORS.info, label: '◯ 온산 액체화물 선석 — 클릭 시 기상 판정' },
+  { color: COLORS.yellow, label: '― 인접 선석 혼재감시 쌍' },
 ];
 
 // 온산 2클러스터(처용리/산암리)가 화면에 차게 보이는 뷰
@@ -123,10 +125,6 @@ export default function PortMap() {
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const { data } = useDashboardData();
   const [showAis, setShowAis] = useState(false);
-  // 액체화물선만 보기 — 지도에 뜨는 배 대부분은 어선·예선처럼 우리 관제 대상이
-  // 아닌 배다(선종을 아는 배가 전체의 16%뿐이고, PORT-MIS 에 MMSI 가 없어
-  // 호출부호로만 붙일 수 있다는 구조적 한계). 관제 대상만 보고 싶을 때 켠다.
-  const [liquidOnly, setLiquidOnly] = useState(false);
   // 아이콘(클릭 시 상세패널) 레이어 — 실AIS + berth-cargo 실화물 조인 선박을 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
   // AgentConsole과 동일한 원칙. arrival_at_utc는 팝업이 그 필드로 시각을 표시해서 맞춰준다.
@@ -148,11 +146,12 @@ export default function PortMap() {
     const shown = new Set(vessels.map((v) => v.callsgn).filter(Boolean));
     // PORT-MIS 공식 선종코드로 확인된 액체화물선은 지도에서 붉게 강조한다
     const liquid = new Set(data?.liquid_callsgns ?? []);
-    const list = (data?.real_traffic ?? [])
+    // 액체화물선만 보는 필터는 뒀다가 뺐다 — 화물 배정을 액체화물선 전수로
+    // 넓히면서(2026-08-15) 관제 대상이 배 아이콘으로 충분히 드러나 필요가 없어졌다.
+    return (data?.real_traffic ?? [])
       .filter((v) => !shown.has(v.callsgn))
       .map((v) => (liquid.has(v.callsgn) ? { ...v, is_liquid_cargo_vessel: true } : v));
-    return liquidOnly ? list.filter((v) => v.is_liquid_cargo_vessel) : list;
-  }, [data, vessels, liquidOnly]);
+  }, [data, vessels]);
   const realLiquidCount = useMemo(
     () => realTraffic.filter((v) => v.is_liquid_cargo_vessel).length,
     [realTraffic]
@@ -284,7 +283,9 @@ export default function PortMap() {
           <Circle
             key={id}
             center={onsanDisplayPos(b)}
-            radius={b.waterway === '부이(해상)' ? 220 : 90}
+            // 선석 원이 배 아이콘(34px)보다 작아 화면에서 묻혔다. 선석은 판정
+            // 단위이자 클릭 대상이라 배보다 눈에 먼저 들어와야 한다.
+            radius={b.waterway === '부이(해상)' ? 320 : 200}
             pathOptions={{
               color: vColor,
               fillColor: vColor,
@@ -440,25 +441,6 @@ export default function PortMap() {
               척
               {realLiquidCount > 0 && <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>})
             </span>
-          </label>
-        )}
-        {showAis && (
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer',
-            background: liquidOnly ? 'rgba(255,75,110,0.18)' : 'rgba(255,255,255,0.06)',
-            border: `1px solid ${liquidOnly ? COLORS.red : COLORS.glassBorder}`,
-            borderRadius: '7px', padding: '7px 10px',
-            fontSize: '12px', fontWeight: 600, color: COLORS.textPrimary,
-            whiteSpace: 'nowrap', flexShrink: 0,
-          }}
-          title="PORT-MIS 공식 선종코드로 액체화물선이 확인된 배만 남깁니다. 선종을 확인할 수 없는 배(어선·예선 등)는 숨겨집니다.">
-            <input
-              type="checkbox"
-              checked={liquidOnly}
-              onChange={() => setLiquidOnly((v) => !v)}
-              style={{ accentColor: COLORS.red, cursor: 'pointer', flexShrink: 0 }}
-            />
-            <span style={{ whiteSpace: 'nowrap' }}>액체화물선만</span>
           </label>
         )}
       </div>

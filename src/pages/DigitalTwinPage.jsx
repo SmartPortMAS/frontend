@@ -8,6 +8,7 @@ import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
+import useDashboardData from '../hooks/useDashboardData';
 import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
@@ -21,6 +22,11 @@ const omniverseUrl = (port) => `http://localhost:${port}`;
 export default function DigitalTwinPage() {
   // 트윈 선박을 실 AIS·재항 화물로 채운다 (예전엔 스토어에 6척이 하드코딩돼 있었다)
   useLiveTwinShips();
+
+  // 상단 띠에 흘릴 실경고 — 심각한 것부터 최대 6건. 화면 폭이 한정돼 있어
+  // 전부 흘리면 한 바퀴가 너무 길어진다(현재 36건).
+  const { data: dashForTicker } = useDashboardData();
+  const tickerItems = (dashForTicker?.alerts ?? []).slice(0, 6);
   const [showMap, setShowMap] = useState(false);
   const [showOmniverseStream, setShowOmniverseStream] = useState(false);
   // 'checking' | 'ok' | 'unreachable'
@@ -80,7 +86,8 @@ export default function DigitalTwinPage() {
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       <Scene />
       
-      {/* VTS 실시간 관제 알림 전광판 (Alert Ticker) */}
+      {/* 관제 경고 전광판 — 실경고가 있을 때만 띄운다(빈 띠를 굴리지 않는다) */}
+      {tickerItems.length > 0 && (
       <div style={{
         position: 'absolute', top: 0, left: 0, width: '100%', height: '30px',
         background: 'linear-gradient(90deg, rgba(15,23,42,1) 0%, rgba(220,38,38,0.8) 50%, rgba(15,23,42,1) 100%)',
@@ -92,12 +99,21 @@ export default function DigitalTwinPage() {
           animation: 'marquee 20s linear infinite',
           display: 'flex', gap: '50px'
         }}>
-          <span><FaExclamationTriangle color="#f59e0b" /> [위험] T005 탱크 수위 90% 임박 (ESD 대기)</span>
-          <span>✅ [접안] ULSAN PIONEER 제3부두 접안 완료</span>
-          <span>ℹ️ [시스템] 해양수산부 VTS 연동 정상화</span>
-          <span><FaExclamationTriangle color="#f59e0b" /> [위험] T005 탱크 수위 90% 임박 (ESD 대기)</span>
+          {/* 실경고(safety 규칙엔진). 예전엔 "T005 탱크 수위 90%" 같은 문구가 박혀
+              있었는데, 탱크 수위는 우리가 수집하지 않는 센서값이라 화면에서 진짜처럼
+              보이는 가짜였다. 지금은 경고 API 가 준 것만 흘린다.
+              경고가 없으면 티커 자체를 띄우지 않는다(빈 띠를 굴리지 않는다). */}
+          {tickerItems.map((a, i) => (
+            <span key={`${a.type}-${i}`}>
+              {a.level === 'DANGER'
+                ? <FaExclamationTriangle color="#ef4444" />
+                : <FaExclamationTriangle color="#f59e0b" />}
+              {' '}[{a.level === 'DANGER' ? '위험' : '경고'}] {a.message}
+            </span>
+          ))}
         </div>
       </div>
+      )}
 
       <style>{`
         @keyframes marquee {

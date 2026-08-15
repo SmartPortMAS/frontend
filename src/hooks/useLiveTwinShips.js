@@ -22,7 +22,18 @@ import { findBerthIdByName } from '../utils/geoUtils';
 // ─────────────────────────────────────────────────────────────────────────────
 
 // 트윈에 세울 선박 수 상한. 3D 오브젝트가 많아지면 프레임이 떨어진다.
-const TWIN_SHIP_LIMIT = 12;
+const TWIN_SHIP_LIMIT = 14;
+
+// 트윈이 그리는 범위는 온산 일대뿐이다. 울산 전역의 배를 그대로 투영하면
+// 대부분이 화면 밖 먼 곳에 놓여 "배가 하나도 없는" 것처럼 보인다(실측: 신호가
+// 살아있는 368척 중 온산 근접은 103척). 이 사각형 밖은 트윈 대상이 아니다.
+const ONSAN_BOX = { minLat: 35.40, maxLat: 35.50, minLon: 129.32, maxLon: 129.42 };
+
+function inOnsan(v) {
+  return v.latitude != null && v.longitude != null
+    && v.latitude >= ONSAN_BOX.minLat && v.latitude <= ONSAN_BOX.maxLat
+    && v.longitude >= ONSAN_BOX.minLon && v.longitude <= ONSAN_BOX.maxLon;
+}
 
 /** AIS 카테고리 + 접안 선석 유무 → 트윈 상태 어휘 */
 function twinStatus(vessel, berthId) {
@@ -32,9 +43,11 @@ function twinStatus(vessel, berthId) {
     return vessel.cargo ? 'operating' : 'mooring';
   }
   if (cat === 'AT_ANCHOR') return 'anchored';
-  // 항해 중인데 접안 선석이 확인되면 그 선석으로 들어오는 중으로 본다
-  if (berthId) return 'arriving';
-  return 'approaching';
+  // 항해 중인 배는 '입항 중'으로 단정하지 않는다 — 나가는 배일 수도, 지나가는
+  // 배일 수도 있다. AIS 항해상태만으로는 방향을 알 수 없으므로 '항해 중'으로 둔다.
+  // (예전에는 접안 선석이 확인되면 arriving 으로 단정했는데, 그 배가 이미 항만
+  //  안쪽에 떠 있으면 "입항 중인데 부두 안에 있는" 모순으로 보였다.)
+  return 'underway';
 }
 
 /**
@@ -46,7 +59,7 @@ export default function useLiveTwinShips() {
   const setShips = useSensorStore((s) => s.setShips);
 
   useEffect(() => {
-    const traffic = data?.real_traffic ?? [];
+    const traffic = (data?.real_traffic ?? []).filter(inOnsan);
     if (!traffic.length || !setShips) return;
 
     // 온산 선석이 확인된 배를 먼저 세운다 — 트윈은 온산 부두를 그린 화면이라
@@ -66,9 +79,15 @@ export default function useLiveTwinShips() {
         status: twinStatus(v, berthId),
         berth: berthId,
         anchorage: null,
-        // 실좌표가 있으면 Ship 컴포넌트가 계산 경로 대신 이 값을 그대로 쓴다
-        vessel_lat: v.latitude,
-        vessel_lon: v.longitude,
+        // 접안한 배는 실좌표 대신 그 선석의 3D 위치에 세운다.
+        //
+        // 3D 부두는 실측 좌표를 옮겨 그린 것이지만 잔교·안벽은 보기 좋게 이격해
+        // 배치했다. 접안선을 AIS 좌표 그대로 찍으면 몇십 미터 오차로도 안벽을
+        // 파고들거나 육지 위에 뜬다. "어느 선석에 붙었나"는 이미 아는 정보이므로
+        // 그 선석 자리에 세우는 편이 정확하고 보기에도 맞다.
+        // 항해·묘박 중인 배만 실좌표를 쓴다(있어야 할 자리가 바다라서 문제없다).
+        vessel_lat: berthId ? null : v.latitude,
+        vessel_lon: berthId ? null : v.longitude,
         vessel_heading: v.vessel_heading,
         vessel_speed: v.sog,
         cargoType: v.cargo?.name || null,
