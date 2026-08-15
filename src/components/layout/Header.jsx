@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
-import { FaExclamationTriangle, FaCloudSun, FaDatabase } from 'react-icons/fa';
+import AlertBell from './AlertBell';
+import { FaCloudSun, FaDatabase } from 'react-icons/fa';
 
 const kstTime = (utc) => {
   if (!utc) return null;
@@ -37,7 +37,6 @@ function freshness(ph) {
 }
 
 export default function Header() {
-  const alerts = useSensorStore(state => state.alerts);
   // 연결 상태는 실제 데이터 폴링 성공 여부로 판단한다.
   // (구 WebSocket 채널은 사용하지 않아 항상 '끊김'으로 보이던 문제 수정)
   const { data, error } = useDashboardData();
@@ -83,14 +82,13 @@ export default function Header() {
           </div>
         )}
 
-        <div className="header-badge alert-badge" title={`${alerts.length}개 알림`}>
-          <FaExclamationTriangle color={alerts.length > 0 ? '#ff4b6e' : '#8ba3b8'} />
-          {alerts.length > 0 && <span className="alert-count">{alerts.length}</span>}
-        </div>
+        {/* 관제 경고 — 예전엔 대시보드 본문 상단 카드였다. 재항 전수 판정으로
+            건수가 늘면서 첫 화면을 다 먹어 헤더 벨 드롭다운으로 접었다. */}
+        <AlertBell />
 
         <div
           className="header-badge"
-          title={connected ? '대시보드 데이터 폴링 정상 (30초 주기)' : `데이터 수신 실패: ${error || '서버 응답 없음'}`}
+          title={connected ? '대시보드 데이터 폴링 정상 (3분 주기 — useDashboardData.POLL_MS)' : `데이터 수신 실패: ${error || '서버 응답 없음'}`}
         >
           <div className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></div>
           <span>{connected ? '실시간 연동 중' : '연결 끊김'}</span>

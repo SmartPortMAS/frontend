@@ -9,12 +9,14 @@ export default function Sidebar({ collapsed, setCollapsed }) {
         <div className="logo-text">울산항만 관제시스템</div>
       </div>
       
+      {/* 공간(트윈) → 현황(대시보드) → 판정(안전) → 설비(센서) 순.
+          트윈이 첫 화면이라 사이드바 순서도 그에 맞춘다. */}
       <nav className="sidebar-nav">
-        <NavLink to="/" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
+        <NavLink to="/" end className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
           <div className="nav-icon"><FaCube /></div>
           <div className="nav-label">디지털 트윈</div>
         </NavLink>
-        
+
         <NavLink to="/dashboard" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
           <div className="nav-icon"><FaChartPie /></div>
           <div className="nav-label">대시보드</div>
@@ -24,7 +26,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
           <div className="nav-icon"><FaShieldAlt /></div>
           <div className="nav-label">안전/환경 관제</div>
         </NavLink>
-        
+
         <NavLink to="/sensors" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
           <div className="nav-icon"><FaWaveSquare /></div>
           <div className="nav-label">센서 데이터</div>

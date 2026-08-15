@@ -38,7 +38,7 @@ export default function SafetyGraph() {
     .map((a) => ({ subject: a.subject, A: a.score, fullMark: 100 }));
 
   return (
-    <div style={{ width: '100%', height: '100%', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+    <div className="glass-card" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
       <h3 style={{ fontSize: '18px', color: 'var(--teal)', marginBottom: '8px' }}>
         다차원 안전 평가 지수
         {index?.overall != null && (
@@ -47,8 +47,16 @@ export default function SafetyGraph() {
           </span>
         )}
       </h3>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '24px' }}>
+      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '8px' }}>
         수집 중인 실데이터로 계산한 6개 축입니다. 각 축의 근거는 아래에 함께 표시됩니다.
+      </p>
+      {/* 무엇을 재는 지수인지 화면이 스스로 답해야 한다. 설비 안전도(탱크 압력·가스
+          농도 같은)로 오해하기 쉬운데, 그건 우리가 수집하지 않는 값이다. */}
+      <p style={{ color: 'var(--text-dim)', fontSize: '12px', marginBottom: '20px', lineHeight: 1.6 }}>
+        <strong>100점 = 지금 하역을 막을 이유가 없음.</strong> 설비 건전성이 아니라
+        <strong> &ldquo;지금 이 항만에서 하역을 진행해도 되는가&rdquo;</strong>를 재는 지수입니다 —
+        각 축은 값이 나빠지면 하역을 멈추거나 배정을 바꿔야 하는 항목으로 골랐습니다.
+        판정 재료가 없는 축은 0점이 아니라 차트에서 빼고 &ldquo;판정불가&rdquo;로 적습니다.
       </p>
 
       <div style={{ flex: 1, minHeight: '300px' }}>
