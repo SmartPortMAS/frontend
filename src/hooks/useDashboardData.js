@@ -61,6 +61,9 @@ async function doRefresh() {
         // 기상은 전부 백엔드(mart.weather_now) — 풍속·풍향·돌풍이 같은 관측에서 온다
         weather: backend.weather,
         real_traffic: backend?.realTraffic ?? [],
+        // 지도 상한(200척)과 무관한 실제 척수 — KPI 가 이 값을 쓴다
+        real_traffic_total: backend?.realTrafficTotal ?? 0,
+        real_traffic_liquid_total: backend?.realTrafficLiquidTotal ?? 0,
         berth_occupancy: backend?.berthOccupancy ?? [],
         anchorage_status: backend?.anchorages ?? [],
         draught_checks: backend?.draughtChecks ?? [],

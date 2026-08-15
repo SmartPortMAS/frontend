@@ -145,6 +145,9 @@ export default function PortMap() {
     () => realTraffic.filter((v) => v.is_liquid_cargo_vessel).length,
     [realTraffic]
   );
+  // 지도는 성능 때문에 상한(MAP_VESSEL_LIMIT)까지만 그린다. 그 상한에 걸렸을 때
+  // 범례에 "표시/전체"를 같이 적어, 숫자가 멈춘 이유를 화면에서 알 수 있게 한다.
+  const aisTotal = data?.real_traffic_total ?? realTraffic.length;
   const [showAis, setShowAis] = useState(false);
   const mapRef = useRef(null);
 
@@ -409,14 +412,23 @@ export default function PortMap() {
             border: `1px solid ${showAis ? '#38bdf8' : COLORS.glassBorder}`,
             borderRadius: '7px', padding: '7px 10px',
             fontSize: '12px', fontWeight: 600, color: COLORS.textPrimary,
+            // "· 액체 33"이 줄바꿈돼 잘려 보이던 문제 — 라벨을 한 줄로 고정한다
+            whiteSpace: 'nowrap', flexShrink: 0,
           }}>
             <input
               type="checkbox"
               checked={showAis}
               onChange={() => setShowAis((s) => !s)}
-              style={{ accentColor: '#38bdf8', cursor: 'pointer' }}
+              style={{ accentColor: '#38bdf8', cursor: 'pointer', flexShrink: 0 }}
             />
-            실선박 AIS ({realTraffic.length}척{realLiquidCount > 0 && <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>})
+            <span style={{ whiteSpace: 'nowrap' }}>
+              실선박 AIS ({realTraffic.length}
+              {/* 지도 상한(200척)에 걸렸을 때만 "표시/전체"를 함께 보여준다 —
+                  숫자가 상한에서 멈춘 이유를 화면에서 알 수 있게. */}
+              {aisTotal > realTraffic.length && <span style={{ color: COLORS.textDim }}>/{aisTotal}</span>}
+              척
+              {realLiquidCount > 0 && <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>})
+            </span>
           </label>
         )}
       </div>

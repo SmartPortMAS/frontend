@@ -20,10 +20,15 @@ export default function DashboardPage() {
   const gateAssessment = useSensorStore((s) => s.gateAssessment);
   const { data } = useDashboardData();
 
-  // KPI는 실AIS(+실화물 조인) 기준으로 센다 — data.vessels는 데모 시나리오 선박(mock-server
-  // 전용, 지금 꺼져있어 항상 브라우저 내장 mock으로 폴백)이라 실제 재항 척수와 무관하다.
+  // KPI는 실AIS(+실화물 조인) 기준으로 센다 — data.vessels는 데모 시나리오 선박이라
+  // 실제 재항 척수와 무관하다.
+  //
+  // 지도는 성능 때문에 200척만 그리지만(MAP_VESSEL_LIMIT) KPI 는 전체를 센다.
+  // 상한이 KPI 까지 잘라버리면 "관제 선박이 항상 200척"으로 보여 사실과 어긋난다.
   const vessels = data?.real_traffic ?? [];
-  const liquidCount = vessels.filter((v) => v.is_liquid_cargo_vessel).length;
+  const vesselTotal = data?.real_traffic_total ?? vessels.length;
+  const liquidCount = data?.real_traffic_liquid_total
+    ?? vessels.filter((v) => v.is_liquid_cargo_vessel).length;
   const mooredCount = vessels.filter((v) => v.nav_status_category === 'MOORED').length;
   const anchorCount = vessels.filter((v) => v.nav_status_category === 'AT_ANCHOR').length;
   const gateHits = gateAssessment?.risk_level_basis?.gate_hits?.length ?? 0;
@@ -41,7 +46,7 @@ export default function DashboardPage() {
   return (
     <div className="dashboard-page">
       <div className="kpi-grid">
-        <KPICard title="관제 선박" value={vessels.length} unit="척" icon={<FaShip />} change={`위험물선 ${liquidCount}척`} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
+        <KPICard title="관제 선박" value={vesselTotal} unit="척" icon={<FaShip />} change={`위험물선 ${liquidCount}척`} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
         <KPICard title="접안 중" value={mooredCount} unit="척" icon={<FaAnchor />} change={`묘박/정박지 대기 ${anchorCount}척`} trend="neutral" />
         <KPICard title="가동 탱크" value={tanks.filter(t => t.status === 'active').length} unit="기" icon={<FaWarehouse />} change="정상 가동" trend="neutral" />
         <KPICard

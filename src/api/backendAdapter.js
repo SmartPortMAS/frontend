@@ -20,6 +20,11 @@ const isDev = typeof window !== 'undefined' && window.location.hostname === 'loc
 // 배포: nginx가 /api/v1은 backend, /api는 mockserver로 프록시(deploy/nginx.cloud.conf).
 export const BACKEND_BASE = isDev ? 'http://localhost:8001/api/v1' : '/api/v1';
 
+// 지도에 동시에 그리는 선박 수 상한. 마커가 많아지면 지도가 눈에 띄게 무거워진다.
+// KPI 숫자는 이 상한과 무관하게 전체를 센다(realTrafficTotal) — 상한이 KPI 까지
+// 잘라버리면 "관제 선박이 항상 200척"이라는 잘못된 인상을 준다.
+export const MAP_VESSEL_LIMIT = 200;
+
 // AIS 항해상태 코드(ITU-R M.1371 숫자) → UI 카테고리 — ais_vessel_position(레거시 소스) 행에서만 옴
 const NAV_CODE_TO_CATEGORY = {
   0: 'UNDER_WAY', 1: 'AT_ANCHOR', 2: 'UNKNOWN', 3: 'UNDER_WAY', 4: 'UNDER_WAY',
@@ -165,16 +170,23 @@ export async function fetchBackendDashboard() {
     if (row.callsgn && !cargoByCallsgn.has(row.callsgn)) cargoByCallsgn.set(row.callsgn, row);
   }
 
+  // 지도에 그릴 수 있는 선박(좌표 있음 + bbox 내 + 최근 신호). 상한을 걸기 전 전체.
+  const presentVessels = (vessels ?? [])
+    .filter((r) => r.latitude != null && r.longitude != null)
+    .filter(inUlsanBbox)
+    .filter(isRecentlyPresent)
+    .sort((a, b) => new Date(b.received_at_utc) - new Date(a.received_at_utc));
+
   return {
     weather: weather ? mapWeather(weather) : null,
-    // 온산 bbox 내 + 최근 신호(PRESENT/STALE, NO_SIGNAL·DEPARTED 제외) + 최신 수신 순 상한 200척
-    realTraffic: (vessels ?? [])
-      .filter((r) => r.latitude != null && r.longitude != null)
-      .filter(inUlsanBbox)
-      .filter(isRecentlyPresent)
-      .sort((a, b) => new Date(b.received_at_utc) - new Date(a.received_at_utc))
-      .slice(0, 200)
+    // 지도 성능 때문에 200척만 그린다. 다만 KPI 까지 200 으로 보이면 "관제 선박이
+    // 항상 200척"이라는 잘못된 인상을 준다 — 실제 수는 realTrafficTotal 로 따로 넘겨
+    // 화면이 "몇 척 중 몇 척을 그리는 중"인지 정직하게 말할 수 있게 한다.
+    realTraffic: presentVessels
+      .slice(0, MAP_VESSEL_LIMIT)
       .map((row) => mapVessel(row, cargoByCallsgn)),
+    realTrafficTotal: presentVessels.length,
+    realTrafficLiquidTotal: presentVessels.filter((r) => r.is_liquid_cargo_vessel).length,
     berthOccupancy: berths ?? [],
     anchorages: anchorages ?? [],
     // 조위 반영 흘수·UKC 판정 (mart.berth_draught_check) — callsgn별 원본 그대로 노출,
