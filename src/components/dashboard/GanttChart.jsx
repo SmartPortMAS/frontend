@@ -22,8 +22,8 @@ function JobRow({ op }) {
   const meta = STATUS_META[op.status] || STATUS_META.PLANNED;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0', borderBottom: `1px solid rgba(78,205,196,0.06)` }}>
-      <div style={{ width: '210px', flexShrink: 0 }}>
-        <div style={{ fontSize: '13px', fontWeight: 700 }}>{op.vessel_name}</div>
+      <div style={{ width: '240px', flexShrink: 0 }}>
+        <div style={{ fontSize: '14px', fontWeight: 700 }}>{op.vessel_name}</div>
         <div style={{ fontSize: '11.5px', color: COLORS.textSecondary }}>
           {op.berth} · {op.cargo} {op.un_no && `(${op.un_no})`}
         </div>
@@ -37,7 +37,7 @@ function JobRow({ op }) {
             )}
           </span>
         </div>
-        <div style={{ height: '10px', background: COLORS.card, borderRadius: '5px', overflow: 'hidden' }}>
+        <div style={{ height: '13px', background: COLORS.card, borderRadius: '7px', overflow: 'hidden' }}>
           <div style={{
             width: `${op.progress_pct}%`, height: '100%',
             background: `linear-gradient(90deg, ${meta.color}, ${meta.color}cc)`,
@@ -132,16 +132,21 @@ export default function GanttChart() {
     <div className="glass-card full-width">
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
         <h3 className="glass-card-title">하역 작업 현황 (선석 스케줄)</h3>
+        {/* onsan_port_calls·ais_position_rows 는 구 mock-server 전용 필드라 백엔드에
+            대응 개념이 없다(항상 undefined → 렌더 안 됨). 지금 백엔드가 실제로 주는
+            분류(port_calls_by_facility_type)로 바꿔 적는다 — "선석으로 확정된 접안이
+            몇 건인가"는 선석 특정 안전지수 축의 근거이기도 하다. */}
         {stats?.total_port_calls != null && (
           <span style={{ fontSize: '12px', color: COLORS.textSecondary }}>
             실수집 기반: 입출항 <strong style={{ color: COLORS.teal }}>{stats.total_port_calls.toLocaleString()}</strong>건
-            {stats.onsan_port_calls != null && <> · 온산 <strong style={{ color: COLORS.teal }}>{stats.onsan_port_calls}</strong>건</>}
-            {stats.ais_position_rows != null && <> · AIS {stats.ais_position_rows.toLocaleString()}행</>}
+            {stats.port_calls_by_facility_type?.BERTH != null && (
+              <> · 선석 확정 <strong style={{ color: COLORS.teal }}>{stats.port_calls_by_facility_type.BERTH.toLocaleString()}</strong>건</>
+            )}
           </span>
         )}
       </div>
 
-      <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, margin: '4px 0' }}>
+      <div style={{ fontSize: '13px', fontWeight: 700, color: COLORS.textSecondary, margin: '6px 0' }}>
         진행 중 / 예정 작업
         <span style={{ fontWeight: 400, color: COLORS.textDim }}> — 진행률은 데모값 (실시간 유량 센서 미수집)</span>
       </div>

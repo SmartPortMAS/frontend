@@ -100,13 +100,23 @@ function VesselPopup({ vessel }) {
   );
 }
 
-const LEGEND_ITEMS = [
-  { color: COLORS.red, label: '위험물(액체화물) 선박' },
-  { color: NAV_STATUS.UNDER_WAY.color, label: '항해 중' },
-  { color: NAV_STATUS.AT_ANCHOR.color, label: '묘박 중' },
-  { color: NAV_STATUS.MOORED.color, label: '접안 중' },
-  { color: COLORS.info, label: '온산 액체화물 선석 (12개소 표시)' },
-  { color: COLORS.yellow, label: 'ADJACENT_TO 혼재감시 쌍' },
+// 지도에 겹치는 두 레이어를 범례에서 구분한다 — 둘 다 실 AIS 지만 아는 정보가 다르다.
+//   배 아이콘 : 위치 + 재항 화물까지 확인된 배 (클릭 -> 상세·안전판정)
+//   점       : 위치만 확인된 배
+// 화면에 실제로 그려지는 것만 적는다. 범례에 있는데 화면에 없거나 그 반대면
+// 사용자가 지도를 못 믿게 된다.
+//
+// 점(AIS 레이어)은 체크박스를 켰을 때만 그려지므로 범례도 그때만 보여준다 —
+// 꺼 놓고 보면 "● 항해 중" 같은 항목이 화면 어디에도 없다.
+const LEGEND_BASE = [
+  { color: COLORS.red, label: '🚢 배 — 화물 확인 (클릭 시 안전 판정)' },
+  { color: COLORS.info, label: '◯ 온산 선석 (클릭 시 기상 판정)' },
+  { color: COLORS.yellow, label: '― 인접 선석 혼재감시 쌍' },
+];
+const LEGEND_AIS = [
+  { color: COLORS.red, label: '● 액체화물선 (PORT-MIS 선종)' },
+  { color: '#38bdf8', label: '● 항해 중 (선종 미확인)' },
+  { color: '#8ba3b8', label: '● 정박·계류 중 (선종 미확인)' },
 ];
 
 // 온산 2클러스터(처용리/산암리)가 화면에 차게 보이는 뷰
@@ -119,6 +129,7 @@ export default function PortMap() {
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const { data } = useDashboardData();
+  const [showAis, setShowAis] = useState(false);
   // 아이콘(클릭 시 상세패널) 레이어 — 실AIS + berth-cargo 실화물 조인 선박을 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
   // AgentConsole과 동일한 원칙. arrival_at_utc는 팝업이 그 필드로 시각을 표시해서 맞춰준다.
@@ -130,22 +141,29 @@ export default function PortMap() {
       })),
     [data]
   );
-  const vessels = realCargoVessels.length > 0 ? realCargoVessels : (data?.vessels ?? []);
+  // 폴백 없음. 예전엔 화물 매칭이 0건이면 mock 데모 선박 6척으로 대체했는데,
+  // 수집이 끊기거나 매칭이 실패한 상황에서 가짜 배가 진짜처럼 지도에 떴다.
+  // 실데이터가 없으면 아무것도 그리지 않는 편이 정직하다.
+  const vessels = realCargoVessels;
   // 실백엔드(upa_vessel_position) AIS 레이어 — 위 아이콘으로 이미 표시된 선박은
   // 제외해 같은 배가 아이콘·점으로 두 번 찍히지 않게 한다.
   const realTraffic = useMemo(() => {
     const shown = new Set(vessels.map((v) => v.callsgn).filter(Boolean));
-    // PORT-MIS 공식 선종코드로 확인된 액체화물선은 지도에서 붉게 강조한다
-    const liquid = new Set(data?.liquid_callsgns ?? []);
-    return (data?.real_traffic ?? [])
-      .filter((v) => !shown.has(v.callsgn))
-      .map((v) => (liquid.has(v.callsgn) ? { ...v, is_liquid_cargo_vessel: true } : v));
+    // 액체화물선만 보는 필터는 뒀다가 뺐다 — 화물 배정을 액체화물선 전수로
+    // 넓히면서(2026-08-15) 관제 대상이 배 아이콘으로 충분히 드러나 필요가 없어졌다.
+    //
+    // liquid_callsgns 로 선종 액체화물선을 덧칠하던 보정도 뺐다. 같은 판정(PORT-MIS
+    // portmis_vessel.is_liquid_cargo_vessel)을 backendAdapter.mapVessel 이 이미 하고
+    // 있어서, 여기서 한 번 더 하면 같은 기준이 두 군데 살아 있게 된다.
+    return (data?.real_traffic ?? []).filter((v) => !shown.has(v.callsgn));
   }, [data, vessels]);
   const realLiquidCount = useMemo(
     () => realTraffic.filter((v) => v.is_liquid_cargo_vessel).length,
     [realTraffic]
   );
-  const [showAis, setShowAis] = useState(false);
+  // 지도는 성능 때문에 상한(MAP_VESSEL_LIMIT)까지만 그린다. 그 상한에 걸렸을 때
+  // 범례에 "표시/전체"를 같이 적어, 숫자가 멈춘 이유를 화면에서 알 수 있게 한다.
+  const aisTotal = data?.real_traffic_total ?? realTraffic.length;
   const mapRef = useRef(null);
 
   const liquidCount = useMemo(
@@ -161,9 +179,17 @@ export default function PortMap() {
     (data?.berth_occupancy ?? []).forEach((b) => m.set(norm(b.wharf_name), b));
     return m;
   }, [data]);
-  const occupiedCount = useMemo(
-    () => (data?.berth_occupancy ?? []).filter((b) => b.current_vessel_names?.length).length,
+  // 이 지도는 온산 선석만 그린다. 점유 수도 온산 기준으로 세야 KPI("온산 선석 점유")와
+  // 같은 숫자가 된다 — 예전엔 여기서 울산 전 항만 69개 선석을 세고, 판정 기준도
+  // occupancy_status 가 아니라 current_vessel_names 유무로 달라서 한 화면에 서로
+  // 다른 점유 수가 떴다.
+  const onsanBerths = useMemo(
+    () => (data?.berth_occupancy ?? []).filter((b) => b.port_name === '온산항'),
     [data]
+  );
+  const occupiedCount = useMemo(
+    () => onsanBerths.filter((b) => b.occupancy_status === '점유').length,
+    [onsanBerths]
   );
   const anchorWaiting = useMemo(
     () => (data?.anchorage_status ?? []).reduce((s, a) => s + (a.current_occupants || 0), 0),
@@ -172,7 +198,7 @@ export default function PortMap() {
   const berthOcc = (name) => occupancyByBerth.get(String(name || '').replace(/\s+/g, ''));
 
   // 증기운 확산 예상 구역 (8월 시나리오 S3 — 가우시안 원뿔 근사)
-  // 선택 선박이 R13(인접 증기 중첩) 히트이면 접안 선석 풍하측에 표시
+  // 선택 선박에 혼재금지·IMDG 격리 충돌이 잡히면 접안 선석 풍하측에 표시
   const selectedVessel = useSensorStore((s) => s.selectedVessel);
   const { assessment: safety } = useVesselSafety(selectedVessel);
   const vaporCone = useMemo(() => {
@@ -270,7 +296,9 @@ export default function PortMap() {
           <Circle
             key={id}
             center={onsanDisplayPos(b)}
-            radius={b.waterway === '부이(해상)' ? 220 : 90}
+            // 선석 원이 배 아이콘(34px)보다 작아 화면에서 묻혔다. 선석은 판정
+            // 단위이자 클릭 대상이라 배보다 눈에 먼저 들어와야 한다.
+            radius={b.waterway === '부이(해상)' ? 320 : 200}
             pathOptions={{
               color: vColor,
               fillColor: vColor,
@@ -321,7 +349,7 @@ export default function PortMap() {
             pathOptions={{ color: '#ff8c42', weight: 2, dashArray: '6 5', fillColor: '#ff8c42', fillOpacity: 0.22 }}
           >
             <Tooltip sticky>
-              {vaporCone.cargo} 증기 확산 예상 구역 (R13) — 풍향 {vaporCone.windDir}° · 풍속 {vaporCone.windMs}m/s 기준 약 {vaporCone.lengthM}m (가우시안 원뿔 근사)
+              {vaporCone.cargo} 증기 확산 예상 구역 — 풍향 {vaporCone.windDir}° · 풍속 {vaporCone.windMs}m/s 기준 약 {vaporCone.lengthM}m (가우시안 원뿔 근사 · 실측 아님)
             </Tooltip>
           </Polygon>
         )}
@@ -380,7 +408,10 @@ export default function PortMap() {
         position: 'absolute', top: 70, right: 14, zIndex: 1000,
         background: COLORS.glass, border: `1px solid ${COLORS.glassBorder}`,
         backdropFilter: 'blur(8px)', borderRadius: '10px',
-        padding: '10px 12px', width: '168px',
+        padding: '10px 12px',
+        // 고정 폭(168px)이라 선박 수가 세 자리가 되자 라벨이 잘렸다.
+        // 내용에 맞춰 늘리되 지도를 가리지 않게 상한만 둔다.
+        width: 'max-content', minWidth: '168px', maxWidth: '260px',
         display: 'flex', flexDirection: 'column', gap: '6px',
       }}>
         <div style={{ fontSize: '11px', fontWeight: 700, color: '#8ba3b8', letterSpacing: '1px' }}>
@@ -409,14 +440,26 @@ export default function PortMap() {
             border: `1px solid ${showAis ? '#38bdf8' : COLORS.glassBorder}`,
             borderRadius: '7px', padding: '7px 10px',
             fontSize: '12px', fontWeight: 600, color: COLORS.textPrimary,
+            // "· 액체 33"이 줄바꿈돼 잘려 보이던 문제 — 라벨을 한 줄로 고정한다
+            whiteSpace: 'nowrap', flexShrink: 0,
           }}>
             <input
               type="checkbox"
               checked={showAis}
               onChange={() => setShowAis((s) => !s)}
-              style={{ accentColor: '#38bdf8', cursor: 'pointer' }}
+              style={{ accentColor: '#38bdf8', cursor: 'pointer', flexShrink: 0 }}
             />
-            실선박 AIS ({realTraffic.length}척{realLiquidCount > 0 && <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>})
+            {/* 라벨은 짧게 — 배 수가 세 자리가 되어도 한 줄에 들어와야 한다.
+                상한(200척)에 걸렸을 때만 "표시/전체"를 함께 보여준다. */}
+            <span style={{ whiteSpace: 'nowrap' }}>
+              실선박 AIS {realTraffic.length}
+              {aisTotal > realTraffic.length && (
+                <span style={{ color: COLORS.textDim }}>/{aisTotal}</span>
+              )}
+              {realLiquidCount > 0 && (
+                <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>
+              )}
+            </span>
           </label>
         )}
       </div>
@@ -433,13 +476,13 @@ export default function PortMap() {
         </div>
         {occupiedCount > 0 && (
           <div style={{ marginBottom: '6px', fontSize: '11px', color: COLORS.textSecondary }}>
-            실선석 점유 <strong style={{ color: COLORS.yellow }}>{occupiedCount}</strong>
-            /{(data?.berth_occupancy ?? []).length}
+            온산 선석 점유 <strong style={{ color: COLORS.yellow }}>{occupiedCount}</strong>
+            /{onsanBerths.length}
             {anchorWaiting > 0 && <> · 정박지 대기 <strong>{anchorWaiting}</strong>척</>}
             <span style={{ color: COLORS.textDim }}> (실측)</span>
           </div>
         )}
-        {LEGEND_ITEMS.map((item) => (
+        {[...LEGEND_BASE, ...(showAis ? LEGEND_AIS : [])].map((item) => (
           <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
             <span style={{
               width: '10px', height: '10px', borderRadius: '50%',

@@ -1,10 +1,8 @@
 import { useEffect, useReducer } from 'react';
-import { API_BASE } from '../utils/constants';
 import { fetchBackendDashboard } from '../api/backendAdapter';
 import { mockDashboard, advanceMockVessels } from '../mocks/mockDashboard';
 
-// false: GET /api/dashboard 사용 (지금은 mock-server/dashboard_server.py,
-// 김동안 백엔드 완성 시 동일 계약으로 자동 대체). true: 브라우저 내장 mock.
+// true 로 두면 서버를 전혀 부르지 않고 브라우저 내장 mock 만 쓴다(오프라인 확인용).
 const USE_MOCK = false;
 
 // 폴링 주기 3분. 원본 근거 데이터가 조위 10분·파고 30분 주기로만 갱신되고
@@ -43,57 +41,61 @@ async function doRefresh() {
     try {
       sharedLoading = true;
       notify();
-      // mock 서버와 실백엔드(dev 머지본)를 모두 8000에서 병렬 호출해 병합한다.
-      // 어느 한쪽이 죽어도 나머지로 화면이 유지된다.
-      const [baseRes, backend] = await Promise.allSettled([
-        fetch(`${API_BASE}/dashboard`).then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
-        }),
-        fetchBackendDashboard(),
-      ]).then((rs) => rs.map((r) => (r.status === 'fulfilled' ? r.value : null)));
+      // 실데이터는 전부 백엔드(8001)에서 온다.
+      //
+      // 예전에는 mock-server(8000)도 함께 호출해 병합했다. 백엔드가 대시보드용
+      // 조회를 갖추기 전에 DB 를 직접 읽어 화면을 채우던 임시 서버였는데,
+      // 2026-08-15 기준 그쪽이 주던 실데이터(선박·기상·통계·경고·이력·수집상태)를
+      // 백엔드가 전부 제공한다(실측 대조 완료). 두 서버를 병합하면 같은 값이
+      // 서로 다른 시점·다른 관측소에서 와 짝이 어긋날 수 있어 하나로 정리한다.
+      //
+      // 내장 mock(mockDashboard)은 시연용 스토리 선박과 하역 진행률에만 쓴다 —
+      // 둘 다 실데이터 소스가 없는 항목이다(진행률은 유량 센서 미설치).
+      // 실선박이 하나라도 잡히면 화면은 그쪽을 쓰므로 평상시엔 보이지 않는다.
+      const backend = await fetchBackendDashboard();
+      if (!backend) throw new Error('백엔드 응답 없음 (8001)');
 
-      if (!baseRes && !backend) throw new Error('mock 서버·백엔드 모두 응답 없음');
-
-      const base = baseRes ?? advanceMockVessels(dataRef); // 서버 다운 시 내장 mock 유지
+      // 하역 진행률(operations)만 실데이터 소스가 없어 내장 mock 을 쓴다.
+      // 선박 목록(vessels)은 넘기지 않는다 — 화면이 실AIS(real_traffic)만 보게 해서
+      // 수집이 끊겼을 때 가짜 배가 진짜처럼 뜨는 일을 구조적으로 막는다.
+      const base = advanceMockVessels(dataRef);
       const merged = {
         ...base,
-        // 기상은 백엔드(실 API) 우선 — 단 풍향은 백엔드 미제공이라 기존 값 유지
-        weather: backend?.weather
-          // 풍향은 백엔드(mart.weather_now — 풍속과 같은 관측소 값) 우선.
-          // 예전엔 백엔드가 풍향을 안 줘서 mock-server 값으로 덮었는데, 지금 그 순서를
-          // 유지하면 풍속(백엔드)과 풍향(mock)이 서로 다른 관측 시각에서 온 짝이 된다.
-          ? { ...backend.weather, wind_dir_deg: backend.weather.wind_dir_deg ?? base.weather?.wind_dir_deg ?? null }
-          : base.weather,
+        vessels: [],
+        // 기상은 전부 백엔드(mart.weather_now) — 풍속·풍향·돌풍이 같은 관측에서 온다
+        weather: backend.weather,
         real_traffic: backend?.realTraffic ?? [],
+        // 지도 상한(200척)과 무관한 실제 척수 — KPI 가 이 값을 쓴다
+        real_traffic_total: backend?.realTrafficTotal ?? 0,
+        real_traffic_liquid_total: backend?.realTrafficLiquidTotal ?? 0,
+        // 선종 대조가 안 돼 "모르는" 배 — 액체화물선의 나머지가 아니다
+        real_traffic_unknown_total: backend?.realTrafficUnknownTotal ?? 0,
         berth_occupancy: backend?.berthOccupancy ?? [],
         anchorage_status: backend?.anchorages ?? [],
         draught_checks: backend?.draughtChecks ?? [],
+        berth_cargo: backend?.berthCargo ?? [],
         // GanttChart가 기다리는 "실제 접안 이력" — base의 데모 작업(is_real_record=false)은
         // 그대로 두고 백엔드 실이력만 얹는다(중복 방지로 base 쪽 실이력이 있었다면 걷어냄).
         operations: [
           ...(base.operations ?? []).filter((o) => !o.is_real_record),
           ...(backend?.history ?? []),
         ],
-        // pipeline_health는 헤더 신선도 배지용 — 백엔드 우선, 없으면 mock-server 값 유지.
-        // onsan_port_calls/ais_position_rows는 mock-server 전용 필드라 백엔드엔 없다.
+        // 통계·수집상태 모두 백엔드. 예전 mock-server 전용 필드
+        // (onsan_port_calls/ais_position_rows)는 백엔드에 대응 개념이 없어 사라진다 —
+        // 화면에서 쓰지 않던 값이라 영향 없다.
         stats: {
-          ...(base.stats ?? {}),
-          ...(backend?.stats ?? {}),
-          pipeline_health: backend?.pipelineHealth ?? base.stats?.pipeline_health ?? null,
+          ...(backend.stats ?? {}),
+          pipeline_health: backend.pipelineHealth ?? null,
         },
-        liquid_callsgns: backend?.stats?.liquid_callsgns ?? base.liquid_callsgns ?? [],
-        // 경고는 백엔드(safety 규칙엔진 실판정) 우선. 백엔드가 응답했다면 0건이어도
-        // 그걸 쓴다 — "위험 없음"을 mock 경고로 덮으면 없는 위험을 지어내는 셈이다.
-        // 백엔드가 죽었을 때만 mock-server 의 뷰 기반 경고로 폴백한다.
-        alerts: backend?.alerts ?? base.alerts ?? [],
+        liquid_callsgns: backend.stats?.liquid_callsgns ?? [],
+        // 경고는 safety 규칙엔진 실판정. 0건도 그대로 쓴다 —
+        // "위험 없음"을 mock 경고로 덮으면 없는 위험을 지어내는 셈이다.
+        alerts: backend.alerts ?? [],
         data_source: {
-          ...(base.data_source ?? {}),
-          backend: backend ? 'CONNECTED' : 'DOWN',
-          history: backend?.history?.length ? 'REAL' : (base.data_source?.history ?? null),
-          alerts: backend?.alerts
-            ? 'REAL_RULE_ENGINE'
-            : (base.data_source?.alerts ?? null),
+          backend: 'CONNECTED',
+          weather: 'REAL', stats: 'REAL',
+          history: backend.history?.length ? 'REAL' : 'NONE',
+          alerts: 'REAL_RULE_ENGINE',
         },
       };
       dataRef = merged;

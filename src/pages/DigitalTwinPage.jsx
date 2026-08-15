@@ -7,6 +7,8 @@ import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import useSensorStore from '../stores/useSensorStore';
+import useLiveTwinShips from '../hooks/useLiveTwinShips';
+import useDashboardData from '../hooks/useDashboardData';
 import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
@@ -18,6 +20,13 @@ const OMNIVERSE_PORTS = [5173, 5174, 5175, 5176];
 const omniverseUrl = (port) => `http://localhost:${port}`;
 
 export default function DigitalTwinPage() {
+  // 트윈 선박을 실 AIS·재항 화물로 채운다 (예전엔 스토어에 6척이 하드코딩돼 있었다)
+  useLiveTwinShips();
+
+  // 상단 띠에 흘릴 실경고 — 심각한 것부터 최대 6건. 화면 폭이 한정돼 있어
+  // 전부 흘리면 한 바퀴가 너무 길어진다(현재 36건).
+  const { data: dashForTicker } = useDashboardData();
+  const tickerItems = (dashForTicker?.alerts ?? []).slice(0, 6);
   const [showMap, setShowMap] = useState(false);
   const [showOmniverseStream, setShowOmniverseStream] = useState(false);
   // 'checking' | 'ok' | 'unreachable'
@@ -77,7 +86,8 @@ export default function DigitalTwinPage() {
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       <Scene />
       
-      {/* VTS 실시간 관제 알림 전광판 (Alert Ticker) */}
+      {/* 관제 경고 전광판 — 실경고가 있을 때만 띄운다(빈 띠를 굴리지 않는다) */}
+      {tickerItems.length > 0 && (
       <div style={{
         position: 'absolute', top: 0, left: 0, width: '100%', height: '30px',
         background: 'linear-gradient(90deg, rgba(15,23,42,1) 0%, rgba(220,38,38,0.8) 50%, rgba(15,23,42,1) 100%)',
@@ -86,15 +96,27 @@ export default function DigitalTwinPage() {
       }}>
         <div style={{
           whiteSpace: 'nowrap',
-          animation: 'marquee 20s linear infinite',
+          // 읽을 시간을 준다. 20초는 경고 문구(선석·물질·격리코드가 다 들어간다)를
+          // 눈으로 따라가기에 너무 빨랐다. 항목 수에 비례해 늘려 항목이 많아도
+          // 한 건당 읽는 속도가 같게 한다.
+          animation: `marquee ${Math.max(45, tickerItems.length * 11)}s linear infinite`,
           display: 'flex', gap: '50px'
         }}>
-          <span><FaExclamationTriangle color="#f59e0b" /> [위험] T005 탱크 수위 90% 임박 (ESD 대기)</span>
-          <span>✅ [접안] ULSAN PIONEER 제3부두 접안 완료</span>
-          <span>ℹ️ [시스템] 해양수산부 VTS 연동 정상화</span>
-          <span><FaExclamationTriangle color="#f59e0b" /> [위험] T005 탱크 수위 90% 임박 (ESD 대기)</span>
+          {/* 실경고(safety 규칙엔진). 예전엔 "T005 탱크 수위 90%" 같은 문구가 박혀
+              있었는데, 탱크 수위는 우리가 수집하지 않는 센서값이라 화면에서 진짜처럼
+              보이는 가짜였다. 지금은 경고 API 가 준 것만 흘린다.
+              경고가 없으면 티커 자체를 띄우지 않는다(빈 띠를 굴리지 않는다). */}
+          {tickerItems.map((a, i) => (
+            <span key={`${a.type}-${i}`}>
+              {a.level === 'DANGER'
+                ? <FaExclamationTriangle color="#ef4444" />
+                : <FaExclamationTriangle color="#f59e0b" />}
+              {' '}[{a.level === 'DANGER' ? '위험' : '경고'}] {a.message}
+            </span>
+          ))}
         </div>
       </div>
+      )}
 
       <style>{`
         @keyframes marquee {
@@ -251,11 +273,26 @@ export default function DigitalTwinPage() {
             {predictionOffset === 0 ? '실시간 관제 중' : `예측 시뮬레이션: +${Math.floor(predictionOffset / 60)}시간 ${predictionOffset % 60}분 뒤`}
           </span>
         </div>
-        
+
         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '11px', marginTop: '-4px' }}>
           <span>Live</span>
           <span>+12h</span>
         </div>
+
+        {/* 슬라이더를 밀면 실AIS 선박이 움직인다. 무엇이 실측이고 무엇이 연출인지
+            밝혀 둔다 — 하역 소요시간 예측 모델은 아직 없다. 현재 위치·상태는 실측이고,
+            미래 이동(접안→출항)은 시나리오 애니메이션이다. */}
+        {predictionOffset > 0 && (
+          <div style={{
+            fontSize: '11px', color: '#fbbf24', background: 'rgba(251,191,36,0.10)',
+            border: '1px solid rgba(251,191,36,0.35)', borderRadius: '6px',
+            padding: '6px 10px', lineHeight: 1.5, marginTop: '-2px',
+          }}>
+            ※ 선박의 <strong>현재 위치·항해상태는 실측(AIS)</strong>이지만, 미래 이동은
+            데모 시나리오입니다 — 하역 소요시간 예측 모델은 아직 없습니다.
+            일조/조명 변화만 시각 기준으로 실제 반영됩니다.
+          </div>
+        )}
         
         <input 
           type="range" 

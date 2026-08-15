@@ -142,7 +142,7 @@ async function localMsdsAnswer({ question, cargoHint }) {
   }
   if (!payload) {
     return {
-      answer: `'${cargoName}'의 MSDS를 조회하지 못했습니다. 백엔드(8000)가 떠 있는지 확인해주세요.`,
+      answer: `'${cargoName}'의 MSDS를 조회하지 못했습니다. 백엔드(8001)가 떠 있는지 확인해주세요.`,
       citations: [], is_local_fallback: true, source: 'MSDS_UNAVAILABLE',
     };
   }
@@ -173,19 +173,46 @@ async function localMsdsAnswer({ question, cargoHint }) {
 }
 
 // ─── 로컬 폴백 임계 (백엔드 미가동 시에도 데모 가능하게) ───
-// 실측 임계는 berth_weather_thresholds.csv 기준, 미등록 선석군은 기본값.
+// DB berth_weather_threshold 8행을 그대로 옮긴 표다 (2026-08-15 대조).
+//
+// 백엔드 판정 응답에는 임계값이 실려 오지 않아 화면 칩 표시는 이 표를 쓴다.
+// 그래서 이 표가 DB와 어긋나면 "판정은 DB 임계로, 표시는 다른 임계로" 하는
+// 화면이 된다 — 실제로 예전 표에는 3개 선석군만 있었고 석유공사부이(중단 12)가
+// default(중단 14)로 표시되던 오류가 있었다. DB를 고치면 이 표도 같이 고칠 것.
+// 파고 임계는 중단 단계에만 있다(DB에 unberth/disconnect 파고 컬럼 없음).
 const LOCAL_THRESHOLDS = {
   '정일1/2부두(산암리)': {
     stop: { wind: 17, wave: 1.0 }, unberth: { wind: 19, wave: null },
-    disconnect: { wind: 21, wave: 2.0 }, source: '정일_입항정보_9.8',
+    disconnect: { wind: 21, wave: null }, source: '정일_입항정보_9.8',
   },
   'OTK1/2부두(처용리)': {
-    stop: { wind: 14, wave: 2.0 }, unberth: { wind: 18, wave: 2.5 },
-    disconnect: { wind: 21, wave: 3.0 }, source: 'OTK_입항정보_9.8',
+    stop: { wind: 14, wave: 2.0 }, unberth: { wind: 18, wave: null },
+    disconnect: { wind: 21, wave: null }, source: 'OTK_입항정보_9.8',
+  },
+  'UTK부두(처용리)': {
+    stop: { wind: 14, wave: 2.0 }, unberth: { wind: 17, wave: null },
+    disconnect: { wind: 21, wave: null }, source: 'UTK_입항정보',
+  },
+  '대한유화부두(처용리)': {
+    stop: { wind: 14, wave: 2.0 }, unberth: { wind: 18, wave: null },
+    disconnect: { wind: 21, wave: null }, source: '대한유화_입항정보',
+  },
+  '효성부두(산암리)': {
+    stop: { wind: 14, wave: 2.0 }, unberth: { wind: 21, wave: null },
+    disconnect: { wind: 21, wave: null }, source: '효성_입항정보',
+  },
+  'S-Oil1~4부두(산암리/원산리)': {
+    stop: { wind: 14, wave: null }, unberth: { wind: 17, wave: null },
+    disconnect: { wind: 21, wave: null }, source: 'S-Oil_입항정보',
+  },
+  '한국석유공사원유부이': {
+    // 부이 계류는 부두보다 임계가 낮다 — 온산 전체에서 가장 먼저 걸리는 중단 풍속
+    stop: { wind: 12, wave: 1.5 }, unberth: { wind: 15, wave: null },
+    disconnect: { wind: 15, wave: null }, source: '석유공사_입항정보',
   },
   default: {
-    stop: { wind: 14, wave: 1.5 }, unberth: { wind: 17, wave: null },
-    disconnect: { wind: 20, wave: 2.0 }, source: '기본 임계',
+    stop: { wind: 14, wave: 1.5 }, unberth: { wind: null, wave: null },
+    disconnect: { wind: null, wave: null }, source: '전역 기본 임계(__GLOBAL_DEFAULT__)',
   },
 };
 
@@ -248,13 +275,30 @@ function fmtForecastWarning(fw) {
     (fw.reasons?.length ? ` — ${fw.reasons.join(', ')}` : '');
 }
 
+/** 백엔드 thresholds_used(ThresholdsUsed) → 화면 칩 형식 */
+function mapThresholds(t) {
+  if (!t) return null;
+  return {
+    stop: { wind: t.stop?.wind_ms ?? null, wave: t.stop?.wave_m ?? null },
+    unberth: { wind: t.unberth?.wind_ms ?? null, wave: t.unberth?.wave_m ?? null },
+    disconnect: { wind: t.disconnect?.wind_ms ?? null, wave: t.disconnect?.wave_m ?? null },
+    source: t.source || (t.is_global_default ? '전역 기본 임계' : t.berth_group),
+    berth_group: t.berth_group,
+    is_global_default: Boolean(t.is_global_default),
+  };
+}
+
 function mapWeather(r, berthGroup) {
   return {
     berth_group: berthGroup,
     status: r.status,
     reasons: r.reasons || [],
-    // 백엔드는 임계값 자체를 응답에 싣지 않는다 → 표시용으로 로컬 표를 함께 보여준다.
-    thresholds_used: LOCAL_THRESHOLDS[berthGroup] || LOCAL_THRESHOLDS.default,
+    // 판정에 실제로 쓴 임계값을 백엔드가 함께 돌려준다(thresholds_used).
+    // 로컬 표는 백엔드가 죽었을 때만 쓰는 폴백이다 — 예전에는 응답에 임계가 없어
+    // 항상 로컬 표를 그렸고, 그 표에 8개 부두그룹 중 3개만 있어서 "판정은 DB
+    // 임계로, 표시는 다른 임계로" 하는 화면이 됐다(석유공사부이 중단 12 → 14로 표시).
+    thresholds_used: mapThresholds(r.thresholds_used)
+      || LOCAL_THRESHOLDS[berthGroup] || LOCAL_THRESHOLDS.default,
     observed: {
       wind: r.wind?.value ?? null, wave: r.wave?.value ?? null,
       station: r.wind?.station_name || r.wave?.station_name || null,
@@ -324,8 +368,25 @@ function mapOrchestration(r) {
     anchorage: r.anchorage_assignment?.name || null,
     berth_decision: { path, trace, anchorage: r.anchorage_assignment?.name || null },
     risk_level: r.safety_assessment?.risk_level || null,
+    // 안전 판정의 근거 — 예전엔 등급만 넘겨서 협상 콘솔의 안전 에이전트 발화가
+    // "안전 판정: 위험" 한 줄로 끝났다(기상·스케줄링은 근거를 보여주는데 안전만
+    // 비어 있었다). "왜 위험인지"가 이 시스템의 핵심인데 그게 안 보였다.
+    safety_reasoning: r.safety_assessment?.reasoning || null,
+    safety_hazards: r.safety_assessment?.key_hazards || [],
+    safety_imdg: (r.safety_assessment?.imdg_conflicts || []).map(
+      (c) => `${c.adjacent_berth} ${c.adjacent_name} (${c.target_imdg_class} ↔ ${c.adjacent_imdg_class}) 격리코드 ${c.segregation_code}`
+    ),
+    safety_conflicts: (r.safety_assessment?.conflicts || []).map(
+      (c) => `${c.adjacent_berth} ${c.adjacent_name} — ${c.shared_category} 혼재금지`
+    ),
+    safety_checklist: r.safety_assessment?.checklist || [],
     weather_grade: r.weather_assessment?.status || null,
+    weather_reasons: r.weather_assessment?.reasons || [],
     summary: r.summary,
+    // GanttChart 가 승인 건을 예정 작업으로 얹을 때 쓰는 표시용 이름.
+    // 예전엔 이 두 필드가 없어 간트에 "undefined (시뮬레이션 배정)"이 생겼다.
+    vessel_name: r._vessel_name || null,
+    cargo_name: r._cargo_name || null,
     rejected_candidates: r.rejected_candidates || [],
     is_local_fallback: false,
     source: 'BACKEND_ORCHESTRATOR',
@@ -433,12 +494,15 @@ export default function useOnsanApi() {
         })
         : null;
 
-      const result = data ? mapOrchestration(data) : {
+      // 백엔드 응답에는 "무슨 배로 물었는지"가 없다(요청만 알고 있는 정보다).
+      // 화면이 결과를 그 배 이름으로 표시할 수 있게 요청값을 함께 실어 둔다.
+      const result = data ? mapOrchestration({ ...data, _vessel_name: vesselName, _cargo_name: cargoName }) : {
         status: 'PENDING',
         decision_label: '판단 보류',
         berth_assigned: null, anchorage: null,
         berth_decision: { path: null, trace: ['백엔드 오케스트레이터 응답 없음 — 판단 보류'], anchorage: null },
         risk_level: null, weather_grade: null,
+        vessel_name: vesselName, cargo_name: cargoName,
         summary: cargo ? '백엔드 응답이 없어 배정 판단을 보류합니다.' : `화물 '${cargoName}' CAS 매핑이 없어 조회할 수 없습니다.`,
         is_local_fallback: true, source: 'LOCAL_FALLBACK',
       };

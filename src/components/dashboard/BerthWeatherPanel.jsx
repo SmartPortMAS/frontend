@@ -78,8 +78,8 @@ export default function BerthWeatherPanel() {
   const th = verdict?.thresholds_used;
 
   const inputStyle = {
-    width: '80px', background: COLORS.card, color: COLORS.textPrimary,
-    border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '8px 10px', fontSize: '14px',
+    width: '96px', background: COLORS.card, color: COLORS.textPrimary,
+    border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '10px 12px', fontSize: '14.5px',
   };
   // 백엔드가 응답 중일 땐 서버가 DB 실측치로 직접 판정하고 이 값은 요청에 아예 안 실린다
   // (postJson('/weather/assess', ...) 참고, wind_speed/wave_height 필드 자체가 없음) —
@@ -101,7 +101,7 @@ export default function BerthWeatherPanel() {
     >
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 className="glass-card-title"><FaAnchor style={{ marginRight: '8px', color: COLORS.teal }} />선석별 하역 판정 (온산 MVP)</h3>
-        <span style={{ fontSize: '12px', color: COLORS.textDim }}>터미널 입항정보 9.8 실측 임계 · 3단계 에스컬레이션</span>
+        <span style={{ fontSize: '12px', color: COLORS.textDim }}>터미널 입항정보 9.8 실측 임계 · 정상→하역중단→이안→호스분리 4단계</span>
       </div>
 
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '16px' }}>
@@ -159,11 +159,11 @@ export default function BerthWeatherPanel() {
       {verdict && (
         <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <div style={{
-            minWidth: '170px', textAlign: 'center', padding: '16px',
+            minWidth: '210px', textAlign: 'center', padding: '22px 20px',
             background: COLORS.card, border: `2px solid ${style.color}`, borderRadius: '12px',
           }}>
-            <div style={{ fontSize: '28px', fontWeight: 800, color: style.color }}>{verdict.status}</div>
-            <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginTop: '4px' }}>{style.label}</div>
+            <div style={{ fontSize: '34px', fontWeight: 800, color: style.color, lineHeight: 1.15 }}>{verdict.status}</div>
+            <div style={{ fontSize: '13px', color: COLORS.textSecondary, marginTop: '6px' }}>{style.label}</div>
           </div>
 
           <div style={{ flex: 1, minWidth: '260px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -189,7 +189,7 @@ export default function BerthWeatherPanel() {
                 )}
               </div>
             )}
-            <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: COLORS.textPrimary, lineHeight: 1.7 }}>
+            <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: COLORS.textPrimary, lineHeight: 1.8 }}>
               {(verdict.reasons || []).map((r, i) => <li key={i}>{r}</li>)}
             </ul>
             {precipObserved && (

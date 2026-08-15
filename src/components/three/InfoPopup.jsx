@@ -1,8 +1,6 @@
-import { useState } from 'react';
 import { Html } from '@react-three/drei';
 import {
-  FaTimes, FaShip, FaDatabase, FaWater, FaAnchor,
-  FaCheckCircle, FaExclamationTriangle,
+  FaTimes, FaShip, FaDatabase, FaWater, FaAnchor, FaFlask,
 } from 'react-icons/fa';
 import {
   ONSAN_BERTHS,
@@ -21,9 +19,22 @@ function Row({ label, value }) {
   );
 }
 
-export default function InfoPopup({ object, onClose }) {
-  const [isHumanApproved, setIsHumanApproved] = useState(false);
+/** 탱크·배관 계측값이 실측이 아님을 그 자리에서 밝힌다.
+ *  센서 데이터 탭에는 이 고지가 있는데 3D 트윈에는 없어서, 같은 값이 한 화면에선
+ *  데모, 다른 화면에선 계측값처럼 보였다. */
+function MockNotice() {
+  return (
+    <div style={{
+      marginTop: '10px', fontSize: '11px', color: '#f59e0b', lineHeight: 1.5,
+      display: 'flex', gap: '6px', alignItems: 'flex-start',
+    }}>
+      <FaFlask style={{ marginTop: '2px', flexShrink: 0 }} />
+      <span>데모 값 — 수위·온도·압력·유량 계측기는 미도입이라 수집 소스가 없습니다.</span>
+    </div>
+  );
+}
 
+export default function InfoPopup({ object, onClose }) {
   if (!object) return null;
 
   // 저장된 type 필드 우선. (구버전 id 접두어 추정은 'HMM ...' 선박을 오판하므로 폴백만)
@@ -60,24 +71,32 @@ export default function InfoPopup({ object, onClose }) {
 
             {type === 'Ship' && (
               <div className="hud-details">
-                <Row label="배정 선석" value={ONSAN_BERTHS[object.berth]?.name || object.berth} />
-                <Row label="화물" value={object.cargoType} />
-                <Row
-                  label="적재량"
-                  value={`${(object.cargoAmount ?? 0).toLocaleString()} / 50,000 t`}
-                />
-                <div className="progress-container">
-                  <div className="progress-bar" style={{ width: `${((object.cargoAmount ?? 0) / 50000) * 100}%` }}></div>
-                </div>
+                <Row label="배정 선석" value={ONSAN_BERTHS[object.berth]?.name || object.berth || '미배정'} />
+                <Row label="화물" value={object.cargoType || '미확인'} />
+                {/* 적재량은 수집 소스가 없다(useLiveTwinShips: cargoAmount=null).
+                    예전엔 "0 / 50,000 t" + 0% 진행바를 그렸는데, 50,000 은 근거 없는
+                    하드코딩이었고 0 t 는 "빈 배"라는 틀린 정보였다. 모르면 비운다. */}
+                <Row label="적재량" value={object.cargoAmount != null
+                  ? `${object.cargoAmount.toLocaleString()} t`
+                  : '미수집 (적재량 소스 없음)'} />
+                {object.callsgn && <Row label="호출부호" value={object.callsgn} />}
+                {object.mmsi && <Row label="MMSI" value={object.mmsi} />}
                 {object.vessel_speed != null && (
-                  <Row label="속력 / 침로" value={`${object.vessel_speed} kn / ${object.vessel_heading}°`} />
+                  <Row label="속력 / 침로" value={`${object.vessel_speed} kn / ${object.vessel_heading ?? '-'}°`} />
                 )}
-                <div className="hud-actions" style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-                  <button className="action-btn" onClick={() => alert('스케줄 재조정 요청 전송')} style={{ flex: 1, padding: '8px', background: '#38bdf8', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>스케줄 재조정</button>
-                </div>
+                {object.is_real && (
+                  <div style={{ marginTop: '8px', fontSize: '11px', color: '#10b981' }}>
+                    실 AIS 수신 선박 — 위치·속력·항해상태는 실측입니다
+                  </div>
+                )}
               </div>
             )}
 
+            {/* 탱크·배관은 계측기가 없어 데모 값이다(하드웨어 실물 8/3 보류).
+                예전엔 여기 "긴급 차단(ESD)"·"유속 감속"·"배관 차단" 버튼이 있었는데
+                전부 alert() 만 띄우고 아무것도 하지 않았다 — 안전 조작 버튼이
+                동작하는 척하는 건 관제 화면에서 가장 위험한 거짓말이라 걷어냈다.
+                실제 현장 제어(게이트 승인/차단·인터락)는 센서 데이터 탭에 있다. */}
             {type === 'Tank' && (
               <div className="hud-details">
                 <Row label="화물" value={object.cargoType} />
@@ -87,22 +106,17 @@ export default function InfoPopup({ object, onClose }) {
                 <div className="progress-container tank-progress">
                   <div className="progress-bar" style={{ width: `${object.level}%`, background: object.level > 90 ? '#ef4444' : '#10b981' }}></div>
                 </div>
-                <div className="hud-actions" style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-                  <button className="action-btn" onClick={() => alert('긴급 차단(ESD) 작동')} style={{ flex: 1, padding: '8px', background: '#ff4b6e', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>긴급 차단 (ESD)</button>
-                  <button className="action-btn" onClick={() => alert('유속 감소 명령 전송')} style={{ flex: 1, padding: '8px', background: '#f59e0b', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>유속 감속</button>
-                </div>
+                <MockNotice />
               </div>
             )}
 
             {type === 'Pipe' && (
               <div className="hud-details">
                 <Row label="구간" value={object.feedTo ? `탱크팜 → ${object.feedTo}` : '탱크팜 → 안벽'} />
-                <Row label="유량" value={`${(object.flowRate ?? 0).toLocaleString()} m³/h`} />
+                <Row label="유량" value={`${(object.flowRate ?? 0).toLocaleString()} t/h`} />
                 <Row label="압력" value={`${object.pressure?.toFixed(1)} bar`} />
                 <Row label="상태" value={(object.flowRate ?? 0) > 0 ? '이송 중' : '대기'} />
-                <div className="hud-actions" style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-                  <button className="action-btn" onClick={() => alert('배관 긴급 차단 명령 전송')} style={{ flex: 1, padding: '8px', background: '#ff4b6e', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>배관 차단</button>
-                </div>
+                <MockNotice />
               </div>
             )}
 
@@ -126,59 +140,25 @@ export default function InfoPopup({ object, onClose }) {
               </div>
             )}
 
-            {/* AI Safety Clearance Block (Human-in-the-loop) — 선박/탱크만 */}
-            {(type === 'Ship' || type === 'Tank') && (
-              <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isHumanApproved ? '#10b981' : '#f59e0b', fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>
-                  {isHumanApproved ? <FaCheckCircle /> : <FaExclamationTriangle />}
-                  {isHumanApproved ? '관제사 최종 승인 완료' : 'AI 권고: 관제사 승인 대기 중'}
-                </div>
-                <div style={{ background: 'rgba(0,0,0,0.4)', padding: '8px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '11px', color: '#94a3b8' }}>
-                  <div className="typing-text">&gt; GraphDB 인접 선석 화물 분석... OK</div>
-                  <div className="typing-text" style={{ animationDelay: '1s' }}>&gt; 선석별 기상 임계 판정... OK</div>
-                  <div className="typing-text" style={{ animationDelay: '2s' }}>&gt; 결정론 게이트 R1~R15 통과. 권고 도출 완료.</div>
-                  {!isHumanApproved ? (
-                    <div style={{ marginTop: '10px', animation: 'fadeIn 0.5s ease 3s forwards', opacity: 0 }}>
-                      <button
-                        onClick={() => setIsHumanApproved(true)}
-                        style={{ width: '100%', padding: '8px', background: '#f59e0b', color: '#000', fontWeight: 'bold', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                      >
-                        [ VTS 관제사 최종 승인 (Override) ]
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: '10px', color: '#10b981', fontWeight: 'bold' }}>
-                      &gt; [SYSTEM] 관제사(Oper-01) 승인 완료. 하역 개시.
-                    </div>
-                  )}
-                </div>
+            {/* 여기 있던 "AI 안전 승인" 블록을 걷어냈다.
+
+                판정 3줄("GraphDB 인접 선석 화물 분석... OK" 등)은 CSS 타이핑
+                애니메이션으로 찍는 고정 문자열이었고, 실제 판정을 부르지 않았다.
+                승인 버튼도 로컬 state 만 바꿔 "승인 완료"를 출력했을 뿐 어디에도
+                기록되지 않았다 — 판정하지 않고 판정한 척, 승인받지 않고 승인된 척
+                하는 화면이었다.
+
+                실제 판정은 두 곳에서 돈다:
+                  · 선박 클릭 → 대시보드 지도/목록의 선박 상세 (useVesselSafety)
+                  · 우하단 협상 콘솔 "종합 판정" (오케스트레이터 4에이전트) */}
+            {type === 'Ship' && object.is_real && (
+              <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.6 }}>
+                안전 판정(혼재금지·IMDG 격리)은 <strong style={{ color: '#e8f0f2' }}>대시보드 → 선박 상세</strong> 또는
+                우하단 <strong style={{ color: '#e8f0f2' }}>협상 콘솔의 종합 판정</strong>에서 실행합니다.
               </div>
             )}
           </div>
         </div>
-        <style>{`
-          .typing-text {
-            overflow: hidden;
-            white-space: nowrap;
-            border-right: 2px solid #10b981;
-            width: 0;
-            animation: typing 1.5s steps(30, end) forwards, blink-caret 0.75s step-end infinite;
-            opacity: 0;
-            animation-delay: 0.1s;
-          }
-          @keyframes typing {
-            0% { width: 0; opacity: 1; }
-            100% { width: 100%; opacity: 1; border-right: none; }
-          }
-          @keyframes blink-caret {
-            from, to { border-color: transparent; }
-            50% { border-color: #10b981; }
-          }
-          @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-          }
-        `}</style>
       </div>
     </Html>
   );

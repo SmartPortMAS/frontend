@@ -80,8 +80,14 @@ html, body, #root {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 24px;
+  padding: 28px 32px;
   position: relative;
+}
+
+/* 대시보드 카드 사이 간격 — 예전엔 각 섹션이 인라인 marginBottom:20px 을 따로
+   들고 있었다. 한 곳에서 정하면 카드 크기를 조정할 때 같이 움직인다. */
+.dashboard-page > .dash-section {
+  margin-bottom: 24px;
 }
 
 /* ── Sidebar ── */
@@ -158,12 +164,12 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px 16px;
+  padding: 14px 16px;
   border-radius: var(--radius);
   color: var(--text-secondary);
   text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
   transition: all var(--transition);
   position: relative;
   cursor: pointer;
@@ -249,7 +255,7 @@ html, body, #root {
 }
 
 .header-title {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
   background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
   -webkit-background-clip: text;
@@ -298,6 +304,131 @@ html, body, #root {
 .alert-badge {
   position: relative;
   cursor: pointer;
+  font-family: inherit;
+}
+
+/* ── 헤더 알림 벨 드롭다운 (구 대시보드 "경고 센터" 카드) ── */
+.alert-bell {
+  position: relative;
+}
+
+.alert-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(520px, calc(100vw - 48px));
+  /* 헤더 팝오버는 페이지 위 오버레이 전부보다 위에 떠야 한다.
+     아래 레이어들이 이미 자리를 잡고 있다 —
+       트윈 상단 경고 전광판 2000 · 선박 상세 패널 2500 · 협상 콘솔 3000
+     예전 값(1200)은 전광판(2000)보다 낮아서, 디지털 트윈에서 벨을 열면
+     드롭다운 상단이 전광판에 깔려 목록 머리가 가려졌다.
+     토스트(9999)만 이 위에 남긴다. */
+  z-index: 3200;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.alert-dropdown-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.alert-dropdown-allack {
+  background: var(--teal);
+  color: #04222b;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.alert-dropdown-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  padding: 4px;
+}
+
+.alert-dropdown-sub {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+
+.alert-dropdown-list {
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alert-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--card);
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
+.alert-row-level {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 1px 7px;
+  margin-top: 1px;
+}
+
+.alert-row-risk {
+  margin-left: 7px;
+  font-size: 10.5px;
+  font-weight: 800;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
+.alert-row-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--info);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.alert-row-btn--ack {
+  border: none;
+  background: var(--teal);
+  color: #04222b;
 }
 
 .alert-count {
@@ -317,13 +448,16 @@ html, body, #root {
 }
 
 /* ── Glass Card ── */
+/* 카드 여백·제목 크기는 관제 화면 기준으로 키웠다. 예전 값(패딩 20 / 제목 14px
+   대문자변환)은 대시보드를 한 화면에 욱여넣던 시절 값이라, 항목 수가 줄어든
+   지금은 내용이 실제보다 작고 빽빽해 보였다. */
 .glass-card {
   background: var(--glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 20px;
+  border-radius: var(--radius-lg);
+  padding: 26px 28px;
   transition: all var(--transition);
 }
 
@@ -336,34 +470,35 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
+/* text-transform: uppercase 를 뺐다 — 제목이 대부분 한글이라 효과가 없고,
+   영문·숫자만 커져서 '온산항 관제 지도' 같은 제목이 뒤죽박죽으로 보였다. */
 .glass-card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
 }
 
 /* ── KPI Cards ── */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  margin-bottom: 28px;
 }
 
 .kpi-card {
   background: var(--glass);
   backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 20px;
+  border-radius: var(--radius-lg);
+  padding: 26px 28px;
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
+  align-items: center;
+  gap: 20px;
   transition: all var(--transition);
   position: relative;
   overflow: hidden;
@@ -390,13 +525,13 @@ html, body, #root {
 .kpi-card:hover::before { opacity: 1; }
 
 .kpi-icon {
-  width: 48px;
-  height: 48px;
+  width: 60px;
+  height: 60px;
   border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: 27px;
   flex-shrink: 0;
 }
 
@@ -406,31 +541,33 @@ html, body, #root {
 }
 
 .kpi-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: -0.1px;
+  margin-bottom: 6px;
 }
 
 .kpi-value {
-  font-size: 28px;
+  font-size: 40px;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.1;
+  /* 숫자가 폴링마다 바뀌어도 자릿수 폭이 흔들리지 않게 */
+  font-variant-numeric: tabular-nums;
 }
 
 .kpi-unit {
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 500;
   color: var(--text-dim);
-  margin-left: 4px;
+  margin-left: 5px;
 }
 
 .kpi-change {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  margin-top: 4px;
+  margin-top: 7px;
+  line-height: 1.5;
 }
 
 .kpi-change.positive { color: var(--teal); }
@@ -563,22 +700,52 @@ html, body, #root {
   display: grid;
   grid-template-columns: 1fr 400px;
   gap: 20px;
-  height: calc(100vh - var(--header-height) - 48px);
+  /* page-content 세로 패딩(28px × 2)을 뺀 높이 — 이 값이 어긋나면 안전 페이지
+     오른쪽 열이 화면 밖으로 밀린다 */
+  height: calc(100vh - var(--header-height) - 56px);
+  min-height: 0;
 }
 
+/* 왼쪽(심사 폼 + 안전지수)은 세로로 길다 — 예전엔 overflow:hidden 이라 화면을 넘는
+   부분이 잘려 나갔고, 스크롤도 안 됐다. 심사를 실행하면 결과·게이트·체크리스트가
+   아래로 붙는데 그게 통째로 안 보이는 상태였다. 자체 프레임(배경·테두리)도 뺀다 —
+   안에 들어가는 glass-card 들이 이미 각자 프레임을 갖고 있어 이중 액자였다. */
 .safety-graph-container {
   position: relative;
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  overflow: hidden;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
 }
 
+/* 오른쪽(현재 위험 선석)은 카드가 열 높이를 채우고 목록만 안에서 구른다 —
+   "위험 선석 24개" 헤더가 스크롤에 딸려 올라가지 않게 하기 위함. */
 .safety-panel {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.safety-panel > .glass-card {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 좁은 화면(노트북 세로 분할·프로젝터)에서는 한 열로 쌓고 페이지 자체를 스크롤한다 */
+@media (max-width: 1100px) {
+  .safety-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .safety-graph-container,
+  .safety-panel {
+    overflow: visible;
+    height: auto;
+  }
+  .safety-panel > .glass-card {
+    flex: none;
+  }
 }
 
 .safety-grade-badge {

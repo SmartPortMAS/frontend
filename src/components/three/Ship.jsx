@@ -24,6 +24,9 @@ const STATUS_META = {
   approaching: { label: '입항 중', color: '#3a86ff' },
   departing: { label: '출항 중', color: '#8338ec' },
   anchored: { label: '묘박 중', color: '#ffd166' },
+  // AIS 항해상태로는 들어오는 배인지 나가는 배인지 알 수 없다. 방향을 지어내는
+  // 대신 '항해 중'으로 둔다 (실데이터 선박은 대부분 여기에 해당).
+  underway: { label: '항해 중', color: '#3a86ff' },
 };
 
 const shipLabelStyle = {

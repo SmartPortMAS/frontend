@@ -1,28 +1,66 @@
 import useSensorStore from '../stores/useSensorStore';
 import HardwarePanel from '../components/sensor/HardwarePanel';
 import { TankModel, PipeModel } from '../components/sensor/EquipmentModels';
+import { COLORS } from '../utils/constants';
+import { FaFlask } from 'react-icons/fa';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 센서 데이터 — 현장 설비 계측
+//
+// 이 화면만 실데이터가 아니다. 그 사실을 화면이 직접 말해야 한다.
+//
+// 예전에는 "IoT 센서 네트워크에서 수집되는 실시간 데이터"라고 적고 우상단에 빨간
+// "WebSocket Disconnected" 를 띄우고 있었다. 둘 다 사실과 달랐다 —
+//   · 수집하는 IoT 센서가 없다(탱크 수위계·유량계·압력계는 8/3 회의에서 실물 보류).
+//   · 끊긴 게 아니라 애초에 연결을 시도하는 코드가 어디에도 마운트돼 있지 않았다.
+//     (useWebSocket 훅은 존재했지만 어느 컴포넌트도 부르지 않았다. WS_URL 도 8000을
+//      보고 있었는데 백엔드는 8001이고 /ws 엔드포인트 자체가 없다.)
+//
+// 그래서 "고장난 실시간"처럼 보였다. 지금은 시뮬레이션이라고 밝히고, 무엇이 있으면
+// 실데이터가 되는지까지 적는다. 값이 멈춰 있는 것도 정상 동작이라고 말해 둔다.
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function SensorPage() {
-  const { tanks, pipes, connected } = useSensorStore();
+  const { tanks, pipes } = useSensorStore();
 
   return (
     <div className="page-content" style={{ padding: '0' }}>
-      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
         <div>
-          <h2 style={{ fontSize: '20px', marginBottom: '8px' }}>센서 데이터 스트림</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-            IoT 센서 네트워크에서 수집되는 실시간 데이터를 설비 모형으로 표시합니다.
+          <h2 style={{ fontSize: '20px', marginBottom: '8px' }}>센서 데이터 — 현장 설비 계측</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: 0 }}>
+            저장탱크·이송배관·승인 게이트의 설비 모형입니다.
           </p>
         </div>
-        <div className={`sensor-status ${connected ? 'online' : 'offline'}`} style={{ padding: '8px 16px', fontSize: '13px' }}>
-          {connected ? 'WebSocket Connected' : 'WebSocket Disconnected'}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px',
+          fontSize: '13px', fontWeight: 700, color: COLORS.yellow,
+          background: `${COLORS.yellow}14`, border: `1px solid ${COLORS.yellow}55`, borderRadius: '20px',
+        }}>
+          <FaFlask /> 시뮬레이션 모드
         </div>
+      </div>
+
+      <div style={{
+        fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7, marginBottom: '28px',
+        background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: '10px', padding: '12px 16px',
+      }}>
+        <strong style={{ color: COLORS.yellow }}>이 화면의 값은 실측이 아닙니다.</strong>{' '}
+        탱크 수위·온도·압력과 배관 유량은 현장 계측기에서만 나오는 값인데, 하드웨어 실물
+        도입이 보류돼 수집 경로가 없습니다. 대시보드·안전 관제·디지털 트윈은 전부 실수집
+        데이터(AIS·PORT-MIS·기상·MSDS)로 동작하며, <strong style={{ color: COLORS.textPrimary }}>이 탭만 데모 값</strong>입니다.
+        <br />
+        게이트 노드(라즈베리파이 + 릴레이)를 연결하면 승인/차단·인터락은 이 화면에서
+        그대로 실동작으로 바뀝니다 — 판정 근거(혼재금지)는 이미 실데이터로 돌고 있습니다.
       </div>
 
       <HardwarePanel />
 
       <h3 style={{ fontSize: '16px', margin: '32px 0 16px', color: 'var(--teal)' }}>
         탱크 센서 — 저장탱크 수위·온도·압력
+        <span style={{ fontSize: '12px', fontWeight: 400, color: COLORS.textDim, marginLeft: '8px' }}>
+          (데모 값 · 고정)
+        </span>
       </h3>
       <div className="sensor-grid">
         {tanks.map((tank) => (
@@ -32,6 +70,9 @@ export default function SensorPage() {
 
       <h3 style={{ fontSize: '16px', margin: '32px 0 16px', color: 'var(--teal)' }}>
         배관 센서 — 이송 라인 유량·압력
+        <span style={{ fontSize: '12px', fontWeight: 400, color: COLORS.textDim, marginLeft: '8px' }}>
+          (데모 값 · 고정)
+        </span>
       </h3>
       <div className="sensor-grid">
         {pipes.map((pipe) => (

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
+import { OPERATOR_NAME } from '../utils/constants';
 
-// Dummy initial data to make UI look good immediately
+// 탱크·배관은 계측기 미도입으로 수집 소스가 없다 — 센서 데이터 탭과 3D 트윈이
+// 화면에서 "데모 값"이라고 밝히고 쓴다.
 const initialTanks = [
   { id: 'T-101', type: 'Tank', status: 'active', level: 85, temperature: 22.5, pressure: 1.2, cargoType: 'Crude Oil' },
   { id: 'T-102', type: 'Tank', status: 'active', level: 45, temperature: 21.0, pressure: 1.0, cargoType: 'Gasoline' },
@@ -10,17 +12,15 @@ const initialTanks = [
   { id: 'T-106', type: 'Tank', status: 'active', level: 60, temperature: 20.0, pressure: 1.1, cargoType: 'Gasoline' },
 ];
 
-// berth 는 geoUtils BERTHS 의 키와 일치해야 3D 장면에서 해당 선석에 계류된다.
-// status: 'operating'(하역 중) | 'mooring'(계류) | 'arriving'(입항) | 'departing'(출항)
-// berth 는 geoUtils ONSAN_BERTHS_3D 의 키(온산 berth_id) — 대시보드 mock 배정과 일치
-const initialShips = [
-  { id: 'HMM GOODWILL', type: 'Ship', status: 'operating', berth: 'CY-OTK1', cargoAmount: 32000, cargoType: '에탄올' },
-  { id: 'WOOYANG CHEMI', type: 'Ship', status: 'operating', berth: 'SA-JI1', cargoAmount: 18000, cargoType: '자일렌' },
-  { id: 'PACIFIC GLORY', type: 'Ship', status: 'mooring', berth: 'SA-SO1', cargoAmount: 24000, cargoType: '등유' },
-  { id: 'GAS UTOPIA', type: 'Ship', status: 'arriving', berth: 'CY-OTK2', cargoAmount: 15000, cargoType: '부타디엔' },
-  { id: 'ULSAN PIONEER', type: 'Ship', status: 'departing', berth: 'SA-SO2', cargoAmount: 0, cargoType: '가솔린' },
-  { id: 'SUN VENUS', type: 'Ship', status: 'anchored', berth: null, anchorage: 'E2', cargoAmount: 21000, cargoType: '톨루엔' },
-];
+// 트윈 선박은 useLiveTwinShips 가 실 AIS(upa_vessel_position + 재항 화물)로 채운다.
+//
+// 예전에는 여기에 'HMM GOODWILL 에탄올 32,000t' 같은 6척이 박혀 있었다. 초기값이자
+// 사실상의 폴백이어서, 백엔드가 죽거나 온산 범위에 실선박이 0척이면 트윈·레이더·
+// 교통목록·선석바가 전부 이 가짜 6척을 실선박처럼 계속 표시했다. 화면 어디에도
+// "지금 폴백 중"이라는 표시가 없어 구분할 방법이 없었다.
+//
+// 빈 배열로 시작한다 — 실데이터가 없으면 각 화면이 "신호 없음"이라고 말한다.
+const initialShips = [];
 
 const initialPipes = [
   { id: 'P-01', type: 'Pipe', flowRate: 1500, pressure: 4.5, status: 'active' },
@@ -57,6 +57,14 @@ const useSensorStore = create((set, get) => ({
 
   setConnected: (val) => set({ connected: val }),
 
+  // 디지털 트윈 선박을 실데이터로 교체한다(useLiveTwinShips).
+  //
+  // 빈 배열도 그대로 반영한다. 예전에는 빈 배열을 무시했는데, 그러면 수집이 끊겨
+  // 실선박이 0척이 된 상황에서 직전 목록이 화면에 그대로 남아 "배가 있다"고
+  // 말하게 된다. 없으면 없다고 말하는 편이 맞다 — 각 HUD 가 "신호 없음"을
+  // 표시하도록 되어 있다.
+  setShips: (ships) => set(Array.isArray(ships) ? { ships } : {}),
+
   setSelectedObject: (obj) => set({ selectedObject: obj }),
 
   // 온산 MVP 에이전트 패널 상태 (/api/v1/*)
@@ -71,10 +79,30 @@ const useSensorStore = create((set, get) => ({
   selectedVessel: null,
   setSelectedVessel: (v) => set({ selectedVessel: v }),
 
+  // 경고 → 안전 심사 연결. 경고 카드에서 선석을 고르면 그 경고의 내용이 여기 담기고,
+  // 안전 심사 폼(SafetyGatesPanel)이 받아서 폼을 채운다.
+  //
+  // 이게 없으면 경고가 막다른 길이 된다 — "가스부두 혼재 위험"을 보고도 그 선석을
+  // 심사하려면 화면을 옮겨 선석을 손으로 다시 고르고 화물을 찾아 넣어야 했다.
+  //
+  // chem_ids 까지 받는 이유: 선석 이름만 넘기면 폼이 그 선석의 '첫 번째' 화물을
+  // 집어넣는다. 경고는 "가솔린 ↔ 부탄"인데 심사는 케로젠으로 도는 일이 실제로
+  // 생겼다. 경고가 지목한 두 물질을 그대로 넘겨 같은 판정을 재현하게 한다.
+  // { berth_name, chem_ids, at } — at 은 같은 선석을 다시 눌러도 반응하게 하는 값.
+  safetyPrefill: null,
+  setSafetyPrefill: (berthNameOrPayload) => set(() => {
+    if (!berthNameOrPayload) return { safetyPrefill: null };
+    const payload = typeof berthNameOrPayload === 'string'
+      ? { berth_name: berthNameOrPayload }
+      : berthNameOrPayload;
+    if (!payload.berth_name) return { safetyPrefill: null };
+    return { safetyPrefill: { chem_ids: [], ...payload, at: Date.now() } };
+  }),
+
   // 경고 확인(acknowledge) 이력 — { alertId: { by, at } }
   alertAcks: {},
   ackAlert: (id) => set((s) => ({
-    alertAcks: { ...s.alertAcks, [id]: { by: '함현우 (관제)', at: new Date().toISOString() } },
+    alertAcks: { ...s.alertAcks, [id]: { by: OPERATOR_NAME, at: new Date().toISOString() } },
   })),
   setBerthGroups: (v) => set({ berthGroups: v }),
   setBerthWeather: (v) => set({ berthWeather: v }),
