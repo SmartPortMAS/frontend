@@ -5,7 +5,7 @@
 빈 화면이 된다. 응답을 미리 받아 화면과 함께 배포하면 서버 없이도 열린다
 (데이터는 굳힌 시점에 고정 — 실시간이 필요한 회의 때는 터널 주소를 쓴다).
 
-전제: 관제시스템_시작.bat 으로 8000·8001 이 떠 있을 것.
+전제: 관제시스템_시작.bat 으로 백엔드(8001)가 떠 있을 것.
 실행:  python scripts/make_snapshot.py     (루트의 스냅샷_만들기.bat 이 호출)
 """
 import json
@@ -17,12 +17,10 @@ import urllib.request
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(BASE, "public", "snapshot")
 
-MOCK = "http://localhost:8000/api"
 BACKEND = "http://localhost:8001/api/v1"
 
 # 저장 키는 화면이 호출하는 경로와 1:1 로 맞춘다 (snapshotMode.js 가 이 키로 찾는다)
 GETS = {
-    "/api/dashboard": f"{MOCK}/dashboard",
     "/api/v1/dashboard/weather": f"{BACKEND}/dashboard/weather",
     "/api/v1/dashboard/vessels": f"{BACKEND}/dashboard/vessels",
     "/api/v1/dashboard/berths": f"{BACKEND}/dashboard/berths",
@@ -96,8 +94,8 @@ def main() -> None:
             print(f"[실패] weather/assess {g}: {e}")
     snap["/api/v1/weather/assess"] = wx
 
-    if not snap.get("/api/dashboard"):
-        sys.exit("대시보드 응답을 못 받았습니다 - 관제시스템_시작.bat 으로 서버부터 켜세요")
+    if not snap.get("/api/v1/dashboard/vessels"):
+        sys.exit("백엔드 응답을 못 받았습니다 - 관제시스템_시작.bat 으로 서버부터 켜세요")
 
     path = os.path.join(OUT, "snapshot.json")
     with open(path, "w", encoding="utf-8") as f:
