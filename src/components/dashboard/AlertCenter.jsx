@@ -28,7 +28,8 @@ export default function AlertCenter() {
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
 
   const alerts = data?.alerts ?? [];
-  const vessels = data?.vessels ?? [];
+  // 경고에 딸린 '선박 보기' 버튼용 — 실AIS 목록에서 찾는다(mock 아님)
+  const vessels = data?.real_traffic ?? [];
   const unackedCount = alerts.filter((a) => !alertAcks[alertId(a)]).length;
   // 규칙엔진 실판정인지, 백엔드가 죽어 mock-server 폴백인지 화면에 드러낸다
   const fromRuleEngine = data?.data_source?.alerts === 'REAL_RULE_ENGINE';

@@ -55,9 +55,13 @@ async function doRefresh() {
       const backend = await fetchBackendDashboard();
       if (!backend) throw new Error('백엔드 응답 없음 (8001)');
 
-      const base = advanceMockVessels(dataRef); // 시연용 선박·하역작업 (실소스 없음)
+      // 하역 진행률(operations)만 실데이터 소스가 없어 내장 mock 을 쓴다.
+      // 선박 목록(vessels)은 넘기지 않는다 — 화면이 실AIS(real_traffic)만 보게 해서
+      // 수집이 끊겼을 때 가짜 배가 진짜처럼 뜨는 일을 구조적으로 막는다.
+      const base = advanceMockVessels(dataRef);
       const merged = {
         ...base,
+        vessels: [],
         // 기상은 전부 백엔드(mart.weather_now) — 풍속·풍향·돌풍이 같은 관측에서 온다
         weather: backend.weather,
         real_traffic: backend?.realTraffic ?? [],

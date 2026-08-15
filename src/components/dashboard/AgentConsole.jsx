@@ -137,9 +137,9 @@ export default function AgentConsole() {
     () => (data?.real_traffic ?? []).filter((v) => v.is_liquid_cargo_vessel && v.cargo),
     [data]
   );
-  const vessels = realCargoVessels.length > 0
-    ? realCargoVessels
-    : (data?.vessels ?? []).filter((v) => v.is_liquid_cargo_vessel);
+  // 폴백 없음 — 실화물이 확인된 배만 판정 대상으로 둔다.
+  // mock 데모 선박으로 대체하면 실제로 없는 배를 판정하게 된다.
+  const vessels = realCargoVessels;
   // 우선순위: 콘솔에서 직접 고른 선박 > 지도/목록에서 클릭한 선박(전역) > 첫 번째 후보
   const target = localTarget && vessels.some((v) => v.port_call_id === localTarget.port_call_id)
     ? localTarget

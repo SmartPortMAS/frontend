@@ -100,11 +100,14 @@ function VesselPopup({ vessel }) {
   );
 }
 
+// 지도에 겹치는 두 레이어를 범례에서 구분한다 — 둘 다 실 AIS 지만 아는 정보가 다르다.
+//   배 아이콘 : 위치 + 재항 화물까지 확인된 배 (클릭 -> 상세·안전판정)
+//   점       : 위치만 확인된 배
 const LEGEND_ITEMS = [
-  { color: COLORS.red, label: '위험물(액체화물) 선박' },
-  { color: NAV_STATUS.UNDER_WAY.color, label: '항해 중' },
-  { color: NAV_STATUS.AT_ANCHOR.color, label: '묘박 중' },
-  { color: NAV_STATUS.MOORED.color, label: '접안 중' },
+  { color: COLORS.red, label: '🚢 배 아이콘 — 화물까지 확인 (클릭 시 판정)' },
+  { color: COLORS.red, label: '● 액체화물선 (PORT-MIS 선종 확인)' },
+  { color: '#38bdf8', label: '● 항해 중 (선종 미확인)' },
+  { color: '#8ba3b8', label: '● 정박·계류 중 (선종 미확인)' },
   { color: COLORS.info, label: '온산 액체화물 선석 (12개소 표시)' },
   { color: COLORS.yellow, label: 'ADJACENT_TO 혼재감시 쌍' },
 ];
@@ -135,7 +138,10 @@ export default function PortMap() {
       })),
     [data]
   );
-  const vessels = realCargoVessels.length > 0 ? realCargoVessels : (data?.vessels ?? []);
+  // 폴백 없음. 예전엔 화물 매칭이 0건이면 mock 데모 선박 6척으로 대체했는데,
+  // 수집이 끊기거나 매칭이 실패한 상황에서 가짜 배가 진짜처럼 지도에 떴다.
+  // 실데이터가 없으면 아무것도 그리지 않는 편이 정직하다.
+  const vessels = realCargoVessels;
   // 실백엔드(upa_vessel_position) AIS 레이어 — 위 아이콘으로 이미 표시된 선박은
   // 제외해 같은 배가 아이콘·점으로 두 번 찍히지 않게 한다.
   const realTraffic = useMemo(() => {
