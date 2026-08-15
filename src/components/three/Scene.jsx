@@ -5,16 +5,23 @@ import { BlendFunction } from 'postprocessing';
 import { Suspense } from 'react';
 import Port from './Port';
 import Water from './Water';
-import WeatherEffects from './WeatherEffects';
 import useSensorStore from '../../stores/useSensorStore';
 
+// WeatherEffects(비 입자 10,000개)는 걷어냈다. store.weather 를 읽는데 그 값을
+// 채우는 경로가 없어 useFrame 이 즉시 return 했고, 읽는 필드명(wind_speed·visibility)도
+// 실제 계약(wind_speed_ms·visibility_m)과 달라 연결해도 동작하지 않았다.
+// 파티클만 만들어 놓고 한 번도 렌더하지 않는 순수 비용이었다.
+
 function SimulationEnvironment() {
-  const timestamp = useSensorStore((s) => s.timestamp);
   const predictionOffset = useSensorStore((s) => s.predictionOffset);
 
-  let hour = timestamp
-    ? new Date(timestamp).getHours() + new Date(timestamp).getMinutes() / 60
-    : 12;
+  // 기준 시각은 현재 시각이다.
+  //
+  // 예전엔 store.timestamp 를 읽었는데 그 값을 채우는 코드가 없어(WebSocket 경로
+  // 잔해) 항상 폴백인 정오로 고정됐다. 밤 10시에도 부두는 한낮이었고, 같은 화면의
+  // CCTV 패널은 실제 시각으로 야간·IR 을 그려서 둘이 어긋났다.
+  const now = new Date();
+  let hour = now.getHours() + now.getMinutes() / 60;
   hour = (hour + predictionOffset / 60) % 24;
   if (hour < 0) hour += 24;
 
@@ -68,7 +75,6 @@ function SimulationEnvironment() {
 
       <Water />
       <Port />
-      <WeatherEffects />
 
       <EffectComposer disableNormalPass>
         <Bloom luminanceThreshold={0.55} mipmapBlur intensity={0.8} />

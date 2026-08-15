@@ -59,8 +59,11 @@ export default function useLiveTwinShips() {
   const setShips = useSensorStore((s) => s.setShips);
 
   useEffect(() => {
+    if (!setShips) return;
     const traffic = (data?.real_traffic ?? []).filter(inOnsan);
-    if (!traffic.length || !setShips) return;
+    // 온산 범위에 배가 없으면 빈 목록을 그대로 넣는다 — 직전 목록을 남겨 두면
+    // 수집이 끊긴 화면이 "배가 있다"고 말하게 된다.
+    if (!traffic.length) { setShips([]); return; }
 
     // 온산 선석이 확인된 배를 먼저 세운다 — 트윈은 온산 부두를 그린 화면이라
     // 선석을 모르는 배만 잔뜩 띄우면 부두가 비어 보인다.
