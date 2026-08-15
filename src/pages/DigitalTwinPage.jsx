@@ -7,6 +7,7 @@ import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import useSensorStore from '../stores/useSensorStore';
+import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
@@ -18,6 +19,8 @@ const OMNIVERSE_PORTS = [5173, 5174, 5175, 5176];
 const omniverseUrl = (port) => `http://localhost:${port}`;
 
 export default function DigitalTwinPage() {
+  // 트윈 선박을 실 AIS·재항 화물로 채운다 (예전엔 스토어에 6척이 하드코딩돼 있었다)
+  useLiveTwinShips();
   const [showMap, setShowMap] = useState(false);
   const [showOmniverseStream, setShowOmniverseStream] = useState(false);
   // 'checking' | 'ok' | 'unreachable'

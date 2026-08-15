@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import useOnsanApi, { useChemicalList } from '../../hooks/useOnsanApi';
+import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
 import { onsanAdjacentBerthNames } from '../../utils/geoUtils';
@@ -44,6 +45,34 @@ export default function SafetyGatesPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chemicals]);
   const [showAllGates, setShowAllGates] = useState(false);
+
+  // ── 재항 선박에서 불러오기 ────────────────────────────────────────────────
+  // 지금까지는 화물·선석을 사람이 골라 넣어야 했다. 실제 관제는 "지금 저 배가
+  // 붙어도 되나"를 묻는 일이므로, 실제로 재항 중인 배를 고르면 그 배의 화물과
+  // 선석이 폼에 그대로 들어오게 한다 (mart.berth_current_cargo 실데이터).
+  const { data: dash } = useDashboardData();
+  const berthedVessels = (dash?.berth_cargo ?? [])
+    .filter((r) => r.callsgn && r.facility_name)
+    .slice(0, 60);
+
+  const loadFromBerthed = (idx) => {
+    const row = berthedVessels[Number(idx)];
+    if (!row) return;
+    // 인접 선석에 실제로 있는 화물을 같이 채운다 — 혼재 판정의 상대편이다.
+    const adjNames = onsanAdjacentBerthNames(row.facility_name);
+    const adjRow = (dash?.berth_cargo ?? []).find(
+      (r) => adjNames.includes(r.facility_name) && r.chem_id && r.callsgn !== row.callsgn
+    );
+    setForm((f) => ({
+      ...f,
+      // chem_id 가 없는 행(위험물인데 물질 미확인)은 화물을 바꾸지 않는다 —
+      // 임의의 물질로 채우면 없는 위험을 지어내는 셈이다.
+      cargo_chem_id: row.chem_id || f.cargo_chem_id,
+      berth_name: row.facility_name,
+      adjacent_berth: adjRow?.facility_name || '',
+      adjacent_chem_id: adjRow?.chem_id || '',
+    }));
+  };
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
 
   const selectedCargo = chemicals.find((c) => c.chem_id === form.cargo_chem_id);
@@ -90,6 +119,35 @@ export default function SafetyGatesPanel() {
         </h3>
         <span style={{ fontSize: '12px', color: COLORS.textDim }}>결정론 판정 · LLM은 설명만</span>
       </div>
+
+      {/* 재항 선박에서 불러오기 — 수기 입력 대신 실제 붙어 있는 배를 고른다 */}
+      {berthedVessels.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px',
+          background: COLORS.card, border: `1px solid ${COLORS.border}`,
+          borderRadius: '8px', padding: '10px 12px',
+        }}>
+          <span style={{ fontSize: '12px', color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>
+            재항 선박에서 불러오기
+          </span>
+          <select
+            defaultValue=""
+            onChange={(e) => { loadFromBerthed(e.target.value); e.target.value = ''; }}
+            style={{ ...inputStyle, flex: 1 }}
+          >
+            <option value="">선박 선택 — 화물·선석·인접 화물이 자동으로 채워집니다</option>
+            {berthedVessels.map((r, i) => (
+              <option key={`${r.callsgn}-${i}`} value={i}>
+                {r.facility_name} · {r.callsgn} · {r.cargo_name || '물질 미확인'}
+                {r.chem_id ? '' : ' (판정 불가)'}
+              </option>
+            ))}
+          </select>
+          <span style={{ fontSize: '11px', color: COLORS.textDim, whiteSpace: 'nowrap' }}>
+            실데이터 {berthedVessels.length}건
+          </span>
+        </div>
+      )}
 
       {/* 입항 정보 폼 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '12px' }}>

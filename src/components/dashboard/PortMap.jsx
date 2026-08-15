@@ -119,6 +119,11 @@ export default function PortMap() {
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const { data } = useDashboardData();
+  const [showAis, setShowAis] = useState(false);
+  // 액체화물선만 보기 — 지도에 뜨는 배 대부분은 어선·예선처럼 우리 관제 대상이
+  // 아닌 배다(선종을 아는 배가 전체의 16%뿐이고, PORT-MIS 에 MMSI 가 없어
+  // 호출부호로만 붙일 수 있다는 구조적 한계). 관제 대상만 보고 싶을 때 켠다.
+  const [liquidOnly, setLiquidOnly] = useState(false);
   // 아이콘(클릭 시 상세패널) 레이어 — 실AIS + berth-cargo 실화물 조인 선박을 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
   // AgentConsole과 동일한 원칙. arrival_at_utc는 팝업이 그 필드로 시각을 표시해서 맞춰준다.
@@ -137,10 +142,11 @@ export default function PortMap() {
     const shown = new Set(vessels.map((v) => v.callsgn).filter(Boolean));
     // PORT-MIS 공식 선종코드로 확인된 액체화물선은 지도에서 붉게 강조한다
     const liquid = new Set(data?.liquid_callsgns ?? []);
-    return (data?.real_traffic ?? [])
+    const list = (data?.real_traffic ?? [])
       .filter((v) => !shown.has(v.callsgn))
       .map((v) => (liquid.has(v.callsgn) ? { ...v, is_liquid_cargo_vessel: true } : v));
-  }, [data, vessels]);
+    return liquidOnly ? list.filter((v) => v.is_liquid_cargo_vessel) : list;
+  }, [data, vessels, liquidOnly]);
   const realLiquidCount = useMemo(
     () => realTraffic.filter((v) => v.is_liquid_cargo_vessel).length,
     [realTraffic]
@@ -148,7 +154,6 @@ export default function PortMap() {
   // 지도는 성능 때문에 상한(MAP_VESSEL_LIMIT)까지만 그린다. 그 상한에 걸렸을 때
   // 범례에 "표시/전체"를 같이 적어, 숫자가 멈춘 이유를 화면에서 알 수 있게 한다.
   const aisTotal = data?.real_traffic_total ?? realTraffic.length;
-  const [showAis, setShowAis] = useState(false);
   const mapRef = useRef(null);
 
   const liquidCount = useMemo(
@@ -429,6 +434,25 @@ export default function PortMap() {
               척
               {realLiquidCount > 0 && <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>})
             </span>
+          </label>
+        )}
+        {showAis && (
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer',
+            background: liquidOnly ? 'rgba(255,75,110,0.18)' : 'rgba(255,255,255,0.06)',
+            border: `1px solid ${liquidOnly ? COLORS.red : COLORS.glassBorder}`,
+            borderRadius: '7px', padding: '7px 10px',
+            fontSize: '12px', fontWeight: 600, color: COLORS.textPrimary,
+            whiteSpace: 'nowrap', flexShrink: 0,
+          }}
+          title="PORT-MIS 공식 선종코드로 액체화물선이 확인된 배만 남깁니다. 선종을 확인할 수 없는 배(어선·예선 등)는 숨겨집니다.">
+            <input
+              type="checkbox"
+              checked={liquidOnly}
+              onChange={() => setLiquidOnly((v) => !v)}
+              style={{ accentColor: COLORS.red, cursor: 'pointer', flexShrink: 0 }}
+            />
+            <span style={{ whiteSpace: 'nowrap' }}>액체화물선만</span>
           </label>
         )}
       </div>

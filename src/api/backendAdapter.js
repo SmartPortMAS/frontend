@@ -14,10 +14,8 @@
 import { ULSAN_BBOX } from '../utils/constants';
 
 const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-// 로컬: uvicorn 8001. 8000은 mock-server(GET /api/dashboard) 가 이미 쓰고 있어서
-// 백엔드를 8000으로 잡으면 /api/v1/* 이 전부 mock-server 로 가 404 가 된다
-// (관제시스템_시작.bat 이 띄우는 구성: mock 8000 + 백엔드 8001).
-// 배포: nginx가 /api/v1은 backend, /api는 mockserver로 프록시(deploy/nginx.cloud.conf).
+// 로컬: uvicorn 8001 (관제시스템_시작.bat 이 띄우는 포트).
+// 배포: nginx 가 /api/v1 을 백엔드로 프록시한다.
 export const BACKEND_BASE = isDev ? 'http://localhost:8001/api/v1' : '/api/v1';
 
 // 지도에 동시에 그리는 선박 수 상한. 마커가 많아지면 지도가 눈에 띄게 무거워진다.
@@ -186,6 +184,9 @@ export async function fetchBackendDashboard() {
       .slice(0, MAP_VESSEL_LIMIT)
       .map((row) => mapVessel(row, cargoByCallsgn)),
     realTrafficTotal: presentVessels.length,
+    // 선석별 재항 위험물 화물 원본 — 안전 심사 폼이 "재항 선박에서 불러오기"에 쓴다.
+    // (화물을 수기로 고르는 대신 지금 실제로 붙어 있는 배를 선택하게 하기 위함)
+    berthCargo: berthCargo ?? [],
     realTrafficLiquidTotal: presentVessels.filter((r) => r.is_liquid_cargo_vessel).length,
     berthOccupancy: berths ?? [],
     anchorages: anchorages ?? [],

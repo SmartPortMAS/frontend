@@ -57,6 +57,13 @@ const useSensorStore = create((set, get) => ({
 
   setConnected: (val) => set({ connected: val }),
 
+  // 디지털 트윈 선박을 실데이터로 교체한다(useLiveTwinShips).
+  // 빈 배열이 오면 무시한다 — 잠깐의 조회 실패로 트윈이 텅 비는 것보다
+  // 직전 상태를 유지하는 편이 낫다.
+  setShips: (ships) => set((state) => (
+    Array.isArray(ships) && ships.length ? { ships } : state
+  )),
+
   setSelectedObject: (obj) => set({ selectedObject: obj }),
 
   // 온산 MVP 에이전트 패널 상태 (/api/v1/*)
