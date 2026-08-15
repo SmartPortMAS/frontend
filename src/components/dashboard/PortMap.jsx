@@ -105,13 +105,18 @@ function VesselPopup({ vessel }) {
 //   점       : 위치만 확인된 배
 // 화면에 실제로 그려지는 것만 적는다. 범례에 있는데 화면에 없거나 그 반대면
 // 사용자가 지도를 못 믿게 된다.
-const LEGEND_ITEMS = [
-  { color: COLORS.red, label: '🚢 배 아이콘 — 화물까지 확인 (클릭 시 안전 판정)' },
-  { color: COLORS.red, label: '● 액체화물선 (PORT-MIS 선종 확인)' },
+//
+// 점(AIS 레이어)은 체크박스를 켰을 때만 그려지므로 범례도 그때만 보여준다 —
+// 꺼 놓고 보면 "● 항해 중" 같은 항목이 화면 어디에도 없다.
+const LEGEND_BASE = [
+  { color: COLORS.red, label: '🚢 배 — 화물 확인 (클릭 시 안전 판정)' },
+  { color: COLORS.info, label: '◯ 온산 선석 (클릭 시 기상 판정)' },
+  { color: COLORS.yellow, label: '― 인접 선석 혼재감시 쌍' },
+];
+const LEGEND_AIS = [
+  { color: COLORS.red, label: '● 액체화물선 (PORT-MIS 선종)' },
   { color: '#38bdf8', label: '● 항해 중 (선종 미확인)' },
   { color: '#8ba3b8', label: '● 정박·계류 중 (선종 미확인)' },
-  { color: COLORS.info, label: '◯ 온산 액체화물 선석 — 클릭 시 기상 판정' },
-  { color: COLORS.yellow, label: '― 인접 선석 혼재감시 쌍' },
 ];
 
 // 온산 2클러스터(처용리/산암리)가 화면에 차게 보이는 뷰
@@ -395,7 +400,10 @@ export default function PortMap() {
         position: 'absolute', top: 70, right: 14, zIndex: 1000,
         background: COLORS.glass, border: `1px solid ${COLORS.glassBorder}`,
         backdropFilter: 'blur(8px)', borderRadius: '10px',
-        padding: '10px 12px', width: '168px',
+        padding: '10px 12px',
+        // 고정 폭(168px)이라 선박 수가 세 자리가 되자 라벨이 잘렸다.
+        // 내용에 맞춰 늘리되 지도를 가리지 않게 상한만 둔다.
+        width: 'max-content', minWidth: '168px', maxWidth: '260px',
         display: 'flex', flexDirection: 'column', gap: '6px',
       }}>
         <div style={{ fontSize: '11px', fontWeight: 700, color: '#8ba3b8', letterSpacing: '1px' }}>
@@ -433,13 +441,16 @@ export default function PortMap() {
               onChange={() => setShowAis((s) => !s)}
               style={{ accentColor: '#38bdf8', cursor: 'pointer', flexShrink: 0 }}
             />
+            {/* 라벨은 짧게 — 배 수가 세 자리가 되어도 한 줄에 들어와야 한다.
+                상한(200척)에 걸렸을 때만 "표시/전체"를 함께 보여준다. */}
             <span style={{ whiteSpace: 'nowrap' }}>
-              실선박 AIS ({realTraffic.length}
-              {/* 지도 상한(200척)에 걸렸을 때만 "표시/전체"를 함께 보여준다 —
-                  숫자가 상한에서 멈춘 이유를 화면에서 알 수 있게. */}
-              {aisTotal > realTraffic.length && <span style={{ color: COLORS.textDim }}>/{aisTotal}</span>}
-              척
-              {realLiquidCount > 0 && <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>})
+              실선박 AIS {realTraffic.length}
+              {aisTotal > realTraffic.length && (
+                <span style={{ color: COLORS.textDim }}>/{aisTotal}</span>
+              )}
+              {realLiquidCount > 0 && (
+                <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>
+              )}
             </span>
           </label>
         )}
@@ -463,7 +474,7 @@ export default function PortMap() {
             <span style={{ color: COLORS.textDim }}> (실측)</span>
           </div>
         )}
-        {LEGEND_ITEMS.map((item) => (
+        {[...LEGEND_BASE, ...(showAis ? LEGEND_AIS : [])].map((item) => (
           <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
             <span style={{
               width: '10px', height: '10px', borderRadius: '50%',

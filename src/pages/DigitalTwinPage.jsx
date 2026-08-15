@@ -96,7 +96,10 @@ export default function DigitalTwinPage() {
       }}>
         <div style={{
           whiteSpace: 'nowrap',
-          animation: 'marquee 20s linear infinite',
+          // 읽을 시간을 준다. 20초는 경고 문구(선석·물질·격리코드가 다 들어간다)를
+          // 눈으로 따라가기에 너무 빨랐다. 항목 수에 비례해 늘려 항목이 많아도
+          // 한 건당 읽는 속도가 같게 한다.
+          animation: `marquee ${Math.max(45, tickerItems.length * 11)}s linear infinite`,
           display: 'flex', gap: '50px'
         }}>
           {/* 실경고(safety 규칙엔진). 예전엔 "T005 탱크 수위 90%" 같은 문구가 박혀
