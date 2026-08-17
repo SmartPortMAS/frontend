@@ -44,6 +44,37 @@ if (ENABLED && typeof window !== 'undefined') {
       if (group && byGroup[group]) return jsonResponse(byGroup[group]);
     }
 
+    // 안전 심사는 '대상 화물 + 인접 선석 재항 화물' 조합으로 갈라 저장해 뒀다.
+    // 입력이 정확히 같을 때만 캐시를 쓴다 — 인접 화물이 다른데 같은 판정을
+    // 돌려주면 혼재 판정이 틀린 답을 내게 된다. 안 맞으면 판단 보류로 흘린다.
+    if (path.endsWith('/safety/assess')) {
+      const byInput = snap['/api/v1/safety/assess'] || {};
+      try {
+        const b = JSON.parse(init?.body ?? '{}');
+        const id = (c) => c?.cas_no || c?.chem_id;
+        const parts = (b.adjacent_cargos || [])
+          .map((a) => `${a.berth_name}:${id(a.cargo)}`).sort();
+        const key = `${id(b.target_cargo)}|${parts.join(',')}`;
+        if (byInput[key]) return jsonResponse(byInput[key]);
+      } catch { /* 아래 503 */ }
+      return jsonResponse(
+        { detail: '스냅샷 배포본에 이 조합의 판정이 없습니다 - 실시간 서버가 필요합니다' },
+        503,
+      );
+    }
+
+    // 선석 후보는 body 의 name_hint(선명)로 갈라 저장해 뒀다
+    if (path.endsWith('/scheduling/candidates')) {
+      const byName = snap['/api/v1/scheduling/candidates'] || {};
+      let name = null;
+      try { name = JSON.parse(init?.body ?? '{}').vessel?.name_hint; } catch { /* 아래 503 */ }
+      if (name && byName[name]) return jsonResponse(byName[name]);
+      return jsonResponse(
+        { detail: '스냅샷 배포본에 이 선박의 후보가 없습니다 - 실시간 서버가 필요합니다' },
+        503,
+      );
+    }
+
     if (snap[path]) return jsonResponse(snap[path]);
 
     return jsonResponse(
