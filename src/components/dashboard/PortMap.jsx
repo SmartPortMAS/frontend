@@ -114,17 +114,21 @@ function VesselPopup({ vessel }) {
 //
 // 점(AIS 레이어)은 체크박스를 켰을 때만 그려지므로 범례도 그때만 보여준다 —
 // 꺼 놓고 보면 "● 항해 중" 같은 항목이 화면 어디에도 없다.
+// 범례는 "색 — 뜻" 만 적는다. 예전 문구는 '큰 배+링', '작은 배'처럼 기호의
+// 생김새를 설명했는데, 색 점이 이미 옆에 찍혀 있으니 생김새 묘사는 소음이었다
+// (2026-08-17 피드백). 크기 차이는 화면에서 저절로 보인다 — 화물까지 확인된
+// 배가 크게, 위치만 수신된 배가 작게 그려진다는 규칙은 빨강 항목 하나에만 적는다.
 const LEGEND_BASE = [
-  { color: COLORS.red, label: '🚢 큰 배+링 — 화물 확인 (클릭 시 판정)' },
-  { color: COLORS.info, label: '◯ 온산 선석 (클릭 시 기상 판정)' },
-  { color: COLORS.yellow, label: '― 인접 선석 혼재감시 쌍' },
+  { color: COLORS.red, label: '빨강 — 액체화물선 (링 = 화물 확인 · 클릭 시 판정)' },
+  { color: COLORS.info, label: '파랑 원 — 온산 선석 (클릭 시 기상 판정)' },
+  { color: COLORS.yellow, label: '노랑 선 — 인접 선석 혼재감시' },
 ];
-// 작은 배의 색 = 상태. NAV_STATUS 와 같은 색을 써서 목록·상세 패널과 어긋나지 않게 한다.
+// 배 색 = 상태. NAV_STATUS 와 같은 색을 써서 목록·상세 패널과 어긋나지 않게 한다.
 const LEGEND_AIS = [
-  { color: COLORS.red, label: '작은 배 — 액체화물선 (선종 확인)' },
-  { color: NAV_STATUS.UNDER_WAY.color, label: '작은 배 — 항해 중' },
-  { color: NAV_STATUS.AT_ANCHOR.color, label: '작은 배 — 정박지 대기' },
-  { color: NAV_STATUS.UNKNOWN.color, label: '작은 배 — 항내 소형선' },
+  { color: NAV_STATUS.UNDER_WAY.color, label: '파랑 — 항해 중' },
+  { color: NAV_STATUS.MOORED.color, label: '초록 — 접안 중' },
+  { color: NAV_STATUS.AT_ANCHOR.color, label: '노랑 — 정박지 대기' },
+  { color: NAV_STATUS.UNKNOWN.color, label: '회색 — 항내 소형선' },
 ];
 
 // 온산 2클러스터(처용리/산암리) 뷰.

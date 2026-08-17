@@ -1,5 +1,5 @@
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Sky, Environment } from '@react-three/drei';
+import { OrbitControls, Sky } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing';
 import { BlendFunction } from 'postprocessing';
 import { Suspense } from 'react';
@@ -71,7 +71,11 @@ function SimulationEnvironment() {
         rayleigh={isNight ? 0 : 1.5}
         turbidity={isNight ? 0 : 6}
       />
-      <Environment preset={isNight ? 'night' : 'city'} />
+      {/* drei <Environment preset> 은 쓰지 않는다 — 프리셋 HDR 을 GitHub 에서
+          실시간으로 내려받는데, 2026-08-17 에 GitHub 가 429 를 돌려주자 이
+          컴포넌트가 죽으면서 /twin 전체가 빈 화면이 됐다. 반사광 질감을 조금
+          더할 뿐인 장식이 화면 생존을 외부 CDN 에 걸어둘 이유가 없다.
+          조명은 위의 태양·반구광·Sky 가 이미 전부 담당한다. */}
 
       <Water />
       <Port />
