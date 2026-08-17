@@ -8,7 +8,7 @@ import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs, FaMapMarker
 import { simulateMooring } from '../../utils/mooringPhysics';
 import { alertId, typeLabel } from '../../utils/alertUtils';
 import AgentChip from '../../utils/AgentChip';
-import { fetchBerthCandidates } from '../../api/backendAdapter';
+import { fetchBerthCandidates, estimateEta, estimateBerthRelease } from '../../api/backendAdapter';
 
 const RISK_COLORS = {
   '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red,
@@ -120,7 +120,7 @@ export default function VesselDetailPanel() {
   });
 
   return (
-    <div style={{
+    <div className="vessel-detail-panel" style={{
       position: 'fixed', top: 0, right: 0, height: '100vh', width: '390px', zIndex: 2500,
       background: 'rgba(255, 255, 255, 0.98)', backdropFilter: 'blur(12px)',
       borderLeft: `1px solid ${COLORS.borderHover}`, boxShadow: '-12px 0 40px rgba(18, 53, 79, 0.16)',
@@ -207,6 +207,24 @@ export default function VesselDetailPanel() {
         {formatKST(vessel.arrival_at_utc || vessel.received_at_utc)}
       </Row>
       <Row label="배정 선석">{vessel.berth || '미배정'}</Row>
+      {/* 항해 중인 배에만 도착 추정을 붙인다.
+          PORT-MIS 의 입항 예정 시각은 원천에서 전부 비어 와서(실측), 지금 데이터로
+          낼 수 있는 건 AIS 속력 기반 직선 외삽뿐이다. 그래서 '예정'이 아니라
+          '현재 속력 기준'이라고 적는다 — 항로 우회·감속·도선 대기가 빠져 있어
+          실제 도착은 항상 이보다 늦다. */}
+      {(() => {
+        const eta = estimateEta(vessel);
+        if (!eta) return null;
+        return (
+          <Row label="온산 도착 추정">
+            <span style={{ color: COLORS.info, fontWeight: 700 }}>약 {eta.hours}시간 후</span>
+            <span style={{ color: COLORS.textDim, fontSize: '11.5px' }}>
+              {' '}· {formatKST(eta.etaUtc)}
+              <br />직선 {eta.distanceNm}해리 / {eta.sog}kn — 항로·대기 미반영
+            </span>
+          </Row>
+        );
+      })()}
       {berthInfo && (
         <Row label="선석 제원">
           {berthInfo.operator} · 최대 {berthInfo.maxDwt.toLocaleString()} DWT · 수심 {berthInfo.depthM}m
@@ -463,6 +481,27 @@ export default function VesselDetailPanel() {
                       {c.onsan_scope ? ' · 온산' : ''}
                       {c.adjacent_cargos?.length > 0 ? ` · 인접 화물 ${c.adjacent_cargos.length}건` : ''}
                     </div>
+                    {/* 점유 선석은 "언제 비는가"까지 말한다 — 그게 없으면 관제사가
+                        이 줄을 보고 할 수 있는 판단이 없다. 근거는 그 선석의 실제
+                        재항 이력 중앙값이고, 추정임을 표본 수와 함께 밝힌다. */}
+                    {!free && (() => {
+                      const rel = estimateBerthRelease(
+                        c.wharf_name,
+                        c.conflicting_port_calls,
+                        data?.berth_dwell,
+                      );
+                      if (!rel) return null;
+                      return (
+                        <div style={{ fontSize: '11.5px', color: COLORS.yellow, marginTop: '3px' }}>
+                          {rel.overdue
+                            ? `중앙값 ${rel.medianHours}h 초과 (재항 ${rel.elapsedHours}h) — 곧 해제 가능성`
+                            : `약 ${rel.remainingHours}h 후 해제 예상`}
+                          <span style={{ color: COLORS.textDim }}>
+                            {' '}· 이 선석 재항 중앙값 {rel.medianHours}h (실측 {rel.sampleCount}건)
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}

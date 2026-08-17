@@ -74,6 +74,8 @@ async function doRefresh() {
         anchorage_status: backend?.anchorages ?? [],
         draught_checks: backend?.draughtChecks ?? [],
         berth_cargo: backend?.berthCargo ?? [],
+        // 선석별 재항 소요시간 실측 통계 — 점유 선석의 해제 시각 추정 근거
+        berth_dwell: backend?.berthDwell ?? [],
         // GanttChart가 기다리는 "실제 접안 이력" — base의 데모 작업(is_real_record=false)은
         // 그대로 두고 백엔드 실이력만 얹는다(중복 방지로 base 쪽 실이력이 있었다면 걷어냄).
         operations: [

@@ -202,7 +202,7 @@ async function getJson(path) {
  * 기상+선박 둘 다 실패하면 null (백엔드 다운으로 간주 — 호출측이 기존 소스 유지).
  */
 export async function fetchBackendDashboard() {
-  const [weather, vessels, berths, anchorages, berthCargo, draughtCheck, history, pipelineHealth, stats, alerts] =
+  const [weather, vessels, berths, anchorages, berthCargo, draughtCheck, history, pipelineHealth, stats, alerts, berthDwell] =
     await Promise.allSettled([
       getJson('/dashboard/weather'),
       getJson('/dashboard/vessels'),
@@ -214,6 +214,7 @@ export async function fetchBackendDashboard() {
       getJson('/dashboard/pipeline-health'),
       getJson('/dashboard/stats'),
       getJson('/dashboard/alerts'),
+      getJson('/dashboard/berth-dwell'),
     ]).then((rs) => rs.map((r) => (r.status === 'fulfilled' ? r.value : null)));
 
   if (!weather && !vessels) return null;
@@ -271,6 +272,10 @@ export async function fetchBackendDashboard() {
     ).length,
     berthOccupancy: berths ?? [],
     anchorages: anchorages ?? [],
+    // 선석별 재항 소요시간 실측 통계 (mart.berth_dwell_stats) — 점유 선석의
+    // "언제 비는가"를 추정하는 근거. 출항 예정 시각(ETD)이 원천에 전혀 오지
+    // 않아서(779행 전부 NULL) 이 분포가 유일한 수단이다.
+    berthDwell: berthDwell ?? [],
     // 조위 반영 흘수·UKC 판정 (mart.berth_draught_check) — callsgn별 원본 그대로 노출,
     // NOT_ALLOWED/MARGINAL/UNKNOWN 판정은 뷰 안에서 이미 끝나 있어 여기선 가공하지 않는다.
     draughtChecks: draughtCheck ?? [],
@@ -320,4 +325,83 @@ export async function fetchBerthCandidates({ draught_m, chem_id, cas_no, name_hi
     throw new Error(body.detail || `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 항해 중 선박의 도착 예상(ETA) — AIS 속력으로 낸 직선 외삽
+//
+// 계획서의 "입항 예정 시각"을 지금 있는 데이터만으로 낼 수 있는 유일한 방법이다
+// (PORT-MIS 의 출입항 예정 시각 필드는 원천에서 전부 비어 온다).
+//
+// 한계를 숨기지 않는다 — 이건 예보가 아니라 산술이다:
+//   · 대권/항로가 아니라 직선거리다. 실제 항로는 항상 이보다 길다.
+//   · 지금 속력이 계속 유지된다고 본다. 감속·투묘·도선 대기는 반영하지 않는다.
+//   · 도선사 승선·조석창 대기는 계산에 없다.
+// 그래서 화면은 이 값을 '예정'이 아니라 '현재 속력 기준 추정'으로 적어야 한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 두 좌표 사이 대권거리 [해리] */
+function nauticalMiles(lat1, lon1, lat2, lon2) {
+  const R = 3440.065; // 지구 반경 [해리]
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/**
+ * 항해 중인 배가 목표 지점(기본: 온산 부두 중심)까지 걸릴 시간을 낸다.
+ * 계산할 수 없으면 null — 없는 값을 0 이나 임의값으로 채우지 않는다.
+ */
+export function estimateEta(vessel, target = { lat: 35.4478, lon: 129.3577 }) {
+  if (!vessel || vessel.latitude == null || vessel.longitude == null) return null;
+  // 항해 중인 배만 대상. 접안·정박 중인 배에 "도착 예상"은 뜻이 없다.
+  if (vessel.nav_status_category !== 'UNDER_WAY') return null;
+  const sog = Number(vessel.sog);
+  // 0.5 kn 미만은 표류·계류로 본다. 그 속력으로 나누면 수백 시간이 나와
+  // 화면에 근거 없는 큰 숫자가 찍힌다.
+  if (!Number.isFinite(sog) || sog < 0.5) return null;
+  const distanceNm = nauticalMiles(vessel.latitude, vessel.longitude, target.lat, target.lon);
+  const hours = distanceNm / sog;
+  // 24시간을 넘으면 추정 의미가 없다(그 사이 속력·침로가 여러 번 바뀐다)
+  if (hours > 24) return null;
+  return {
+    distanceNm: Math.round(distanceNm * 10) / 10,
+    hours: Math.round(hours * 10) / 10,
+    sog,
+    etaUtc: new Date(Date.now() + hours * 3600 * 1000).toISOString(),
+  };
+}
+
+/**
+ * 점유 선석이 언제 비는지 추정한다 — 재항 시작 시각 + 그 선석의 재항 중앙값.
+ * 이미 중앙값을 넘겼으면 '초과'로 표시하도록 overdue 를 세운다.
+ */
+export function estimateBerthRelease(wharfName, conflicts, dwellStats) {
+  if (!wharfName || !dwellStats?.length) return null;
+  // 겹치는 재항 기록이 여러 건 올 수 있다(실측: SK2부두 228건). 그중 "지금 그
+  // 자리를 쓰고 있는 배"는 가장 늦게 들어온 건이므로 그걸 기준으로 잡는다.
+  // 첫 원소를 그냥 쓰면 몇 달 전 기록이 잡혀 "이미 한참 초과"로만 뜬다.
+  const arrivalUtc = (conflicts ?? [])
+    .map((c) => c?.arrival_at_utc)
+    .filter(Boolean)
+    .sort()
+    .pop();
+  if (!arrivalUtc) return null;
+  const stat = dwellStats.find((d) => d.wharf_name === wharfName);
+  if (!stat || stat.median_hours == null) return null;
+  const median = Number(stat.median_hours);
+  const elapsedH = (Date.now() - new Date(arrivalUtc).getTime()) / 3600000;
+  if (!Number.isFinite(elapsedH)) return null;
+  return {
+    medianHours: median,
+    p90Hours: stat.p90_hours == null ? null : Number(stat.p90_hours),
+    sampleCount: stat.sample_count,
+    elapsedHours: Math.round(elapsedH * 10) / 10,
+    remainingHours: Math.round((median - elapsedH) * 10) / 10,
+    overdue: elapsedH > median,
+  };
 }
