@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import useSensorStore from '../../../stores/useSensorStore';
 import useDashboardData from '../../../hooks/useDashboardData';
 import { ONSAN_BERTHS_3D } from '../../../utils/geoUtils';
+import { FaVideo, FaPause, FaPlay, FaChevronUp, FaChevronDown } from 'react-icons/fa';
 
 const BERTH_IDS = Object.keys(ONSAN_BERTHS_3D);
 
@@ -44,21 +45,42 @@ export default function CCTVPanel() {
   const ships = useSensorStore((s) => s.ships);
   const { data } = useDashboardData();
 
+  // 카메라 선택 — 이영서 요청(2026-08-17): "자동으로 바뀌는 게 맞나요? 선택 기능도"
+  //
+  // 예전엔 6초 자동 순회만 있고 패널 전체가 pointerEvents:none 이라 아무것도
+  // 누를 수 없었다. 보고 싶은 부두가 지나가면 한 바퀴를 기다려야 했다.
+  // 이제 세 가지가 된다 — 자동 순회 / 직접 선택 / 3D 클릭 연동.
+  const [manualBerthId, setManualBerthId] = useState(null);  // 드롭다운으로 고른 부두
+  const [autoRotate, setAutoRotate] = useState(true);
+  // 접힘은 스토어에 둔다 — 아래 선박 목록이 이 값을 보고 위치를 올린다
+  const collapsed = useSensorStore((st) => st.hudCctvCollapsed);
+  const setCollapsed = useSensorStore((st) => st.setHudCctvCollapsed);
+
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  // 자동 순회는 켜져 있고, 사람이 특정 부두를 지목하지 않았을 때만 돈다.
+  // (3D 에서 선석·선박을 클릭한 경우도 '지목'으로 본다)
+  const pinned = Boolean(
+    manualBerthId
+    || selectedObject?.type === 'Berth'
+    || (selectedObject?.type === 'Ship' && selectedObject.berth)
+  );
   useEffect(() => {
+    if (!autoRotate || pinned || collapsed) return undefined;
     const timer = setInterval(() => setCycleIdx((i) => (i + 1) % BERTH_IDS.length), 6000);
     return () => clearInterval(timer);
-  }, []);
+  }, [autoRotate, pinned, collapsed]);
 
   const berthId = useMemo(() => {
+    // 우선순위: 직접 선택 > 3D 클릭 > 자동 순회
+    if (manualBerthId && ONSAN_BERTHS_3D[manualBerthId]) return manualBerthId;
     if (selectedObject?.type === 'Berth' && ONSAN_BERTHS_3D[selectedObject.id]) return selectedObject.id;
     if (selectedObject?.type === 'Ship' && ONSAN_BERTHS_3D[selectedObject.berth]) return selectedObject.berth;
     return BERTH_IDS[cycleIdx];
-  }, [selectedObject, cycleIdx]);
+  }, [manualBerthId, selectedObject, cycleIdx]);
 
   const berth = ONSAN_BERTHS_3D[berthId];
   const camNo = BERTH_IDS.indexOf(berthId) + 1;
@@ -73,7 +95,19 @@ export default function CCTVPanel() {
     (o) => !o.is_real_record && o.berth === berth?.name && o.status !== 'COMPLETED'
   );
   const loading = op?.status === 'IN_PROGRESS' || mooredShip?.status === 'operating';
-  const isManual = selectedObject?.type === 'Berth' || (selectedObject?.type === 'Ship' && selectedObject.berth);
+  const isManual = pinned;
+
+  // 접었을 때는 헤더 줄만 남긴다 — 3D 화면을 넓게 보려는 용도라 최소 폭으로.
+  if (collapsed) {
+    return (
+      <div className="cctv-collapsed" style={{ position: 'absolute', top: 44, left: 20, zIndex: 1000 }}>
+        <button type="button" onClick={() => setCollapsed(false)} className="hud-chip" title="부두 CCTV 펼치기">
+          <FaVideo size={11} /> 부두 CCTV
+          <FaChevronDown size={9} />
+        </button>
+      </div>
+    );
+  }
 
   const footer = mooredShip
     ? op
@@ -84,8 +118,38 @@ export default function CCTVPanel() {
     : '공석';
 
   return (
+    <div style={{ position: 'absolute', top: 44, left: 20, zIndex: 1000, width: '280px' }}>
+      {/* 조작 줄 — 카메라 선택·자동순회·접기.
+          패널 본체는 pointerEvents:none 을 유지해 3D 조작을 가리지 않고,
+          이 줄에만 pointerEvents:auto 를 준다. */}
+      <div className="cctv-controls">
+        <FaVideo size={10} style={{ flexShrink: 0, opacity: 0.85 }} />
+        <select
+          value={manualBerthId ?? ''}
+          onChange={(e) => setManualBerthId(e.target.value || null)}
+          title="카메라(부두) 선택 — '자동 순회'를 고르면 6초마다 돌아갑니다"
+        >
+          <option value="">자동 순회</option>
+          {BERTH_IDS.map((id) => (
+            <option key={id} value={id}>{ONSAN_BERTHS_3D[id]?.name || id}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setAutoRotate((v) => !v)}
+          disabled={pinned}
+          title={pinned ? '특정 부두를 보는 중이라 순회가 멈춰 있습니다' : (autoRotate ? '순회 일시정지' : '순회 재개')}
+          className={autoRotate && !pinned ? 'on' : ''}
+        >
+          {autoRotate && !pinned ? <FaPause size={9} /> : <FaPlay size={9} />}
+        </button>
+        <button type="button" onClick={() => setCollapsed(true)} title="접기">
+          <FaChevronUp size={10} />
+        </button>
+      </div>
+
     <div className="cctv-panel" key={`${berthId}-${P.label}`} style={{
-      position: 'absolute', top: 44, left: 20, zIndex: 1000,
+      position: 'relative',
       width: '280px', height: '168px',
       background: P.sky1,
       border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -210,6 +274,7 @@ export default function CCTVPanel() {
           100% { filter: none; }
         }
       `}</style>
+    </div>
     </div>
   );
 }

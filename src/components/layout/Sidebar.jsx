@@ -2,8 +2,12 @@ import { NavLink } from 'react-router-dom';
 import { FaCube, FaChartPie, FaShieldAlt, FaWaveSquare, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 
 export default function Sidebar({ collapsed, setCollapsed }) {
+  // top 은 PORT-MIS 연계 바 높이만큼 내린다 — 0 이면 사이드바가 그 바를 덮는다
   return (
-    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`} style={{ position: 'fixed', left: 0, top: 0, bottom: 0 }}>
+    <aside
+      className={`sidebar ${collapsed ? 'collapsed' : ''}`}
+      style={{ position: 'fixed', left: 0, top: 'var(--portmis-bar)', bottom: 0 }}
+    >
       <div className="sidebar-logo">
         <div className="logo-icon"><FaWaveSquare /></div>
         <div className="logo-text">울산항만 관제시스템</div>

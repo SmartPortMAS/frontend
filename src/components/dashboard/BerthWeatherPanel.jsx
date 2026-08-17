@@ -8,7 +8,7 @@ import { FaAnchor, FaExclamationTriangle } from 'react-icons/fa';
 const LEVEL_STYLE = {
   '정상': { color: COLORS.teal, label: '정상 — 하역 가능' },
   '하역중단': { color: COLORS.yellow, label: '하역작업 중단' },
-  '이안': { color: '#ff8c42', label: '부두 이안' },
+  '이안': { color: '#D2601A', label: '부두 이안' },
   '호스분리': { color: COLORS.red, label: '로딩암/호스 분리' },
   '판단불가': { color: COLORS.textDim, label: '판단불가 (fail-safe)' },
 };
@@ -149,7 +149,7 @@ export default function BerthWeatherPanel() {
           </label>
         </div>
         <button onClick={run} style={{
-          background: `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`, color: '#04222b',
+          background: `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`, color: '#FFFFFF',
           border: 'none', borderRadius: '8px', padding: '9px 20px', fontWeight: 700, cursor: 'pointer', fontSize: '14px',
         }}>
           판정
