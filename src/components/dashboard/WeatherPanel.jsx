@@ -84,8 +84,7 @@ export default function WeatherPanel() {
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
         <h3 className="glass-card-title">항만 기상 현황</h3>
         <span style={{ fontSize: '12px', color: COLORS.textDim }}>
-          색 기준: 온산 최저 중단 임계 (풍속 {ONSAN_MIN_STOP.wind} m/s · 파고 {ONSAN_MIN_STOP.wave} m)
-          · 선석별 판정은 아래 · 관측 {observed} (KST)
+          관측 {observed} (KST)
         </span>
       </div>
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>

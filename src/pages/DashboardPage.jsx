@@ -28,7 +28,11 @@ export default function DashboardPage() {
   // 대조가 안 돼 선종을 모르는 배다. 그 수를 KPI 부제에 같이 적어 오해를 막는다.
   const unknownCount = data?.real_traffic_unknown_total ?? 0;
   const mooredCount = vessels.filter((v) => v.nav_status_category === 'MOORED').length;
+  // 정박지 대기 = AIS 가 '정박(앵커링)'이라고 명시한 배만 센다.
+  // 항해상태 코드가 없는 배(대부분 Class B 소형 작업선)는 예전에 여기 섞여 있었다 —
+  // 예선·급유선은 선석을 기다리는 배가 아니라 대기 척수를 부풀린다(backendAdapter 주석 참고).
   const anchorCount = vessels.filter((v) => v.nav_status_category === 'AT_ANCHOR').length;
+  const unknownNavCount = vessels.filter((v) => v.nav_status_category === 'UNKNOWN').length;
   const gateHits = gateAssessment?.risk_level_basis?.gate_hits?.length ?? 0;
 
   // 온산 선석 점유 — 백엔드 /dashboard/berths(upa_port_call 실측 재항 기준).
@@ -41,7 +45,7 @@ export default function DashboardPage() {
     <div className="dashboard-page">
       <div className="kpi-grid">
         <KPICard title="관제 선박" value={vesselTotal} unit="척" icon={<FaShip />} change={`액체화물선 ${liquidCount}척 · 선종 미확인 ${unknownCount}척`} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
-        <KPICard title="접안 중" value={mooredCount} unit="척" icon={<FaAnchor />} change={`묘박/정박지 대기 ${anchorCount}척`} trend="neutral" />
+        <KPICard title="접안 중" value={mooredCount} unit="척" icon={<FaAnchor />} change={`정박지 대기 ${anchorCount}척 · 항내 소형선 ${unknownNavCount}척`} trend="neutral" />
         <KPICard title="온산 선석 점유" value={occupiedBerths} unit="개" icon={<FaWarehouse />} change={`온산 선석 ${onsanBerths.length}개 중 재항 중`} trend="neutral" />
         <KPICard
           title="최근 안전 심사"
@@ -57,16 +61,6 @@ export default function DashboardPage() {
           36건까지 늘면서 첫 화면을 통째로 덮어, 지도·기상·선석 판정이 스크롤 아래로
           밀렸기 때문. 미확인 건수는 벨 배지에 항상 떠 있어 놓치지 않는다. */}
 
-      {/* 기상 패널 (Full Width) */}
-      <div className="dash-section">
-        <WeatherPanel />
-      </div>
-
-      {/* 선석별 하역 판정 (온산 MVP, Full Width) */}
-      <div className="dash-section">
-        <BerthWeatherPanel />
-      </div>
-
       {/* 온산 관제 지도 — 이 화면에서 가장 많이 들여다보는 패널이라 크게 잡는다.
           뷰포트에 맞춰 늘리되(62vh) 작은 화면에서도 지도 구실을 하도록 하한을 둔다. */}
       <div className="glass-card dash-section">
@@ -76,6 +70,16 @@ export default function DashboardPage() {
         <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
           <PortMap />
         </div>
+      </div>
+
+      {/* 기상 패널 (Full Width) */}
+      <div className="dash-section">
+        <WeatherPanel />
+      </div>
+
+      {/* 선석별 하역 판정 (온산 MVP, Full Width) */}
+      <div className="dash-section">
+        <BerthWeatherPanel />
       </div>
 
       {/* 선석 배정 시뮬레이션 (Full Width) */}

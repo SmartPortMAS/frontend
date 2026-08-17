@@ -88,7 +88,7 @@ export default function Header() {
 
         <div
           className="header-badge"
-          title={connected ? '대시보드 데이터 폴링 정상 (3분 주기 — useDashboardData.POLL_MS)' : `데이터 수신 실패: ${error || '서버 응답 없음'}`}
+          title={connected ? '실시간 연동 정상 (3분 주기 갱신)' : `데이터 수신 실패: ${error || '서버 응답 없음'}`}
         >
           <div className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></div>
           <span>{connected ? '실시간 연동 중' : '연결 끊김'}</span>

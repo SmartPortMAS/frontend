@@ -191,7 +191,7 @@ export default function GanttChart() {
           <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, margin: '16px 0 6px' }}>
             온산 선석 실제 접안 이력 (부두별)
             <span style={{ fontWeight: 400, color: isRealHistory ? COLORS.teal : COLORS.textDim }}>
-              {' '}— upa_port_call 실수집 데이터 {isRealHistory && '●'}
+              {' '}— 실수집 {isRealHistory && '●'}
             </span>
           </div>
           <HistoryGantt records={history} />

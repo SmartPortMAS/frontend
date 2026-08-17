@@ -4,24 +4,36 @@ import { COLORS, NAV_STATUS, WEATHER_STATUS_COLORS } from '../../utils/constants
 import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 import useVesselSafety from '../../hooks/useVesselSafety';
 import useDashboardData from '../../hooks/useDashboardData';
-import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs } from 'react-icons/fa';
+import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs, FaMapMarkerAlt } from 'react-icons/fa';
 import { simulateMooring } from '../../utils/mooringPhysics';
-import { alertId } from '../../utils/alertUtils';
+import { alertId, typeLabel } from '../../utils/alertUtils';
+import { fetchBerthCandidates } from '../../api/backendAdapter';
 
 const RISK_COLORS = {
   '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red,
   '배정불가': COLORS.red, '판단불가': COLORS.textDim,
 };
 
-const STEPS = ['안전 심사', '선석 배정', '입항', '접안', '하역', '출항'];
+// AIS 로 실제 확인되는 항내 단계만 둔다.
+//
+// 예전 단계는 ['안전 심사','선석 배정','입항','접안','하역','출항'] 이었고 인덱스를
+// AIS 항해상태 하나로만 정했다(UNDER_WAY→2). 그래서 앞의 '안전 심사'·'선석 배정'이
+// 항상 완료로 칠해졌다 — 심사를 한 적도, 선석을 배정한 적도 없는 배까지.
+// 묘박 중이고 화물·선석이 전부 미확인인 배가 "안전 심사 ✓ 선석 배정 ✓"로 보였다.
+//
+// 안전 심사와 선석 배정은 사람이 실행하는 행위라 AIS 로 알 수 없다. 그 둘은
+// 스테퍼에서 빼고, 실행 여부는 아래 각 섹션이 스스로 보여준다.
+// (하역 여부도 AIS 로는 알 수 없다 — 접안까지만 확인 가능하고, 화물이 확인된
+//  접안선을 '하역'으로 본다.)
+const STEPS = ['항해', '정박지 대기', '접안', '하역'];
 
-// 선박 상태 → 여정 단계 인덱스
+/** AIS 항해상태(+화물 확인 여부) → 스테퍼 인덱스. 모르면 -1(아무 단계도 칠하지 않음) */
 function journeyIndex(vessel) {
   switch (vessel.nav_status_category) {
-    case 'UNDER_WAY': return 2;
-    case 'AT_ANCHOR': return 1; // 배정 단계에서 정박 대기 중
-    case 'MOORED': return 4;
-    default: return 2;
+    case 'UNDER_WAY': return 0;
+    case 'AT_ANCHOR': return 1;
+    case 'MOORED': return vessel.cargo ? 3 : 2;
+    default: return -1;   // 항해상태 미상(Class B 소형선) — 단정하지 않는다
   }
 }
 
@@ -70,6 +82,10 @@ export default function VesselDetailPanel() {
   const [moorDwt, setMoorDwt] = useState(ASSUMED_DWT);
   // LLM 판단 근거는 기본 2줄만 — 등급과 걸린 게이트가 먼저 보여야 한다
   const [summaryOpen, setSummaryOpen] = useState(false);
+  // 배정 가능 선석 (스케줄링 에이전트)
+  const [cands, setCands] = useState(null);
+  const [candLoading, setCandLoading] = useState(false);
+  const [candError, setCandError] = useState(null);
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const setSelectedBerthGroup = useSensorStore((s) => s.setSelectedBerthGroup);
   const berthWeather = useSensorStore((s) => s.berthWeather);
@@ -128,8 +144,14 @@ export default function VesselDetailPanel() {
         </button>
       </div>
 
-      {/* 여정 스테퍼 */}
-      <div style={{ display: 'flex', alignItems: 'center', margin: '18px 0 4px' }}>
+      {/* 여정 스테퍼 — AIS 로 확인되는 항내 단계만. 안전 심사·선석 배정은 사람이
+          실행하는 행위라 여기서 완료로 칠하지 않는다(각 섹션이 스스로 보여준다). */}
+      {stepIdx < 0 && (
+        <div style={{ fontSize: '11.5px', color: COLORS.textDim, margin: '14px 0 2px', textAlign: 'center' }}>
+          AIS 항해상태 미수신 — 항내 단계를 표시할 수 없습니다
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', margin: '18px 0 4px', opacity: stepIdx < 0 ? 0.35 : 1 }}>
         {STEPS.map((s, i) => {
           const done = i < stepIdx;
           const current = i === stepIdx;
@@ -161,7 +183,7 @@ export default function VesselDetailPanel() {
         <div style={{ fontSize: '12px', color: COLORS.yellow, textAlign: 'center', marginTop: '6px' }}>
           {vessel.anchorage
             ? `정박지 ${vessel.anchorage} 에서 선석 대기 중`
-            : '묘박 중 — 정박지 코드는 수집 소스 없음'}
+            : '정박지 대기 중 — 지정 정박지 코드는 수집 소스 없음'}
         </div>
       )}
 
@@ -361,6 +383,98 @@ export default function VesselDetailPanel() {
         </>
       )}
 
+      {/* ── 배정 가능 선석 (스케줄링 에이전트 POST /scheduling/candidates) ──
+          지도에서 배를 누르면 관제사가 실제로 다음에 하는 판단은 "이 배 어디 대지"다.
+          그 답을 내는 에이전트는 이미 있었는데 화면에서는 우하단 종합 판정 콘솔로만
+          닿을 수 있어, 배 단위로는 볼 방법이 없었다. 여기서 바로 부른다.
+
+          이 목록은 "확정 배정"이 아니라 조건을 만족하는 후보다 — 확정은 종합 판정
+          (기상·안전 게이트까지 통과)에서 난다. 문구로 그 차이를 분명히 적는다. */}
+      <SectionTitle icon={<FaMapMarkerAlt />}>배정 가능 선석 (후보)</SectionTitle>
+      {(vessel.draught_m == null || !(vessel.cargo?.chem_id || vessel.cargo?.cas_no)) ? (
+        <div style={{ fontSize: '12.5px', color: COLORS.textDim, lineHeight: 1.7 }}>
+          {/* 없는 값을 가정으로 채워 후보를 만들지 않는다 — 근거 없는 "배정 가능"이 된다 */}
+          조회 불가 — {vessel.draught_m == null ? '흘수 미수신' : ''}
+          {vessel.draught_m == null && !(vessel.cargo?.chem_id || vessel.cargo?.cas_no) ? ' · ' : ''}
+          {!(vessel.cargo?.chem_id || vessel.cargo?.cas_no) ? '재항 화물 미확인(PORT-MIS 대조 안 됨)' : ''}
+        </div>
+      ) : (
+        <>
+          <button
+            disabled={candLoading}
+            onClick={async () => {
+              setCandLoading(true); setCandError(null);
+              try {
+                setCands(await fetchBerthCandidates({
+                  draught_m: vessel.draught_m,
+                  chem_id: vessel.cargo.chem_id,
+                  cas_no: vessel.cargo.cas_no,
+                  name_hint: vessel.vessel_name,
+                }));
+              } catch (e) {
+                setCandError(e.message);
+              } finally {
+                setCandLoading(false);
+              }
+            }}
+            style={{
+              width: '100%', padding: '9px', borderRadius: '8px', border: 'none',
+              background: `linear-gradient(135deg, ${COLORS.info}, ${COLORS.blue})`,
+              color: '#FFFFFF', fontWeight: 700, cursor: 'pointer', fontSize: '13px',
+            }}
+          >
+            {candLoading ? '스케줄링 에이전트 조회 중...' : '이 선박이 접안 가능한 선석 조회'}
+          </button>
+          <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginTop: '6px', lineHeight: 1.6 }}>
+            흘수 {vessel.draught_m} m · {vessel.cargo.name} 기준, 앞으로 24시간 창.
+            수심·화물 카테고리 조건을 만족하는 후보이며 확정 배정은 아닙니다.
+          </div>
+          {candError && (
+            <div style={{ marginTop: '8px', fontSize: '12px', color: COLORS.yellow, lineHeight: 1.6 }}>
+              조회 실패 — {candError}
+            </div>
+          )}
+          {cands && (
+            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {cands.candidates?.length === 0 && (
+                <div style={{ fontSize: '12.5px', color: COLORS.yellow }}>
+                  조건을 만족하는 선석이 없습니다 — 정박지 대기 대상
+                </div>
+              )}
+              {(cands.candidates ?? []).map((c) => {
+                const free = c.occupancy_status === '여유';
+                return (
+                  <div key={c.berth_id} style={{
+                    border: `1px solid ${free ? COLORS.teal : COLORS.border}`,
+                    borderRadius: '10px', padding: '9px 11px', background: COLORS.card,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 700 }}>
+                        <span style={{ color: COLORS.textDim, marginRight: '6px' }}>{c.rank}순위</span>
+                        {c.wharf_name}
+                      </span>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: free ? COLORS.teal : COLORS.yellow }}>
+                        {c.occupancy_status}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: COLORS.textSecondary, marginTop: '3px' }}>
+                      수심 {c.depth_m} m · 흘수 여유 {c.draught_margin_m?.toFixed(1)} m
+                      {c.onsan_scope ? ' · 온산' : ''}
+                      {c.adjacent_cargos?.length > 0 ? ` · 인접 화물 ${c.adjacent_cargos.length}건` : ''}
+                    </div>
+                  </div>
+                );
+              })}
+              {cands.total_eligible_count > (cands.candidates?.length ?? 0) && (
+                <div style={{ fontSize: '11.5px', color: COLORS.textDim }}>
+                  조건 충족 전체 {cands.total_eligible_count}개 중 상위 {cands.candidates.length}개
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
       {/* 계류 물리 검증 (8월 시나리오 S1 — 준정적 근사, PhysX 스크립트로 검증) */}
       {vessel.berth && (
         <>
@@ -371,11 +485,19 @@ export default function VesselDetailPanel() {
               선박 제원으로 계류삭 장력을 구한다. 설계문서 v1 4-4절의 항목이고,
               Isaac Sim PhysX 동역학으로 교차검증까지 해 둔 우리 차별점이다
               (2만 DWT 기준 근사식 137.6 kN vs PhysX 146.8 kN — 오차 6.7%). */}
-          <SectionTitle icon={<FaCogs />}>계류 안정성 물리 검증</SectionTitle>
+          {/* 기본으로 접어 둔다.
+              이 계산의 "주의" 임계는 풍속 20 m/s 인데, 온산 선석 기상 임계표의
+              하역중단선은 12~17 m/s 다. 즉 계류가 주의로 넘어가기 훨씬 전에
+              선석 판정이 이미 중단을 띄운다 — 관제 판단을 바꾸는 정보가 아니다.
+              게다가 DWT 는 실수집이 안 돼 가정값(2만 t)으로 돌린다.
+              참고 자료로는 의미가 있어 남기되, 펼쳐야 보이게 한다. */}
+          <details>
+            <summary style={{ cursor: 'pointer', listStyle: 'none' }}>
+              <SectionTitle icon={<FaCogs />}>계류 안정성 물리 검증 (참고)</SectionTitle>
+            </summary>
           <div style={{ fontSize: '11.5px', color: COLORS.textDim, lineHeight: 1.6, marginBottom: '8px' }}>
-            OCIMF 계열 준정적 근사식 — 실측 풍속·파고로 계류삭 장력을 계산합니다.
-            현장 계측기가 필요 없는 수식이며, Isaac Sim PhysX 동역학과 교차검증했습니다
-            (2만 DWT 기준 오차 6.7%, 판정 등급 동일).
+            OCIMF 계열 준정적 근사식. 판정 권위는 선석 기상 임계표에 있고, 이 값은
+            참고용입니다 (DWT 가정값 기반).
           </div>
           {/* 예전엔 mock-server(:8000)의 /sim/mooring 을 호출했는데, mock-server 를
               걷어낸 뒤로는 그 주소가 죽어 항상 "응답 없음"만 떴다. 같은 상수·같은
@@ -451,6 +573,7 @@ export default function VesselDetailPanel() {
           {moorSim?.error && (
             <div style={{ marginTop: '8px', fontSize: '12px', color: COLORS.yellow }}>{moorSim.error}</div>
           )}
+          </details>
         </>
       )}
 
@@ -473,7 +596,7 @@ export default function VesselDetailPanel() {
             opacity: ack ? 0.6 : 1,
           }}>
             <div style={{ fontWeight: 700, color: a.level === 'DANGER' ? COLORS.red : COLORS.yellow }}>
-              [{a.level}] {a.type}
+              {a.level === 'DANGER' ? '위험' : '경고'} · {typeLabel(a.type)}
             </div>
             <div style={{ margin: '4px 0' }}>{a.message}</div>
             {ack ? (

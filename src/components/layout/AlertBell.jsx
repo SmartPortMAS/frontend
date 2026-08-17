@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
-import { alertId, LEVEL_STYLE, levelStyle, formatAlertKST } from '../../utils/alertUtils';
+import { alertId, LEVEL_STYLE, levelStyle, typeLabel, formatAlertKST } from '../../utils/alertUtils';
 import { FaExclamationTriangle, FaCheck, FaShip, FaTimes, FaShieldAlt } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ export default function AlertBell() {
                       )}
                     </div>
                     <div style={{ fontSize: '11px', color: COLORS.textDim, marginTop: '3px' }}>
-                      {a.type}
+                      {typeLabel(a.type)}
                       {/* 근거를 숨기지 않는다 — 관제사가 무엇을 믿고 조치하는지 알아야 한다 */}
                       {a.basis ? ` · ${a.basis}` : ''}
                       {a.created_at_utc ? ` · ${formatAlertKST(a.created_at_utc)}` : ''}

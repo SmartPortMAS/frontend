@@ -23,7 +23,7 @@ export default function BerthDecisionPanel() {
         <h3 className="glass-card-title">
           <FaRoute style={{ marginRight: '8px', color: COLORS.teal }} />선석 배정 시뮬레이션 — 전용 → 대체 → 정박지 대기
         </h3>
-        <span style={{ fontSize: '12px', color: COLORS.textDim }}>기상 → 스케줄링 → 안전 게이트 순차 실행</span>
+
       </div>
 
       {/* 판정 진입점은 우하단 '에이전트 협상 로그' 콘솔 하나로 통일했다.

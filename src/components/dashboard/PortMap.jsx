@@ -119,9 +119,25 @@ const LEGEND_AIS = [
   { color: COLORS.textDim, label: '● 정박·계류 중 (선종 미확인)' },
 ];
 
-// 온산 2클러스터(처용리/산암리)가 화면에 차게 보이는 뷰
-const ONSAN_CENTER = [35.435, 129.365];
-const ONSAN_ZOOM = 13;
+// 온산 2클러스터(처용리/산암리) 뷰.
+//
+// 예전엔 center/zoom 을 손으로 박아 뒀는데, 줌을 한 단계 올리자(부두 이름표가
+// 서로 겹쳐서) 북쪽 OTK·S-Oil 무리가 화면 위로 잘려 나갔다. 눈으로 맞춘 중심은
+// 줌이 바뀔 때마다 다시 틀어진다.
+//
+// 그래서 좌표를 고정하지 않고, 실제 선석 14개가 다 들어오는 범위에 맞춘다.
+// 선석이 추가·이동돼도 화면이 알아서 따라온다.
+//
+// 단, 기본 뷰는 '부두'에만 맞춘다. 석유공사 원유부이는 같은 온산 시설이지만
+// 해상 계류점이라 부두에서 4 km 넘게 떨어져 있다. 부이까지 한 화면에 넣으면
+// 정작 부두 무리가 다시 뭉쳐 이름표가 겹친다. 부이는 아래 '온산 전체' 버튼으로 본다.
+const ONSAN_WHARF_BOUNDS = Object.values(ONSAN_BERTHS)
+  .filter((b) => b.waterway !== '부이(해상)')
+  .map((b) => onsanDisplayPos(b));
+const ONSAN_ALL_BOUNDS = Object.values(ONSAN_BERTHS).map((b) => onsanDisplayPos(b));
+const ONSAN_FIT = { padding: [48, 48], maxZoom: 15 };
+const ONSAN_CENTER = [35.435, 129.365];   // 첫 렌더용 근사값 (곧 fitBounds 가 덮어쓴다)
+const ONSAN_ZOOM = 14;
 
 export default function PortMap() {
   const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
@@ -129,7 +145,9 @@ export default function PortMap() {
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const { data } = useDashboardData();
-  const [showAis, setShowAis] = useState(false);
+  // 켜자마자 지도가 KPI("관제 선박 N척")와 맞아 보이도록 기본 켬.
+  // 꺼 두면 화물 확인된 배 몇 척만 떠서 지도가 비어 보인다.
+  const [showAis, setShowAis] = useState(true);
   // 아이콘(클릭 시 상세패널) 레이어 — 실AIS + berth-cargo 실화물 조인 선박을 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
   // AgentConsole과 동일한 원칙. arrival_at_utc는 팝업이 그 필드로 시각을 표시해서 맞춰준다.
@@ -248,8 +266,18 @@ export default function PortMap() {
         zoom={ONSAN_ZOOM}
         style={{ height: '100%', width: '100%', background: COLORS.bg }}
         attributionControl={false}
+        whenReady={() => {
+          // 컨테이너 크기가 정해진 뒤에 맞춰야 한다 — 렌더 직후엔 높이가 0 이라
+          // fitBounds 가 엉뚱한 줌으로 잡힌다.
+          requestAnimationFrame(() => mapRef.current?.fitBounds(ONSAN_WHARF_BOUNDS, ONSAN_FIT));
+        }}
       >
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+        {/* PORT-MIS 톤(라이트)에 맞춘 베이스맵. 예전 dark_all 은 화면 전체가 밝아진 뒤에도
+            지도만 검게 남아 따로 놀았다. voyager 는 수심·해안선 표기가 있어 해도에 가깝다. */}
+        <TileLayer
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          attribution="&copy; OpenStreetMap &copy; CARTO"
+        />
 
         {/* 울산항 관제 구역 bbox */}
         <Rectangle
@@ -298,7 +326,7 @@ export default function PortMap() {
             center={onsanDisplayPos(b)}
             // 선석 원이 배 아이콘(34px)보다 작아 화면에서 묻혔다. 선석은 판정
             // 단위이자 클릭 대상이라 배보다 눈에 먼저 들어와야 한다.
-            radius={b.waterway === '부이(해상)' ? 320 : 200}
+            radius={b.waterway === '부이(해상)' ? 340 : 230}
             pathOptions={{
               color: vColor,
               fillColor: vColor,
@@ -307,9 +335,17 @@ export default function PortMap() {
             }}
             eventHandlers={{ click: () => setSelectedBerthGroup(ONSAN_WEATHER_GROUP[id] || null) }}
           >
-            <Tooltip>
-              {b.name}
-              {verdict ? ` — 판정: ${verdict}` : ' — 클릭하면 선석별 하역 판정과 연동'}
+            {/* 부두 이름을 항상 띄운다. 원만 있으면 배 아이콘에 묻혀 "여기가 부두"라는
+                것도, 클릭 대상이라는 것도 화면에서 알 수 없었다.
+
+                한 레이어에 Tooltip 을 두 개 달면 안 된다 — Leaflet 의 bindTooltip 은
+                덮어쓰기라, 앞의 permanent 옵션에 뒤의 긴 문구가 붙어 "○○부두 —
+                클릭하면 선석별 하역 판정과 연동"이 지도에 상시 박혔다. 온산 선석은
+                서로 수백 m 안에 몰려 있어 그 라벨들이 겹쳐 지도를 덮었다.
+                라벨은 이름(+판정)만, 안내는 클릭 팝업에 둔다. */}
+            <Tooltip permanent direction="center" className="berth-label">
+              {b.name.replace(/부두$/, '')}
+              {verdict ? ` · ${verdict}` : ''}
             </Tooltip>
             <Popup>
               <div style={{ color: '#0d1b2a', fontSize: '13px', minWidth: '160px' }}>
@@ -405,7 +441,7 @@ export default function PortMap() {
       {/* 지도 옵션 박스 — 페이지 상단의 [Omniverse/3D View] 버튼(≈top 50~88px)에
           가려지지 않도록 그 아래(top 70 = 페이지 기준 약 100px)에 세로 박스로 배치 */}
       <div style={{
-        position: 'absolute', top: 70, right: 14, zIndex: 1000,
+        position: 'absolute', top: 14, right: 14, zIndex: 1000,
         background: COLORS.glass, border: `1px solid ${COLORS.glassBorder}`,
         backdropFilter: 'blur(8px)', borderRadius: '10px',
         padding: '10px 12px',
@@ -418,12 +454,15 @@ export default function PortMap() {
           지도 옵션
         </div>
         {[
-          { label: '온산 확대', center: ONSAN_CENTER, zoom: ONSAN_ZOOM },
+          { label: '온산 부두', bounds: ONSAN_WHARF_BOUNDS },
+          { label: '온산 전체 (원유부이 포함)', bounds: ONSAN_ALL_BOUNDS },
           { label: '울산항 전체', center: MAP_CENTER, zoom: MAP_DEFAULT_ZOOM },
         ].map((v) => (
           <button
             key={v.label}
-            onClick={() => mapRef.current?.flyTo(v.center, v.zoom, { duration: 0.8 })}
+            onClick={() => (v.bounds
+              ? mapRef.current?.flyToBounds(v.bounds, { ...ONSAN_FIT, duration: 0.8 })
+              : mapRef.current?.flyTo(v.center, v.zoom, { duration: 0.8 }))}
             style={{
               background: 'rgba(255,255,255,0.06)', border: `1px solid ${COLORS.glassBorder}`,
               color: COLORS.textPrimary, borderRadius: '7px', padding: '7px 10px',

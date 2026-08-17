@@ -112,6 +112,8 @@ export default function BerthWeatherPanel() {
             {berthGroups.map((g) => <option key={g} value={g}>{g}</option>)}
           </select>
         </label>
+        {/* 폴백 입력 — 백엔드가 붙어 있으면 판정에 쓰이지 않으므로 숨긴다 */}
+        {!usingBackend && (
         <label
           style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: COLORS.textSecondary }}
           title={usingBackend ? '서버가 DB 실측 관측치로 직접 판정 중 — 이 입력은 백엔드 미응답(폴백) 시에만 사용됩니다' : undefined}
@@ -120,6 +122,7 @@ export default function BerthWeatherPanel() {
           <input type="number" step="0.1" value={windSpeed} disabled={usingBackend}
             onChange={(e) => setWindSpeed(e.target.value)} style={disabledInputStyle} />
         </label>
+        )}
         <label
           style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: COLORS.textSecondary }}
           title={usingBackend ? '서버가 DB 실측 관측치로 직접 판정 중 — 이 입력은 백엔드 미응답(폴백) 시에만 사용됩니다' : undefined}
@@ -148,12 +151,16 @@ export default function BerthWeatherPanel() {
             ⚠ 특별 기상조건 (뇌우·태풍경로 등)
           </label>
         </div>
+        {/* 폴백일 때만 수동 판정이 의미 있다 — 백엔드 연결 시에는 선석군 변경·
+            체크박스 토글이 이미 자동 재판정하므로 눌러도 결과가 같다. */}
+        {!usingBackend && (
         <button onClick={run} style={{
           background: `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`, color: '#FFFFFF',
           border: 'none', borderRadius: '8px', padding: '9px 20px', fontWeight: 700, cursor: 'pointer', fontSize: '14px',
         }}>
           판정
         </button>
+        )}
       </div>
 
       {verdict && (

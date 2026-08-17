@@ -82,9 +82,13 @@ export const WEATHER_STATUS_COLORS = {
 };
 
 // AIS 항해 상태 → 한글 라벨/색상
+//
+// UNKNOWN 은 "AIS 항해상태 필드가 없는 배"다. 대부분 Class B 를 쓰는 항내 소형
+// 작업선(예선·급유선·통선·시운전선)이라, '묘박'이나 '정박지 대기'로 세면 선석을
+// 기다리는 본선 수가 부풀려진다(backendAdapter.navCategory 주석 참고).
 export const NAV_STATUS = {
   UNDER_WAY: { label: '항해 중', color: '#0B4A8F' },
-  AT_ANCHOR: { label: '묘박 중', color: '#B26A00' },
+  AT_ANCHOR: { label: '정박지 대기', color: '#B26A00' },
   MOORED: { label: '접안 중', color: '#0E7C6B' },
-  UNKNOWN: { label: '상태 미상', color: '#7A8A92' },
+  UNKNOWN: { label: '항내 소형선', color: '#7A8A92' },
 };

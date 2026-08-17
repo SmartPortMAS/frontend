@@ -13,15 +13,10 @@ export default function Sidebar({ collapsed, setCollapsed }) {
         <div className="logo-text">울산항만 관제시스템</div>
       </div>
       
-      {/* 공간(트윈) → 현황(대시보드) → 판정(안전) → 설비(센서) 순.
-          트윈이 첫 화면이라 사이드바 순서도 그에 맞춘다. */}
+      {/* 현황(대시보드) → 판정(안전) → 공간(3D) → 설비(센서) 순.
+          관제 업무 순서이자 1차 시연 순서다. */}
       <nav className="sidebar-nav">
         <NavLink to="/" end className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
-          <div className="nav-icon"><FaCube /></div>
-          <div className="nav-label">디지털 트윈</div>
-        </NavLink>
-
-        <NavLink to="/dashboard" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
           <div className="nav-icon"><FaChartPie /></div>
           <div className="nav-label">대시보드</div>
         </NavLink>
@@ -29,6 +24,11 @@ export default function Sidebar({ collapsed, setCollapsed }) {
         <NavLink to="/safety" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
           <div className="nav-icon"><FaShieldAlt /></div>
           <div className="nav-label">안전/환경 관제</div>
+        </NavLink>
+
+        <NavLink to="/twin" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
+          <div className="nav-icon"><FaCube /></div>
+          <div className="nav-label">3D 관제 화면</div>
         </NavLink>
 
         <NavLink to="/sensors" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>

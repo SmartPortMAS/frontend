@@ -51,10 +51,30 @@ function navCategory(row) {
   if (byText) return byText;
   const byCode = NAV_CODE_TO_CATEGORY[code];
   if (byCode) return byCode;
-  // 코드 결측 시 속력으로 추정: 1kn 미만이면 정박/계류로 본다(MOORED·AT_ANCHOR 구분 불가 —
-  // 보수적으로 AT_ANCHOR)
-  const sog = row.sog ?? 0;
-  return sog < 1 ? 'AT_ANCHOR' : 'UNDER_WAY';
+
+  // ── 항해상태 코드가 없는 배를 '묘박'으로 세지 않는다 ─────────────────────────
+  //
+  // 예전에는 `sog < 1 ? 'AT_ANCHOR' : 'UNDER_WAY'` 로 추정했다. 그 결과 KPI 의
+  // "묘박/정박지 대기"가 56척으로 나왔는데, 그중 29척이 이 추정분이었다.
+  //
+  // [왜 코드가 없나 — AIS Class B]
+  // 항해상태(nav status)는 Class A 위치보고(메시지 1/2/3)에만 있는 필드다.
+  // 소형선이 쓰는 Class B 보고(메시지 18)에는 그 필드 자체가 없다. 그래서
+  // 코드 결측은 대부분 **항내 소형 작업선**이다 — 실측(2026-08-17) 29척 전부
+  // PORT-MIS 미대조였고, 청화호·울산지원호·동경102호·현중303호처럼 예선·급유선·
+  // 통선·시운전선(S/T) 이름이다.
+  //
+  // [왜 '묘박'이 틀렸나 — 항만 운영 기준]
+  // 정박지 대기는 "본선이 선석을 못 잡아 지정 정박지에서 기다리는 상태"를 뜻하는
+  // 운영 지표다. 예선·급유선은 선석을 기다리는 배가 아니라 항내에서 대기·작업 중인
+  // 서비스 선박이라, 여기 섞으면 "대기 선박 수"가 부풀려져 배정 판단이 왜곡된다.
+  //
+  // 좌표로도 확인된다 — 코드 결측 29척 중 **정박지 반경 안에 있는 배는 0척**이다
+  // (upa_anchorage 20개소 대조). 반대로 '정박(앵커링)' 29척 중 9척은 정박지 안이다.
+  //
+  // 그래서 모르는 것은 모른다고 둔다. UNKNOWN 은 화면에서 '상태 미상'으로 표시되고
+  // 묘박 집계에 들어가지 않는다.
+  return 'UNKNOWN';
 }
 
 function inUlsanBbox(row) {
@@ -130,7 +150,10 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
     position_age_min: row.position_age_min,
     berth: cargo?.facility_name || null,
     cargo: cargo ? {
-      name: cargo.cargo_name, un_no: cargo.dg_un_no, cas_no: cargo.cas_no,
+      // chem_id 는 스케줄링·안전 에이전트가 화물을 식별하는 1순위 키다.
+      // (UN 번호로는 조회할 수 없다 — msds_context 는 chem_id/cas_no 만 쓴다)
+      name: cargo.cargo_name, chem_id: cargo.chem_id ?? null,
+      un_no: cargo.dg_un_no, cas_no: cargo.cas_no,
       imdg_class: cargo.imdg_class, is_synthetic: cargo.is_synthetic,
     } : null,
   };
@@ -263,4 +286,38 @@ export async function fetchBackendDashboard() {
     // 전자는 "위험 없음"이고 후자는 "모름"이라, 호출측이 구분할 수 있게 그대로 넘긴다.
     alerts: alerts ?? null,
   };
+}
+
+
+/**
+ * 선석 후보 조회 — POST /scheduling/candidates (스케줄링 에이전트, LLM 미사용 결정적 판단).
+ *
+ * 지도에서 배를 눌렀을 때 "이 배가 지금 댈 수 있는 선석"을 바로 보여주기 위한 호출.
+ * 예전에는 이 에이전트 결과를 볼 수 있는 곳이 우하단 종합 판정 콘솔 하나뿐이라,
+ * 배 단위로는 "어디에 댈 수 있나"를 화면에서 확인할 방법이 없었다.
+ *
+ * 흘수는 실측(AIS draught)만 쓴다. 미수집이면 호출하지 않는다 — 가정 흘수로
+ * 낸 "배정 가능"은 근거 없는 안전 판정이 된다.
+ */
+export async function fetchBerthCandidates({ draught_m, chem_id, cas_no, name_hint, hours = 24 }) {
+  if (draught_m == null) throw new Error('흘수 미수집 — 후보 조회 불가');
+  if (!chem_id && !cas_no) throw new Error('화물 미확인 — 후보 조회 불가');
+  const now = new Date();
+  const res = await fetch(`${BACKEND_BASE}/scheduling/candidates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      vessel: { draught_m, name_hint: name_hint ?? null },
+      cargo: { chem_id: chem_id ?? null, cas_no: cas_no ?? null, name_hint: name_hint ?? null },
+      window_start: now.toISOString(),
+      window_end: new Date(now.getTime() + hours * 3600 * 1000).toISOString(),
+    }),
+  });
+  if (!res.ok) {
+    // 422(화물 카테고리 미지정)·404(MSDS 없음)는 실제로 자주 난다.
+    // 조용히 빈 목록으로 만들지 않는다 — 왜 안 나오는지 화면에 적어야 한다.
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
 }

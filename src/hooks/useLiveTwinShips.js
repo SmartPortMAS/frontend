@@ -43,6 +43,9 @@ function twinStatus(vessel, berthId) {
     return vessel.cargo ? 'operating' : 'mooring';
   }
   if (cat === 'AT_ANCHOR') return 'anchored';
+  // 항해상태 필드가 없는 배(Class B 소형 작업선)는 묘박으로 세지 않는다 —
+  // 예선·급유선을 정박지 대기로 세면 선석을 기다리는 본선 수가 부풀려진다.
+  if (cat === 'UNKNOWN') return 'service';
   // 항해 중인 배는 '입항 중'으로 단정하지 않는다 — 나가는 배일 수도, 지나가는
   // 배일 수도 있다. AIS 항해상태만으로는 방향을 알 수 없으므로 '항해 중'으로 둔다.
   // (예전에는 접안 선석이 확인되면 arriving 으로 단정했는데, 그 배가 이미 항만

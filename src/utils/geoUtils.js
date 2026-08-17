@@ -131,14 +131,20 @@ export const ONSAN_BERTHS = {
   'SA-JI1': { lat: 35.43778, lon: 129.36694, name: '정일 1부두', operator: '정일스톨트헤븐', waterway: '산암리', maxDwt: 40000, lengthM: 354, depthM: 11, berthCount: 2, cargoTypes: '케미칼류' },
   'SA-JI2': { lat: 35.43778, lon: 129.36694, name: '정일 2부두', operator: '정일스톨트헤븐', waterway: '산암리', maxDwt: 40000, lengthM: 256, depthM: 12.5, berthCount: 2, cargoTypes: '케미칼류', offset: [-0.0012, 0], rep: true },
   'SA-HS': { lat: 35.44239, lon: 129.35778, name: '효성 부두', operator: '효성', waterway: '산암리', maxDwt: 30000, lengthM: 240, depthM: 12, berthCount: 1, cargoTypes: '케미칼류', singleton: true },
-  'SA-SO1': { lat: 35.45100, lon: 129.35600, name: 'S-Oil 1부두', operator: 'S-OIL', waterway: '산암리', maxDwt: 50000, lengthM: 280, depthM: 11, berthCount: 2, cargoTypes: '유류/케미칼류', rep: true },
-  'SA-SO2': { lat: 35.45100, lon: 129.35600, name: 'S-Oil 2부두', operator: 'S-OIL', waterway: '산암리', maxDwt: 120000, lengthM: 340, depthM: 15.5, berthCount: 3, cargoTypes: '유류/케미칼류', offset: [0, 0.0014], rep: true },
-  'WS-SO3': { lat: 35.45100, lon: 129.35600, name: 'S-Oil 3부두', operator: 'S-OIL', waterway: '원산리', maxDwt: 50000, lengthM: 280, depthM: 14, berthCount: 2, cargoTypes: '유류/케미칼류', offset: [0.0012, 0.0007], rep: true },
-  'WS-SO4': { lat: 35.45100, lon: 129.35600, name: 'S-Oil 4부두', operator: 'S-OIL', waterway: '원산리', maxDwt: 30000, lengthM: 585, depthM: 12, berthCount: 3, cargoTypes: '케미칼류', offset: [0.0012, -0.0007], rep: true },
+  'SA-SO1': { lat: 35.45100, lon: 129.35600, name: 'S-Oil 1부두', operator: 'S-OIL', waterway: '산암리', maxDwt: 50000, lengthM: 280, depthM: 11, berthCount: 2, cargoTypes: '유류/케미칼류', offset: [-0.0018, 0], rep: true },
+  'SA-SO2': { lat: 35.45100, lon: 129.35600, name: 'S-Oil 2부두', operator: 'S-OIL', waterway: '산암리', maxDwt: 120000, lengthM: 340, depthM: 15.5, berthCount: 3, cargoTypes: '유류/케미칼류', offset: [-0.0006, 0], rep: true },
+  'WS-SO3': { lat: 35.45100, lon: 129.35600, name: 'S-Oil 3부두', operator: 'S-OIL', waterway: '원산리', maxDwt: 50000, lengthM: 280, depthM: 14, berthCount: 2, cargoTypes: '유류/케미칼류', offset: [0.0006, 0], rep: true },
+  'WS-SO4': { lat: 35.45100, lon: 129.35600, name: 'S-Oil 4부두', operator: 'S-OIL', waterway: '원산리', maxDwt: 30000, lengthM: 585, depthM: 12, berthCount: 3, cargoTypes: '케미칼류', offset: [0.0018, 0], rep: true },
   'BU-KNOC': { lat: 35.38633, lon: 129.39300, name: '석유공사 부이', operator: '한국석유공사', waterway: '부이(해상)', maxDwt: 325000, depthM: 27, berthCount: 1, cargoTypes: '원유', singleton: true },
 };
 
 // 지도 표시 좌표 (대표점 공유 선석은 미세 이격 적용)
+//
+// 원천에 선석별 좌표가 없어 같은 터미널의 여러 선석이 대표점 하나를 공유한다.
+// 지도에서는 그대로 겹쳐 그려져 부두 이름표가 서로를 덮었다(S-Oil 1~4가 특히
+// 심했다 — 네 개가 한 점). 그래서 세로로 벌려 사다리처럼 놓는다.
+// 이 이격은 '표시용'이다 — 판정·조인은 전부 선석 이름으로 하므로 좌표가 결과를
+// 바꾸지 않는다. 위아래 순서는 실제 부두 번호 순서(1→4)를 따른다.
 export function onsanDisplayPos(b) {
   const [dLat, dLon] = b.offset || [0, 0];
   return [b.lat + dLat, b.lon + dLon];

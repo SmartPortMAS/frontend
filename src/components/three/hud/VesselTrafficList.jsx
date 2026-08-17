@@ -9,8 +9,10 @@ import { FaShip, FaChevronUp, FaChevronDown } from 'react-icons/fa';
 const STATUS_LABEL = {
   operating: { text: '하역 중', color: '#39C0A8' },
   mooring: { text: '계류', color: '#E0A83C' },
-  anchored: { text: '묘박', color: '#5FC7DC' },
+  anchored: { text: '정박지 대기', color: '#5FC7DC' },
   underway: { text: '항해 중', color: '#7FB3E8' },
+  // AIS 항해상태 필드가 없는 배 — 대부분 Class B 항내 소형 작업선
+  service: { text: '항내 소형선', color: '#9AA7AE' },
 };
 
 // 상태 필터 — 이영서 요청(2026-08-17):
@@ -23,8 +25,9 @@ const FILTERS = [
   { key: 'ALL', label: '전체' },
   { key: 'operating', label: '하역' },
   { key: 'mooring', label: '계류' },
-  { key: 'anchored', label: '묘박' },
+  { key: 'anchored', label: '대기' },
   { key: 'underway', label: '항해' },
+  { key: 'service', label: '소형선' },
 ];
 
 export default function VesselTrafficList() {

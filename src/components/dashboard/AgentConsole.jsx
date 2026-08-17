@@ -407,7 +407,7 @@ export default function AgentConsole() {
           ) : (
             <>
               <span style={{ flex: 1, fontSize: 11.5, color: COLORS.textDim }}>
-                최종 결정은 관제사가 합니다 (기록은 세션 내 보존)
+                최종 결정은 관제사가 합니다
               </span>
               <button onClick={() => setDecision('APPROVED')} style={{
                 background: COLORS.teal, color: '#FFFFFF', border: 'none', borderRadius: 8,
