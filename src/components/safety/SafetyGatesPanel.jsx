@@ -10,7 +10,7 @@ import { FaShieldAlt, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 const RISK_STYLE = {
   '안전': { color: COLORS.teal },
   '주의': { color: COLORS.yellow },
-  '위험': { color: '#ff8c42' },
+  '위험': { color: '#D2601A' },
   '배정불가': { color: COLORS.red },
 };
 
@@ -327,7 +327,7 @@ export default function SafetyGatesPanel() {
           style={{
             marginLeft: 'auto',
             background: running ? COLORS.card : `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,
-            color: running ? COLORS.textSecondary : '#04222b',
+            color: running ? COLORS.textSecondary : '#FFFFFF',
             border: running ? `1px solid ${COLORS.border}` : 'none',
             borderRadius: '8px', padding: '9px 22px', fontWeight: 700,
             cursor: running ? 'progress' : 'pointer', fontSize: '14px',

@@ -22,9 +22,9 @@ import { ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 // ─────────────────────────────────────────────
 
 const AGENTS = {
-  weather: { name: '기상분석 에이전트', icon: FaCloudSun, color: '#38bdf8' },
-  scheduling: { name: '스케줄링 에이전트', icon: FaRoute, color: '#a78bfa' },
-  safety: { name: '안전관제 에이전트', icon: FaShieldAlt, color: '#f59e0b' },
+  weather: { name: '기상분석 에이전트', icon: FaCloudSun, color: '#1E6FA8' },
+  scheduling: { name: '스케줄링 에이전트', icon: FaRoute, color: '#5B3E9B' },
+  safety: { name: '안전관제 에이전트', icon: FaShieldAlt, color: '#B26A00' },
   orchestrator: { name: '종합 오케스트레이터', icon: FaRobot, color: COLORS.teal },
 };
 
@@ -226,14 +226,14 @@ export default function AgentConsole() {
           display: 'flex', alignItems: 'center', gap: 9,
           padding: '12px 18px', borderRadius: 26, cursor: 'pointer',
           background: `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,
-          color: '#04222b', border: 'none', fontWeight: 800, fontSize: 14,
+          color: '#FFFFFF', border: 'none', fontWeight: 800, fontSize: 14,
           boxShadow: '0 6px 22px rgba(0,0,0,0.45)',
         }}
       >
         <FaComments /> 에이전트 협상 로그
         {orchestration && (
           <span style={{
-            background: '#04222b', color: COLORS.teal, borderRadius: 10,
+            background: '#FFFFFF', color: COLORS.teal, borderRadius: 10,
             padding: '1px 8px', fontSize: 11,
           }}>
             {orchestration.decision_label || orchestration.status}
@@ -310,7 +310,7 @@ export default function AgentConsole() {
         </select>
         <button onClick={run} disabled={loading || !target} style={{
           background: loading ? COLORS.card : `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,
-          color: loading ? COLORS.textDim : '#04222b', border: 'none', borderRadius: 8,
+          color: loading ? COLORS.textDim : '#FFFFFF', border: 'none', borderRadius: 8,
           padding: '7px 14px', fontWeight: 800, fontSize: 12.5, cursor: loading ? 'default' : 'pointer',
           display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
         }}>
@@ -396,7 +396,7 @@ export default function AgentConsole() {
                 최종 결정은 관제사가 합니다 (기록은 세션 내 보존)
               </span>
               <button onClick={() => setDecision('APPROVED')} style={{
-                background: COLORS.teal, color: '#04222b', border: 'none', borderRadius: 8,
+                background: COLORS.teal, color: '#FFFFFF', border: 'none', borderRadius: 8,
                 padding: '7px 14px', fontWeight: 800, fontSize: 12.5, cursor: 'pointer',
               }}>승인</button>
               <button onClick={() => setDecision('REJECTED')} style={{
@@ -643,7 +643,7 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
         />
         <button onClick={() => ask()} disabled={loading || !question.trim()} style={{
           background: loading || !question.trim() ? COLORS.card : `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,
-          color: loading || !question.trim() ? COLORS.textDim : '#04222b',
+          color: loading || !question.trim() ? COLORS.textDim : '#FFFFFF',
           border: 'none', borderRadius: 8, padding: '9px 13px', fontSize: 13,
           cursor: loading || !question.trim() ? 'default' : 'pointer',
         }}><FaPaperPlane /></button>

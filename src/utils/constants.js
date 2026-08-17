@@ -3,26 +3,55 @@
 // 섞여 있어, 같은 사람이 한 조치가 다른 사람 것처럼 보였다.
 export const OPERATOR_NAME = '관제사 함현우';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 화면 색 — PORT-MIS(울산항만공사 GIS 항만 모니터링) 톤에 맞춘 라이트 팔레트
+//
+// [왜 바꿨나]
+// 이 시스템은 PORT-MIS 안의 한 축(액체화물 안전관제)으로 들어가는 것을 상정한다.
+// 그런데 화면이 짙은 남색 계열이라 PORT-MIS 옆에 두면 다른 제품처럼 보였다.
+// 관제 화면은 낮에 오래 보는 화면이기도 해서, 밝은 바탕이 실무에도 맞다.
+//
+// [어디는 어둡게 두는가]
+// 디지털 트윈의 HUD(레이더·CCTV·선박목록·선석바)는 3D 씬 위에 뜨는 오버레이라
+// 밝게 하면 배경과 붙어 안 읽힌다. PORT-MIS 도 밝은 지도 위에 어두운 툴바를
+// 쓴다 — 같은 이유다. 그쪽은 DARK_HUD 를 쓴다.
+//
+// [의미 색]
+// 라이트 배경에서는 형광 계열(#00d4aa·#ffd166)이 흰 바탕에 묻혀 판정 색으로
+// 못 쓴다. 명도를 낮춰 흰 배경에서 대비가 서는 값으로 바꿨다.
+// ─────────────────────────────────────────────────────────────────────────────
 export const COLORS = {
-  bg: '#0a0f1c',
-  panel: '#0d1b2a',
-  card: '#1b2838',
-  cardHover: '#243447',
-  border: 'rgba(78, 205, 196, 0.15)',
-  borderHover: 'rgba(0, 212, 170, 0.4)',
-  teal: '#00d4aa',
-  tealDark: '#00a888',
-  red: '#ff4b6e',
-  yellow: '#ffd166',
-  info: '#4ecdc4',
-  blue: '#3a86ff',
-  purple: '#8338ec',
-  white: '#e8f0f2',
-  textPrimary: '#e8f0f2',
-  textSecondary: '#8ba3b8',
-  textDim: '#4a6a82',
-  glass: 'rgba(13, 27, 42, 0.75)',
-  glassBorder: 'rgba(78, 205, 196, 0.12)',
+  bg: '#EEF2F5',          // 페이지 바탕 (PORT-MIS 지도 여백 톤)
+  panel: '#FFFFFF',       // 헤더·사이드바
+  card: '#FFFFFF',        // 카드
+  cardHover: '#F4F8FA',
+  border: '#DCE4EA',
+  borderHover: '#9CC3DE',
+  navy: '#12354F',        // PORT-MIS 짙은 남색 (활성 탭·툴바)
+  teal: '#0E7C6B',        // 정상·안전
+  tealDark: '#0A5F52',
+  red: '#C4322E',         // 위험
+  yellow: '#B26A00',      // 주의 (라이트 배경용 앰버)
+  amber: '#E8A317',       // 강조 버튼 채움 (PORT-MIS 전자해도 버튼 톤)
+  info: '#1E6FA8',        // 정보·링크
+  blue: '#0B4A8F',        // UPA 기본 파랑
+  purple: '#5B3E9B',
+  white: '#FFFFFF',
+  textPrimary: '#16232B',
+  textSecondary: '#4A5A63',
+  textDim: '#7A8A92',
+  glass: 'rgba(255, 255, 255, 0.92)',
+  glassBorder: '#DCE4EA',
+};
+
+// 3D 트윈 HUD 전용 — 씬 위에 뜨는 오버레이는 계속 어둡게 간다.
+export const DARK_HUD = {
+  panel: 'rgba(10, 22, 32, 0.86)',
+  border: 'rgba(120, 190, 215, 0.32)',
+  textPrimary: '#E8F0F2',
+  textSecondary: '#A9BCC6',
+  textDim: '#7B8E99',
+  accent: '#39C0A8',
 };
 
 // ─────────────────────────────────────────────
@@ -43,18 +72,19 @@ export const MAP_CENTER = [35.47, 129.40];
 export const MAP_DEFAULT_ZOOM = 11;
 
 // 선석별 하역 판정 4단계 → 색상 (지도/3D 역연동 하이라이트용)
+// 라이트 배경에서 4단계가 서로 구분되도록 명도를 계단식으로 벌렸다.
 export const WEATHER_STATUS_COLORS = {
-  '정상': '#00d4aa',
-  '하역중단': '#ffd166',
-  '이안': '#ff8c42',
-  '호스분리': '#ff4b6e',
-  '판단불가': '#4a6a82',
+  '정상': '#0E7C6B',
+  '하역중단': '#B26A00',
+  '이안': '#D2601A',
+  '호스분리': '#C4322E',
+  '판단불가': '#7A8A92',
 };
 
 // AIS 항해 상태 → 한글 라벨/색상
 export const NAV_STATUS = {
-  UNDER_WAY: { label: '항해 중', color: '#3a86ff' },
-  AT_ANCHOR: { label: '묘박 중', color: '#ffd166' },
-  MOORED: { label: '접안 중', color: '#00d4aa' },
-  UNKNOWN: { label: '상태 미상', color: '#8ba3b8' },
+  UNDER_WAY: { label: '항해 중', color: '#0B4A8F' },
+  AT_ANCHOR: { label: '묘박 중', color: '#B26A00' },
+  MOORED: { label: '접안 중', color: '#0E7C6B' },
+  UNKNOWN: { label: '상태 미상', color: '#7A8A92' },
 };

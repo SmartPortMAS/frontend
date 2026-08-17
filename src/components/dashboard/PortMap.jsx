@@ -57,7 +57,7 @@ const formatKST = (utcString) => {
 function VesselPopup({ vessel }) {
   const status = NAV_STATUS[vessel.nav_status_category] || NAV_STATUS.UNKNOWN;
   return (
-    <div style={{ color: '#0d1b2a', minWidth: '190px', fontSize: '13px' }}>
+    <div style={{ color: COLORS.textPrimary, minWidth: '190px', fontSize: '13px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
         <strong style={{ fontSize: '14px' }}>{vessel.vessel_name}</strong>
         {vessel.is_liquid_cargo_vessel && (
@@ -83,19 +83,19 @@ function VesselPopup({ vessel }) {
           {vessel.cargo_source === 'ASSUMED' && (
             <span style={{
               marginLeft: 5, padding: '0 5px', borderRadius: 3, fontSize: 10,
-              background: '#e8eef3', color: '#4a6a82', border: '1px solid #c6d3de',
+              background: COLORS.cardHover, color: COLORS.textDim, border: `1px solid ${COLORS.border}`,
             }}>가정</span>
           )}
         </p>
       )}
       {vessel.position_source === 'REAL_AIS' && (
-        <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#4a6a82' }}>
+        <p style={{ margin: '4px 0 0', fontSize: '11px', color: COLORS.textDim }}>
           {vessel.cargo_source === 'REAL'
             ? '선박·위치·화물 모두 실측 (AIS + 재항 신고 위험물)'
             : '선박·위치는 실측 AIS · 화물은 시나리오 가정 (화물목록 API 미확보)'}
         </p>
       )}
-      <p style={{ margin: '4px 0 0', color: '#4a6a82', fontSize: '11px' }}>{vessel.port_call_id}</p>
+      <p style={{ margin: '4px 0 0', color: COLORS.textDim, fontSize: '11px' }}>{vessel.port_call_id}</p>
     </div>
   );
 }
@@ -115,8 +115,8 @@ const LEGEND_BASE = [
 ];
 const LEGEND_AIS = [
   { color: COLORS.red, label: '● 액체화물선 (PORT-MIS 선종)' },
-  { color: '#38bdf8', label: '● 항해 중 (선종 미확인)' },
-  { color: '#8ba3b8', label: '● 정박·계류 중 (선종 미확인)' },
+  { color: COLORS.blue, label: '● 항해 중 (선종 미확인)' },
+  { color: COLORS.textDim, label: '● 정박·계류 중 (선종 미확인)' },
 ];
 
 // 온산 2클러스터(처용리/산암리)가 화면에 차게 보이는 뷰
@@ -335,7 +335,7 @@ export default function PortMap() {
                     </p>
                   );
                 })()}
-                {b.rep && <p style={{ margin: '2px 0 0', color: '#4a6a82', fontSize: '11px' }}>※ 터미널 대표 좌표 (표시용 이격)</p>}
+                {b.rep && <p style={{ margin: '2px 0 0', color: COLORS.textDim, fontSize: '11px' }}>※ 터미널 대표 좌표 (표시용 이격)</p>}
               </div>
             </Popup>
           </Circle>
@@ -346,7 +346,7 @@ export default function PortMap() {
         {vaporCone && (
           <Polygon
             positions={vaporCone.positions}
-            pathOptions={{ color: '#ff8c42', weight: 2, dashArray: '6 5', fillColor: '#ff8c42', fillOpacity: 0.22 }}
+            pathOptions={{ color: '#D2601A', weight: 2, dashArray: '6 5', fillColor: '#D2601A', fillOpacity: 0.22 }}
           >
             <Tooltip sticky>
               {vaporCone.cargo} 증기 확산 예상 구역 — 풍향 {vaporCone.windDir}° · 풍속 {vaporCone.windMs}m/s 기준 약 {vaporCone.lengthM}m (가우시안 원뿔 근사 · 실측 아님)
@@ -363,7 +363,7 @@ export default function PortMap() {
             pathOptions={{
               color: v.is_liquid_cargo_vessel
                 ? COLORS.red
-                : (v.nav_status_category === 'UNDER_WAY' ? '#38bdf8' : '#8ba3b8'),
+                : (v.nav_status_category === 'UNDER_WAY' ? COLORS.blue : COLORS.textDim),
               fillOpacity: v.is_liquid_cargo_vessel ? 0.95 : 0.85,
               weight: v.is_liquid_cargo_vessel ? 2 : 1,
             }}
@@ -414,7 +414,7 @@ export default function PortMap() {
         width: 'max-content', minWidth: '168px', maxWidth: '260px',
         display: 'flex', flexDirection: 'column', gap: '6px',
       }}>
-        <div style={{ fontSize: '11px', fontWeight: 700, color: '#8ba3b8', letterSpacing: '1px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 700, color: COLORS.textDim, letterSpacing: '1px' }}>
           지도 옵션
         </div>
         {[
@@ -437,7 +437,7 @@ export default function PortMap() {
           <label style={{
             display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer',
             background: showAis ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.06)',
-            border: `1px solid ${showAis ? '#38bdf8' : COLORS.glassBorder}`,
+            border: `1px solid ${showAis ? COLORS.blue : COLORS.glassBorder}`,
             borderRadius: '7px', padding: '7px 10px',
             fontSize: '12px', fontWeight: 600, color: COLORS.textPrimary,
             // "· 액체 33"이 줄바꿈돼 잘려 보이던 문제 — 라벨을 한 줄로 고정한다
@@ -447,7 +447,7 @@ export default function PortMap() {
               type="checkbox"
               checked={showAis}
               onChange={() => setShowAis((s) => !s)}
-              style={{ accentColor: '#38bdf8', cursor: 'pointer', flexShrink: 0 }}
+              style={{ accentColor: COLORS.blue, cursor: 'pointer', flexShrink: 0 }}
             />
             {/* 라벨은 짧게 — 배 수가 세 자리가 되어도 한 줄에 들어와야 한다.
                 상한(200척)에 걸렸을 때만 "표시/전체"를 함께 보여준다. */}

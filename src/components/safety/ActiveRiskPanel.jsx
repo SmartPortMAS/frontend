@@ -64,7 +64,7 @@ export default function ActiveRiskPanel() {
             type="button"
             onClick={() => alerts.forEach((a) => ackAlert(alertId(a)))}
             style={{
-              background: COLORS.teal, color: '#04222b', border: 'none', borderRadius: '6px',
+              background: COLORS.teal, color: '#FFFFFF', border: 'none', borderRadius: '6px',
               padding: '5px 12px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
             }}
           >

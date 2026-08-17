@@ -74,7 +74,7 @@ function GateCard({ gate, onCommand }) {
             flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 'bold',
             cursor: interlocked ? 'not-allowed' : 'pointer',
             background: interlocked ? COLORS.card : COLORS.teal,
-            color: interlocked ? COLORS.textDim : '#04211c',
+            color: interlocked ? COLORS.textDim : '#FFFFFF',
           }}
         >
           승인

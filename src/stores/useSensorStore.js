@@ -75,6 +75,11 @@ const useSensorStore = create((set, get) => ({
   selectedBerthGroup: null, // 지도에서 선석 클릭 시 기상 판정 패널과 연동
   setSelectedBerthGroup: (v) => set({ selectedBerthGroup: v }),
 
+  // 트윈 HUD 접기 상태 — CCTV 를 접으면 그 아래 선박 목록이 따라 올라가야 한다.
+  // 두 패널이 각자 접힘을 들고 있으면 위치가 어긋나므로 여기서 공유한다.
+  hudCctvCollapsed: false,
+  setHudCctvCollapsed: (v) => set({ hudCctvCollapsed: Boolean(v) }),
+
   // 선박 상세 패널 (지도 마커/입항 목록 클릭 → 선박 여정 뷰)
   selectedVessel: null,
   setSelectedVessel: (v) => set({ selectedVessel: v }),

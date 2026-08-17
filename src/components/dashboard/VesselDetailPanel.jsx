@@ -53,7 +53,7 @@ function SectionTitle({ icon, children }) {
   );
 }
 
-const MOOR_VERDICT_COLORS = { '정상': COLORS.teal, '주의': COLORS.yellow, '경고': '#ff8c42', '위험': COLORS.red };
+const MOOR_VERDICT_COLORS = { '정상': COLORS.teal, '주의': COLORS.yellow, '경고': '#D2601A', '위험': COLORS.red };
 const ASSUMED_DWT = 20000; // 케미컬 탱커 가정값 (하드코딩 유지 — 실DWT 소스 없음)
 
 const DRAUGHT_VERDICT_STYLE = {
@@ -260,7 +260,7 @@ export default function VesselDetailPanel() {
             <ul style={{ margin: '4px 0', paddingLeft: '16px', fontSize: '12.5px', lineHeight: 1.7 }}>
               {assessment.gates_hit.map((g, i) => (
                 <li key={`${g.rule}-${i}`}>
-                  <strong style={{ color: g.severity === 'BLOCK' ? COLORS.red : g.severity === 'HOLD' ? '#ff8c42' : COLORS.yellow }}>
+                  <strong style={{ color: g.severity === 'BLOCK' ? COLORS.red : g.severity === 'HOLD' ? '#D2601A' : COLORS.yellow }}>
                     {g.rule}
                   </strong>{' '}{g.reason}
                 </li>
@@ -319,7 +319,7 @@ export default function VesselDetailPanel() {
             style={{
               marginTop: '8px', width: '100%', padding: '9px', borderRadius: '8px', border: 'none',
               background: `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,
-              color: '#04222b', fontWeight: 700, cursor: 'pointer', fontSize: '13px',
+              color: '#FFFFFF', fontWeight: 700, cursor: 'pointer', fontSize: '13px',
             }}
           >
             이 선석 기상 판정 실행 → 판정 패널로 이동
