@@ -68,6 +68,8 @@ export default function VesselDetailPanel() {
   const [moorSim, setMoorSim] = useState(null);
   const [simLoading, setSimLoading] = useState(false);
   const [moorDwt, setMoorDwt] = useState(ASSUMED_DWT);
+  // LLM 판단 근거는 기본 2줄만 — 등급과 걸린 게이트가 먼저 보여야 한다
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const setSelectedBerthGroup = useSensorStore((s) => s.setSelectedBerthGroup);
   const berthWeather = useSensorStore((s) => s.berthWeather);
@@ -103,8 +105,8 @@ export default function VesselDetailPanel() {
   return (
     <div style={{
       position: 'fixed', top: 0, right: 0, height: '100vh', width: '390px', zIndex: 2500,
-      background: 'rgba(13, 27, 42, 0.97)', backdropFilter: 'blur(12px)',
-      borderLeft: `1px solid ${COLORS.borderHover}`, boxShadow: '-12px 0 40px rgba(0,0,0,0.5)',
+      background: 'rgba(255, 255, 255, 0.98)', backdropFilter: 'blur(12px)',
+      borderLeft: `1px solid ${COLORS.borderHover}`, boxShadow: '-12px 0 40px rgba(18, 53, 79, 0.16)',
       padding: '20px', overflowY: 'auto', color: COLORS.textPrimary,
     }}>
       {/* 헤더 */}
@@ -214,7 +216,7 @@ export default function VesselDetailPanel() {
               </span>
               <span style={{ color: opColor, fontWeight: 800 }}>{Math.round(op.progress_pct)}%</span>
             </div>
-            <div style={{ height: '9px', background: '#0d1b2a', borderRadius: '5px', overflow: 'hidden' }}>
+            <div style={{ height: '9px', background: COLORS.bg, borderRadius: '5px', overflow: 'hidden' }}>
               <div style={{ width: `${op.progress_pct}%`, height: '100%', background: opColor, borderRadius: '5px', transition: 'width 1s' }} />
             </div>
             {op.planned_tons != null && (
@@ -250,9 +252,32 @@ export default function VesselDetailPanel() {
             {safetyLoading && <span style={{ fontSize: '11px', color: COLORS.textDim }}>갱신 중…</span>}
           </div>
 
+          {/* LLM 근거 문장은 길다(보통 3~5줄). 그런데 관제사가 이 패널에서 먼저
+              봐야 할 것은 등급과 "무엇이 걸렸나"이지 서술이 아니다. 서술이 위에
+              길게 깔리면 정작 걸린 게이트가 스크롤 아래로 밀린다.
+              두 줄만 보여주고 나머지는 펼쳐 보게 한다 — 숨기는 게 아니라 순서를
+              바꾸는 것이다(근거는 계속 열람 가능). */}
           {assessment.summary && (
-            <div style={{ fontSize: '12.5px', color: COLORS.textPrimary, lineHeight: 1.65, marginBottom: '8px' }}>
-              {assessment.summary}
+            <div style={{ marginBottom: '8px' }}>
+              <div style={{
+                fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.65,
+                ...(summaryOpen ? {} : {
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }),
+              }}>
+                {assessment.summary}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSummaryOpen((v) => !v)}
+                style={{
+                  background: 'none', border: 'none', padding: '2px 0', cursor: 'pointer',
+                  color: COLORS.info, fontSize: '11.5px', fontWeight: 700, fontFamily: 'inherit',
+                }}
+              >
+                {summaryOpen ? '▲ 판단 근거 접기' : '▼ 판단 근거 펼치기 (LLM 설명)'}
+              </button>
             </div>
           )}
 
@@ -272,26 +297,35 @@ export default function VesselDetailPanel() {
             </div>
           )}
 
+          {/* 유해성·체크리스트는 MSDS 에서 그대로 오는 목록이라 길다(합쳐 10여 줄).
+              하역 전에 실제로 훑는 문서라 지우면 안 되지만, 패널을 열자마자 화면을
+              채울 이유도 없다 — 접어 두고 필요할 때 편다. */}
           {assessment.hazards?.length > 0 && (
-            <>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, margin: '10px 0 4px' }}>
-                주요 유해성 (MSDS)
-              </div>
-              <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
+            <details style={{ marginTop: '10px' }}>
+              <summary style={{
+                fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary,
+                cursor: 'pointer', listStyle: 'revert',
+              }}>
+                주요 유해성 (MSDS) · {assessment.hazards.length}건
+              </summary>
+              <ul style={{ margin: '4px 0 0', paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
                 {assessment.hazards.map((h, i) => <li key={i}>{h}</li>)}
               </ul>
-            </>
+            </details>
           )}
 
           {assessment.checklist.length > 0 && (
-            <>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, margin: '10px 0 4px' }}>
-                하역 전 안전 체크리스트 (MSDS 근거)
-              </div>
-              <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
+            <details style={{ marginTop: '8px' }}>
+              <summary style={{
+                fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary,
+                cursor: 'pointer', listStyle: 'revert',
+              }}>
+                하역 전 안전 체크리스트 · {assessment.checklist.length}항목
+              </summary>
+              <ul style={{ margin: '4px 0 0', paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
                 {assessment.checklist.map((c, i) => <li key={i}>{c}</li>)}
               </ul>
-            </>
+            </details>
           )}
 
           <div style={{ fontSize: '11px', color: COLORS.textDim, marginTop: '6px', lineHeight: 1.6 }}>
@@ -330,7 +364,19 @@ export default function VesselDetailPanel() {
       {/* 계류 물리 검증 (8월 시나리오 S1 — 준정적 근사, PhysX 스크립트로 검증) */}
       {vessel.berth && (
         <>
+          {/* [이 항목은 하드웨어와 무관하다]
+              "하드웨어 안 하기로 했는데 왜 있나"는 질문이 나왔다. 8/3 에 보류한 것은
+              탱크 수위계·유량계·게이트 릴레이 같은 '실물 계측/제어 장비'다.
+              이 계산은 장비가 필요 없는 순수 수식이다 — 지금 부는 바람(실측 풍속)과
+              선박 제원으로 계류삭 장력을 구한다. 설계문서 v1 4-4절의 항목이고,
+              Isaac Sim PhysX 동역학으로 교차검증까지 해 둔 우리 차별점이다
+              (2만 DWT 기준 근사식 137.6 kN vs PhysX 146.8 kN — 오차 6.7%). */}
           <SectionTitle icon={<FaCogs />}>계류 안정성 물리 검증</SectionTitle>
+          <div style={{ fontSize: '11.5px', color: COLORS.textDim, lineHeight: 1.6, marginBottom: '8px' }}>
+            OCIMF 계열 준정적 근사식 — 실측 풍속·파고로 계류삭 장력을 계산합니다.
+            현장 계측기가 필요 없는 수식이며, Isaac Sim PhysX 동역학과 교차검증했습니다
+            (2만 DWT 기준 오차 6.7%, 판정 등급 동일).
+          </div>
           {/* 예전엔 mock-server(:8000)의 /sim/mooring 을 호출했는데, mock-server 를
               걷어낸 뒤로는 그 주소가 죽어 항상 "응답 없음"만 떴다. 같은 상수·같은
               식을 utils/mooringPhysics.js 로 옮겨 화면에서 계산한다(순수 함수라
@@ -390,7 +436,7 @@ export default function VesselDetailPanel() {
                   {moorSim.line_tension_kn} / {moorSim.mbl_kn} kN
                 </span>
               </div>
-              <div style={{ height: '8px', background: '#0d1b2a', borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{ height: '8px', background: COLORS.bg, borderRadius: '4px', overflow: 'hidden' }}>
                 <div style={{
                   width: `${Math.min(100, moorSim.tension_pct)}%`, height: '100%',
                   background: MOOR_VERDICT_COLORS[moorSim.verdict], borderRadius: '4px',

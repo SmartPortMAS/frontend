@@ -75,8 +75,8 @@ export default function SafetyGraph() {
               <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text-primary)', fontSize: 12 }} />
               <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: 'var(--text-dim)', fontSize: 10 }} />
               <Tooltip
-                contentStyle={{ backgroundColor: 'rgba(13, 27, 42, 0.9)', border: '1px solid rgba(78, 205, 196, 0.2)', borderRadius: '8px' }}
-                itemStyle={{ color: '#00d4aa' }}
+                contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-primary)' }}
+                itemStyle={{ color: 'var(--teal)' }}
               />
               <Radar name="안전 지수" dataKey="A" stroke="#00d4aa" fill="#00d4aa" fillOpacity={0.4} />
             </RadarChart>
