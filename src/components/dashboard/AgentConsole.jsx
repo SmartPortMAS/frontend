@@ -262,17 +262,18 @@ export default function AgentConsole() {
       position: 'fixed', right: 22, bottom: 22, zIndex: 3000,
       width: 420, maxWidth: 'calc(100vw - 44px)', height: 560, maxHeight: 'calc(100vh - 120px)',
       display: 'flex', flexDirection: 'column',
-      background: 'rgba(11,20,32,0.97)', border: `1px solid ${COLORS.glassBorder}`,
-      borderRadius: 14, boxShadow: '0 10px 40px rgba(0,0,0,0.55)', overflow: 'hidden',
+      // 라이트 통일 — 어두운 바탕은 라이트 팔레트 글자색과 만나 글자가 안 보였다
+      background: COLORS.panel, border: `1px solid ${COLORS.border}`,
+      borderRadius: 14, boxShadow: '0 10px 40px rgba(18,53,79,0.22)', overflow: 'hidden',
     }}>
       {/* 헤더 */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '11px 14px', borderBottom: `1px solid ${COLORS.glassBorder}`,
-        background: 'rgba(255,255,255,0.03)',
+        background: COLORS.cardHover,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: COLORS.textPrimary, fontWeight: 700 }}>
-          <FaComments color={COLORS.teal} /> 관제 에이전트 콘솔
+          <FaComments color={COLORS.teal} /> 에이전트 협상 로그
         </div>
         <button onClick={() => setOpen(false)} style={{
           background: 'none', border: 'none', color: COLORS.textDim, cursor: 'pointer', fontSize: 15,
@@ -312,7 +313,7 @@ export default function AgentConsole() {
           value={target?.port_call_id || ''}
           onChange={(e) => setLocalTarget(vessels.find((v) => v.port_call_id === e.target.value))}
           style={{
-            flex: 1, background: COLORS.card, color: COLORS.textPrimary,
+            flex: 1, minWidth: 0, background: COLORS.card, color: COLORS.textPrimary,
             border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12.5,
           }}
         >
@@ -326,7 +327,7 @@ export default function AgentConsole() {
           background: loading ? COLORS.card : `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,
           color: loading ? COLORS.textDim : '#FFFFFF', border: 'none', borderRadius: 8,
           padding: '7px 14px', fontWeight: 800, fontSize: 12.5, cursor: loading ? 'default' : 'pointer',
-          display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+          display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0,
         }}>
           {loading ? <><FaSpinner className="spin" /> 판단 중</> : <><FaPlay /> 종합 판정</>}
         </button>
@@ -356,7 +357,7 @@ export default function AgentConsole() {
                   {a.name} · {m.time}
                 </div>
                 <div style={{
-                  background: m.verdict ? `${VERDICT_COLOR[m.verdict] || COLORS.info}1f` : 'rgba(255,255,255,0.05)',
+                  background: m.verdict ? `${VERDICT_COLOR[m.verdict] || COLORS.info}1f` : COLORS.cardHover,
                   border: `1px solid ${m.verdict ? (VERDICT_COLOR[m.verdict] || COLORS.info) : 'transparent'}`,
                   borderRadius: 10, padding: '9px 12px',
                   fontSize: 13, color: COLORS.textPrimary, lineHeight: 1.55,
@@ -545,7 +546,7 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               {SUGGESTED.map((s) => (
                 <button key={s} onClick={() => ask(s)} style={{
-                  textAlign: 'left', background: 'rgba(255,255,255,0.05)', cursor: 'pointer',
+                  textAlign: 'left', background: COLORS.cardHover, cursor: 'pointer',
                   border: `1px solid ${COLORS.glassBorder}`, borderRadius: 9, padding: '9px 12px',
                   color: COLORS.textSecondary, fontSize: 12.5, lineHeight: 1.5,
                 }}>{s}</button>
@@ -576,7 +577,7 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
             }}><FaBookOpen /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: '9px 12px',
+                background: COLORS.cardHover, borderRadius: 10, padding: '9px 12px',
                 fontSize: 13, color: COLORS.textPrimary, lineHeight: 1.55,
               }}>
                 {formatAnswer(m.answer)}

@@ -7,6 +7,7 @@ import useDashboardData from '../../hooks/useDashboardData';
 import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs, FaMapMarkerAlt } from 'react-icons/fa';
 import { simulateMooring } from '../../utils/mooringPhysics';
 import { alertId, typeLabel } from '../../utils/alertUtils';
+import AgentChip from '../../utils/AgentChip';
 import { fetchBerthCandidates } from '../../api/backendAdapter';
 
 const RISK_COLORS = {
@@ -256,7 +257,7 @@ export default function VesselDetailPanel() {
       })()}
 
       {/* 안전 심사 — 백엔드 안전 에이전트 (MSDS 혼재금지 + IMDG 격리) */}
-      <SectionTitle icon={<FaShieldAlt />}>안전 심사 — 혼재금지 · IMDG 격리</SectionTitle>
+      <SectionTitle icon={<FaShieldAlt />}>안전 심사<AgentChip agent="safety" /></SectionTitle>
       {!assessment ? (
         <div style={{ fontSize: '13px', color: COLORS.textDim, lineHeight: 1.7 }}>
           안전 에이전트 조회 중…
@@ -390,7 +391,7 @@ export default function VesselDetailPanel() {
 
           이 목록은 "확정 배정"이 아니라 조건을 만족하는 후보다 — 확정은 종합 판정
           (기상·안전 게이트까지 통과)에서 난다. 문구로 그 차이를 분명히 적는다. */}
-      <SectionTitle icon={<FaMapMarkerAlt />}>배정 가능 선석 (후보)</SectionTitle>
+      <SectionTitle icon={<FaMapMarkerAlt />}>배정 가능 선석 (후보)<AgentChip agent="scheduling" /></SectionTitle>
       {(vessel.draught_m == null || !(vessel.cargo?.chem_id || vessel.cargo?.cas_no)) ? (
         <div style={{ fontSize: '12.5px', color: COLORS.textDim, lineHeight: 1.7 }}>
           {/* 없는 값을 가정으로 채워 후보를 만들지 않는다 — 근거 없는 "배정 가능"이 된다 */}

@@ -1,5 +1,6 @@
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
+import AgentChip from '../../utils/AgentChip';
 import { FaRoute, FaAnchor, FaShip, FaCheck, FaHourglassHalf } from 'react-icons/fa';
 
 // 전용 → 대체 → 정박지대기 판단 경로 시각화 (오케스트레이터 berth_decision.trace)
@@ -21,7 +22,7 @@ export default function BerthDecisionPanel() {
     <div className="glass-card">
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 className="glass-card-title">
-          <FaRoute style={{ marginRight: '8px', color: COLORS.teal }} />선석 배정 시뮬레이션 — 전용 → 대체 → 정박지 대기
+          <FaRoute style={{ marginRight: '8px', color: COLORS.teal }} />선석 배정 시뮬레이션 — 전용 → 대체 → 정박지 대기<AgentChip agent="orchestrator" />
         </h3>
 
       </div>
