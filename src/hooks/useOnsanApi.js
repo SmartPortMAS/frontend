@@ -367,6 +367,8 @@ function mapOrchestration(r) {
     berth_assigned: r.selected_berth?.wharf_name || null,
     anchorage: r.anchorage_assignment?.name || null,
     berth_decision: { path, trace, anchorage: r.anchorage_assignment?.name || null },
+    // 검증모드에서 원래 있던 자리가 아니라 대체 선석으로 바뀌었는지(탐색모드에서는 항상 false)
+    assignment_changed: Boolean(r.assignment_changed),
     risk_level: r.safety_assessment?.risk_level || null,
     // 안전 판정의 근거 — 예전엔 등급만 넘겨서 협상 콘솔의 안전 에이전트 발화가
     // "안전 판정: 위험" 한 줄로 끝났다(기상·스케줄링은 근거를 보여주는데 안전만
@@ -477,8 +479,11 @@ export default function useOnsanApi() {
   // 오케스트레이터 — 기상 → 스케줄링(전용/대체/정박지) → 안전 순차 판단
   // casNo가 오면(실AIS+berth-cargo 조인으로 이미 CAS를 아는 경우) 데모용 이름사전
   // cargoRef()를 거치지 않고 그대로 쓴다 — 실물질명은 사전 12종 밖일 수 있어서다.
+  //
+  // assignedWharfName을 주면 검증모드 — top-3 새 추천 대신 그 선석 하나만
+  // "지금 이 자리 괜찮은가"로 확인한다. 생략하면 기존 탐색모드(신규 추천).
   const orchestrate = useCallback(
-    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선' }) => {
+    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선', assignedWharfName = null }) => {
       const cargo = resolveCargoRef({ cas_no: casNo, cargo_name: cargoName });
       const now = Date.now();
       const data = cargo
@@ -491,6 +496,7 @@ export default function useOnsanApi() {
           cargo,
           window_start: new Date(now).toISOString(),
           window_end: new Date(now + 8 * 3600 * 1000).toISOString(),
+          ...(assignedWharfName ? { assigned_wharf_name: assignedWharfName } : {}),
         })
         : null;
 

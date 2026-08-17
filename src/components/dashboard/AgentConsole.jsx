@@ -46,15 +46,21 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   const msgs = [];
   const at = (s) => new Date(Date.now() - s * 1000).toLocaleTimeString('ko-KR', { hour12: false });
 
-  // 1) 기상 — 오케스트레이터가 실은 결과 우선, 없으면 패널에서 본 판정 사용
+  // 1) 기상 — 오케스트레이터 결과 우선, 없으면 패널에서 본 판정 사용.
+  // 상태 라벨과 근거 문구는 반드시 같은 출처에서 함께 가져온다 — 라벨은
+  // orchestration에서, 근거는 berthWeather에서 섞어 쓰면 서로 다른 API 호출
+  // 결과가 한 문장에 붙어 "하역중단"인데 근거는 "정상"인 자기모순이 생긴다
+  // (실측 확인, 2026-08-17).
+  const usingOrchestrationWeather = Boolean(orchestration.weather_grade);
   const wStatus = orchestration.weather_grade || berthWeather?.status;
   if (wStatus) {
-    const obs = berthWeather?.observed;
+    const obs = usingOrchestrationWeather ? null : berthWeather?.observed;
+    const reasons = usingOrchestrationWeather ? orchestration.weather_reasons : berthWeather?.reasons;
     msgs.push({
       agent: 'weather', time: at(9),
       text: `${vessel?.berth || '대상 선석'} 기상 판정: ${wStatus}` +
         (obs ? ` (실측 풍속 ${obs.wind ?? '-'} m/s · 파고 ${obs.wave ?? '-'} m)` : ''),
-      detail: berthWeather?.reasons || [],
+      detail: reasons || [],
     });
   }
 
@@ -104,7 +110,11 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   msgs.push({
     agent: 'orchestrator', time: at(1),
     text: orchestration.summary || `${orchestration.decision_label || orchestration.status}`,
-    detail: [],
+    // 검증모드에서 원래 있던 자리가 그대로 유지됐는지, 다른 자리로 바뀌었는지
+    // — 관제사가 "왜 선석이 방금 본 위치와 다르지?"를 묻지 않도록 바로 알려준다.
+    detail: orchestration.assignment_changed
+      ? [`⚠ 원래 위치가 아닌 대체 선석으로 배정되었습니다 (${orchestration.berth_assigned || '-'})`]
+      : [],
     verdict: orchestration.status,
     verdictLabel: orchestration.decision_label,
   });
@@ -168,7 +178,10 @@ export default function AgentConsole() {
     [orchestration, berthWeather, target]
   );
 
-  // 한 번의 실행으로 기상 → 스케줄링 → 안전 → 종합을 순차 수행
+  // 한 번의 실행으로 기상 → 스케줄링 → 안전 → 종합을 순차 수행.
+  // target.berth(실데이터 기준 지금 있는 자리)가 있으면 검증모드로 보낸다 —
+  // "지금 이 자리 괜찮은가"를 확인하는 것이지, 새로 어디로 갈지 추천받는 게
+  // 아니다. 없으면(재항 위치 미확인) 기존 탐색모드로 새로 추천받는다.
   const run = async () => {
     if (!target) return;
     setLoading(true);
@@ -183,6 +196,7 @@ export default function AgentConsole() {
         dwt: null, // 실AIS 위치 데이터엔 DWT가 없음 — 미상으로 보내 오케스트레이터가 보수적으로 판단하게 함
         draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
+        assignedWharfName: target.berth || null,
       });
     } finally {
       setLoading(false);
