@@ -18,14 +18,20 @@ import {
 const SHIP_SVG_PATH =
   'M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v-2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.34-.42-.6-.5L20 10.62V6c0-1.1-.9-2-2-2h-3V1H9v3H6c-1.1 0-2 .9-2 2v4.62l-1.29.42c-.26.08-.48.26-.6.5s-.15.52-.06.78L3.95 19zM6 6h12v3.73l-6-1.94-6 1.94V6z';
 
-// 위험물선은 빨간색 + 펄스 링으로 강조, 일반선은 항해 상태 색상
+// 기호는 배 모양 하나로 통일한다 — "배 아이콘과 점, 두 종류"가 헷갈린다는
+// 피드백(2026-08-17). 대신 '아는 정보의 양'을 크기와 링으로 구분한다:
+//   큰 배 + 붉은 펄스 링 = 재항 화물까지 확인된 배 (클릭 → 안전 심사·선석 후보)
+//   작은 배             = 위치만 수신된 배 (색 = 상태, 빨강이면 선종상 액체화물선)
+// 실제 VTS/ECDIS 도 확인 수준이 다른 표적을 다른 기호가 아니라 같은 기호의
+// 속성(크기·색) 차이로 구분한다.
 const createVesselIcon = (vessel) => {
+  const confirmed = Boolean(vessel.cargo); // 화물까지 확인된 배
   const status = NAV_STATUS[vessel.nav_status_category] || NAV_STATUS.UNKNOWN;
   const color = vessel.is_liquid_cargo_vessel ? COLORS.red : status.color;
-  const size = vessel.is_liquid_cargo_vessel ? 34 : 26;
+  const size = confirmed ? 34 : 20;
 
   const html = `
-    <div class="vessel-marker ${vessel.is_liquid_cargo_vessel ? 'vessel-marker--danger' : ''}"
+    <div class="vessel-marker ${confirmed ? 'vessel-marker--danger' : 'vessel-marker--lite'}"
          style="width:${size}px;height:${size}px;">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
            width="${size}" height="${size}" fill="${color}">
@@ -109,14 +115,16 @@ function VesselPopup({ vessel }) {
 // 점(AIS 레이어)은 체크박스를 켰을 때만 그려지므로 범례도 그때만 보여준다 —
 // 꺼 놓고 보면 "● 항해 중" 같은 항목이 화면 어디에도 없다.
 const LEGEND_BASE = [
-  { color: COLORS.red, label: '🚢 배 — 화물 확인 (클릭 시 안전 판정)' },
+  { color: COLORS.red, label: '🚢 큰 배+링 — 화물 확인 (클릭 시 판정)' },
   { color: COLORS.info, label: '◯ 온산 선석 (클릭 시 기상 판정)' },
   { color: COLORS.yellow, label: '― 인접 선석 혼재감시 쌍' },
 ];
+// 작은 배의 색 = 상태. NAV_STATUS 와 같은 색을 써서 목록·상세 패널과 어긋나지 않게 한다.
 const LEGEND_AIS = [
-  { color: COLORS.red, label: '● 액체화물선 (PORT-MIS 선종)' },
-  { color: COLORS.blue, label: '● 항해 중 (선종 미확인)' },
-  { color: COLORS.textDim, label: '● 정박·계류 중 (선종 미확인)' },
+  { color: COLORS.red, label: '작은 배 — 액체화물선 (선종 확인)' },
+  { color: NAV_STATUS.UNDER_WAY.color, label: '작은 배 — 항해 중' },
+  { color: NAV_STATUS.AT_ANCHOR.color, label: '작은 배 — 정박지 대기' },
+  { color: NAV_STATUS.UNKNOWN.color, label: '작은 배 — 항내 소형선' },
 ];
 
 // 온산 2클러스터(처용리/산암리) 뷰.
@@ -254,6 +262,7 @@ export default function PortMap() {
           content: ''; position: absolute; inset: -5px; border-radius: 50%;
           border: 2px solid ${COLORS.red}; animation: vessel-pulse 1.6s ease-out infinite;
         }
+        .vessel-marker--lite { opacity: 0.82; filter: drop-shadow(0 0 2px rgba(0,0,0,0.45)); }
         @keyframes vessel-pulse {
           0% { transform: scale(0.7); opacity: 0.9; }
           100% { transform: scale(1.5); opacity: 0; }
@@ -390,19 +399,17 @@ export default function PortMap() {
           </Polygon>
         )}
 
-        {/* 실 AIS 선박 (upa_vessel_position, 백엔드 연동) — 토글 시 점 마커로 표시 */}
+        {/* 위치만 수신된 배 — 같은 배 기호를 작게 그린다.
+            예전엔 점(CircleMarker)이었는데 "배는 아이콘인데 점은 뭐지?"라는 혼란이
+            있었다. 기호를 배 하나로 통일하고 아는 정보의 양은 크기·링으로 구분한다.
+            작은 배도 클릭하면 상세 패널이 열린다 — 화물·흘수가 없으면 패널이
+            "조회 불가"와 그 사유를 그대로 말한다(없는 정보를 숨기지 않는다). */}
         {showAis && realTraffic.map((v) => (
-          <CircleMarker
+          <Marker
             key={v.port_call_id}
-            center={[v.latitude, v.longitude]}
-            radius={v.is_liquid_cargo_vessel ? 5 : 3.5}
-            pathOptions={{
-              color: v.is_liquid_cargo_vessel
-                ? COLORS.red
-                : (v.nav_status_category === 'UNDER_WAY' ? COLORS.blue : COLORS.textDim),
-              fillOpacity: v.is_liquid_cargo_vessel ? 0.95 : 0.85,
-              weight: v.is_liquid_cargo_vessel ? 2 : 1,
-            }}
+            position={[v.latitude, v.longitude]}
+            icon={createVesselIcon(v)}
+            eventHandlers={{ click: () => setSelectedVessel(v) }}
           >
             <Tooltip>
               {v.vessel_name || v.callsgn} · {v.sog ?? '-'} kn ·{' '}
@@ -412,7 +419,7 @@ export default function PortMap() {
               )}
               <br />수신 {formatKST(v.received_at_utc)} (KST)
             </Tooltip>
-          </CircleMarker>
+          </Marker>
         ))}
 
         {/* 선박 마커 */}
@@ -423,6 +430,7 @@ export default function PortMap() {
               key={vessel.port_call_id}
               position={[vessel.latitude, vessel.longitude]}
               icon={createVesselIcon(vessel)}
+              zIndexOffset={1000}
               eventHandlers={{
                 click: () => {
                   setSelectedObject(vessel);
