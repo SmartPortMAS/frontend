@@ -32,7 +32,7 @@ docker compose -f docker-compose.dev.yml up -d
 # 접속정보: 각 레포 .env (노션에 원본, git 에 커밋 금지)
 ```
 
-DB에 실데이터 적재 완료: upa_port_call(1.1만행)·upa_vessel_position·upa_unload_record·
+DB에 실데이터 적재 완료: upa_port_call(1.1만행)·upa_vessel_position·
 upa_berth_facility·upa_anchorage·ais_vessel_position·ais_vessel_static·portmis_vessel·
 tide_obs·wave_obs·weather_obs·msds_chemical(34종)
 
