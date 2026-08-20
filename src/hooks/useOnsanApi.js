@@ -570,7 +570,7 @@ export default function useOnsanApi() {
   // assignedWharfName을 주면 검증모드 — top-3 새 추천 대신 그 선석 하나만
   // "지금 이 자리 괜찮은가"로 확인한다. 생략하면 기존 탐색모드(신규 추천).
   const orchestrate = useCallback(
-    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선', assignedWharfName = null }) => {
+    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선', assignedWharfName = null, callSign = null }) => {
       const cargo = resolveCargoRef({ cas_no: casNo, cargo_name: cargoName });
       const now = Date.now();
       const data = cargo
@@ -579,6 +579,9 @@ export default function useOnsanApi() {
             draught_m: Number(draught) || 7.5,
             dwt_t: dwt ? Number(dwt) : null,
             name_hint: vesselName,
+            // 이 배가 이미 받아 둔 추천을 "점유"로 세지 않게 한다 — 없으면
+            // 추천받은 배가 자기 예약에 막혀 승인 조건에 도달하지 못한다.
+            call_sign: callSign ?? null,
           },
           cargo,
           window_start: new Date(now).toISOString(),

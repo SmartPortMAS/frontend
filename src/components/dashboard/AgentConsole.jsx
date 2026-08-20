@@ -238,6 +238,8 @@ export default function AgentConsole() {
         dwt: null, // 실AIS 위치 데이터엔 DWT가 없음 — 미상으로 보내 오케스트레이터가 보수적으로 판단하게 함
         draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
+        // 이 배가 이미 받아 둔 추천을 자기 점유로 세지 않도록 호출부호를 넘긴다
+        callSign: target.callsgn,
       });
       // 이 콘솔의 orchestrate()는 매번 새로 계산하는 상태없는 판단이라 배정 id를
       // 돌려주지 않는다 — arrival_watcher(10분 주기 배경 잡)가 같은 배로 이미
