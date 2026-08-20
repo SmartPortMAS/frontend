@@ -13,12 +13,17 @@
 // ─────────────────────────────────────────────
 import { ULSAN_BBOX } from '../utils/constants';
 
-const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-// 로컬: uvicorn 8000 (2026-08-17 실측 — 실제로 uvicorn이 뜨는 포트가 8001이 아니라
-// 8000이었다. 관제시스템_시작.bat 문서상 기준은 8001이었으나 실행 환경과 어긋나
-// 대시보드가 "연결 끊김" 상태로 고정되는 원인이었다).
-// 배포: nginx 가 /api/v1 을 백엔드로 프록시한다.
-export const BACKEND_BASE = isDev ? 'http://localhost:8000/api/v1' : '/api/v1';
+// 백엔드 주소를 앱 코드에 박지 않는다.
+//
+// 여기에 'http://localhost:8000' 같은 절대주소를 두면, 사람마다 uvicorn 띄우는
+// 방식이 달라질 때(관제시스템_시작.bat 은 --port 8001, 맨손 uvicorn 은 기본 8000)
+// 화면 전체가 "연결 끊김"이 된다. 실제로 이 값이 두 번 뒤집혔고(08-17, 08-19)
+// 그때마다 다른 사람 쪽 화면이 통째로 죽었다.
+//
+// 개발: vite 프록시가 /api → 백엔드로 넘긴다(포트는 vite.config.js 한 곳에서 지정).
+// 배포: nginx 가 같은 경로를 프록시한다.
+// 어느 쪽이든 앱은 상대경로만 쓰므로 포트를 알 필요가 없다.
+export const BACKEND_BASE = '/api/v1';
 
 // 지도에 동시에 그리는 선박 수 상한. 마커가 많아지면 지도가 눈에 띄게 무거워진다.
 // KPI 숫자는 이 상한과 무관하게 전체를 센다(realTrafficTotal) — 상한이 KPI 까지

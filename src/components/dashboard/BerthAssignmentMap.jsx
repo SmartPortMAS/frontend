@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Tooltip, Popup, Rectangle } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -289,13 +289,34 @@ export default function BerthAssignmentMap() {
     (sum, b) => sum + b.slots.filter((s) => s.status).length, 0
   );
 
+  // 선석 좌표 전체가 들어오는 범위로 지도를 맞춘다(좌표 고정 대신).
+  const mapRef = useRef(null);
+  const fitToBerths = () => {
+    if (!mapRef.current || withCoords.length === 0) return;
+    mapRef.current.fitBounds(
+      withCoords.map((b) => [b.latitude, b.longitude]),
+      { padding: [48, 48], maxZoom: 14 },
+    );
+  };
+  // 선석 목록은 API 응답 뒤에 채워지므로, 도착 시점에 한 번 더 맞춘다.
+  useEffect(fitToBerths, [withCoords.length]);
+
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%', borderRadius: '16px', overflow: 'hidden' }}>
       <MapContainer
+        ref={mapRef}
         center={MAP_CENTER}
         zoom={MAP_DEFAULT_ZOOM}
         style={{ height: '100%', width: '100%', background: COLORS.bg }}
         attributionControl={false}
+        whenReady={() => {
+          // 좌표가 도착한 뒤 실제 선석 범위에 맞춘다.
+          //
+          // 울산 전체 뷰(MAP_DEFAULT_ZOOM)로 두면 온산·본항 선석이 화면 한구석에
+          // 뭉쳐 이름표가 서로를 덮는다 — 어느 선석이 점유인지 읽을 수 없다.
+          // 좌표를 손으로 박지 않고 데이터에 맞추면 선석이 늘거나 옮겨져도 따라간다.
+          requestAnimationFrame(() => fitToBerths());
+        }}
       >
         <TileLayer
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
