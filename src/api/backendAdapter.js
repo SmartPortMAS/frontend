@@ -14,9 +14,11 @@
 import { ULSAN_BBOX } from '../utils/constants';
 
 const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-// 로컬: uvicorn 8001 (관제시스템_시작.bat 이 띄우는 포트).
+// 로컬: uvicorn 8000 (2026-08-17 실측 — 실제로 uvicorn이 뜨는 포트가 8001이 아니라
+// 8000이었다. 관제시스템_시작.bat 문서상 기준은 8001이었으나 실행 환경과 어긋나
+// 대시보드가 "연결 끊김" 상태로 고정되는 원인이었다).
 // 배포: nginx 가 /api/v1 을 백엔드로 프록시한다.
-export const BACKEND_BASE = isDev ? 'http://localhost:8001/api/v1' : '/api/v1';
+export const BACKEND_BASE = isDev ? 'http://localhost:8000/api/v1' : '/api/v1';
 
 // 지도에 동시에 그리는 선박 수 상한. 마커가 많아지면 지도가 눈에 띄게 무거워진다.
 // KPI 숫자는 이 상한과 무관하게 전체를 센다(realTrafficTotal) — 상한이 KPI 까지
@@ -148,6 +150,11 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
     is_real_ais: true,
     presence_state: row.presence_state,
     position_age_min: row.position_age_min,
+    // VTS 확인 입출항 시각(mart.dashboard_current → port_call_overview → upa_port_call/
+    // portmis_vessel 조인 결과). berth_assignment.actual_berthing_at/actual_departure_at과
+    // 같은 소스 — 재항 중인 배는 departure_at_utc가 항상 null이다(아직 출항 전).
+    arrival_at_utc: row.arrival_at_utc ?? null,
+    departure_at_utc: row.departure_at_utc ?? null,
     berth: cargo?.facility_name || null,
     cargo: cargo ? {
       // chem_id 는 스케줄링·안전 에이전트가 화물을 식별하는 1순위 키다.
@@ -321,6 +328,46 @@ export async function fetchBerthCandidates({ draught_m, chem_id, cas_no, name_hi
   if (!res.ok) {
     // 422(화물 카테고리 미지정)·404(MSDS 없음)는 실제로 자주 난다.
     // 조용히 빈 목록으로 만들지 않는다 — 왜 안 나오는지 화면에 적어야 한다.
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+
+/**
+ * 선석 배정현황 — GET /dashboard/berth-assignments (08_스케줄링_전면재설계_자동배정_설계문서.md §7).
+ *
+ * GET /dashboard/berths(VTS 관측 기준 "실제로 배가 있는가")와는 다른 질문에
+ * 답한다 — 이건 "우리 시스템이 이 선석에 무엇을 배정(추천/승인)했는가"다.
+ * 선석마다 slots 배열(슬롯 1..max_concurrent_vessels)이 있고, 빈 슬롯은
+ * status:null이다.
+ */
+export async function fetchBerthAssignments() {
+  const res = await fetch(`${BACKEND_BASE}/dashboard/berth-assignments`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+/** 승인 대기 목록 — GET /approvals/pending (§5.3). */
+export async function fetchPendingApprovals() {
+  const res = await fetch(`${BACKEND_BASE}/approvals/pending`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+/**
+ * 선석배정 추천 승인/반려 — POST /approvals/{id}/decision (§5.3).
+ * 이 호출이 실제로 선석을 확정(APPROVED)하거나 슬롯을 풀어주는(REJECTED) 유일한 지점이다.
+ */
+export async function postApprovalDecision(assignmentId, { verdict, approvedBy, reason }) {
+  const res = await fetch(`${BACKEND_BASE}/approvals/${assignmentId}/decision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ verdict, approved_by: approvedBy, reason: reason ?? null }),
+  });
+  if (!res.ok) {
+    // 409(이미 처리됨/동시승인 경합)는 실제로 발생할 수 있다 — 그대로 드러낸다.
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `HTTP ${res.status}`);
   }

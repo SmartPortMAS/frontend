@@ -312,19 +312,106 @@ function mapWeather(r, berthGroup) {
   };
 }
 
-function mapSafety(r) {
+function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
   const conflicts = r.conflicts || [];
   const imdg = r.imdg_conflicts || [];
-  const gates = [
-    ...conflicts.map((c, i) => ({
-      rule: `MSDS-${i + 1}`, name: '혼재금지 (MSDS 반응성)', hit: true, severity: 'BLOCK',
-      reason: `${c.adjacent_berth} ${c.adjacent_name} — ${c.shared_category} 충돌`,
-    })),
-    ...imdg.map((c) => ({
-      rule: `IMDG-${c.segregation_code}`, name: 'IMDG 격리 요구', hit: true, severity: 'HOLD',
-      reason: `${c.adjacent_berth} ${c.adjacent_name} (${c.target_imdg_class} ↔ ${c.adjacent_imdg_class}) 격리코드 ${c.segregation_code}`,
-    })),
-  ];
+  const imdgClasses = r.imdg_classes || {}; // chem_id -> class code (충돌 여부와 무관하게 화물 자신의 Class)
+
+  // 인접 화물쌍(선석+화물) 단위로 MSDS 신호와 IMDG 신호를 한 gate로 묶는다.
+  // 예전엔 "MSDS 충돌"과 "IMDG 충돌"을 서로 다른 gate로 쪼개서, 같은 화물쌍인데도
+  // 카드가 둘로 나뉘고 추론 그래프도 각자 따로 펼쳐야 했다(한쪽만 걸리면 다른 쪽은
+  // 아예 안 보임). service.py가 인접 화물마다 두 그래프(INCOMPATIBLE_WITH·SEGREGATE)를
+  // 항상 같이 조회하므로, 화면도 같은 화물쌍이면 한 카드·한 그래프에서 두 신호를
+  // 같이 보여준다 — detail.msds / detail.imdg 가 각각 null(조회 안 됨) 또는
+  // {hit, ...} 로 채워진다.
+  const pairKey = (berth, chemId) => `${berth} ${chemId}`;
+  const pairs = new Map();
+  const ensurePair = (berth, chemId, label) => {
+    const key = pairKey(berth, chemId);
+    if (!pairs.has(key)) pairs.set(key, { berth, chemId, label, msds: null, imdg: null });
+    const p = pairs.get(key);
+    if (label && !p.label) p.label = label;
+    return p;
+  };
+
+  conflicts.forEach((c) => {
+    ensurePair(c.adjacent_berth, c.adjacent_chem_id, c.adjacent_name).msds = {
+      hit: true, category: c.shared_category,
+    };
+  });
+  imdg.forEach((c) => {
+    ensurePair(c.adjacent_berth, c.adjacent_chem_id, c.adjacent_name).imdg = {
+      hit: true, targetClass: c.target_imdg_class, adjacentClass: c.adjacent_imdg_class,
+      segregationCode: c.segregation_code,
+    };
+  });
+  // 실제로 요청에 실렸던(=그래프에 실제로 조회된) 인접 화물만 대상으로, 아직 안 채워진
+  // 신호를 채운다. chem_id가 없는 대상(CAS만 아는 경우)은 그래프 id 매칭이 안 되니
+  // 건너뛴다.
+  //
+  // IMDG 통과는 "관계 없음(SEGREGATE 엣지 없음)"이 공인 규정상 X(격리 불필요)인지,
+  // 이 Class 조합 자체가 그래프에 안 실려서 모르는 건지 구분해야 한다(imdgClasses가
+  // 그 구분용 — 로더가 9x9 전체가 아니라 실제 등재된 화물의 Class만 SEGREGATE로
+  // 적재하기 때문에 엣지 부재만으로는 "확인된 안전"을 단정할 수 없다).
+  const targetClass = targetChemId ? imdgClasses[targetChemId] : undefined;
+  for (const { berth_name, cargo } of requestedAdjacent) {
+    if (!cargo?.chem_id) continue;
+    const p = ensurePair(berth_name, cargo.chem_id, cargo.name_hint);
+    if (!p.msds) p.msds = { hit: false };
+    if (!p.imdg) {
+      const adjacentClass = imdgClasses[cargo.chem_id];
+      p.imdg = {
+        hit: false,
+        targetClassKnown: targetClass ?? null,
+        adjacentClassKnown: adjacentClass ?? null,
+        confirmedNoRequirement: Boolean(targetClass && adjacentClass), // 둘 다 알려져 있어야 "공인 X" 확정
+      };
+    }
+  }
+
+  const nameOf = (p) => {
+    if (p.msds?.hit && p.imdg?.hit) return '혼재금지 + IMDG 격리 동시 위반';
+    if (p.msds?.hit) return '혼재금지 (MSDS 반응성)';
+    if (p.imdg?.hit) return 'IMDG 격리 요구';
+    if (p.imdg && !p.imdg.confirmedNoRequirement) return '인접 화물 혼재 검사 — IMDG 판정 근거 부족';
+    return '인접 화물 혼재 검사 통과';
+  };
+  const ruleOf = (p, i) => {
+    const bits = [];
+    if (p.msds?.hit) bits.push(`MSDS-${i + 1}`);
+    if (p.imdg?.hit) bits.push(`IMDG-${p.imdg.segregationCode}`);
+    return bits.length ? bits.join('+') : `PASS-${i + 1}`;
+  };
+  const reasonOf = (p) => {
+    const parts = [];
+    if (p.msds?.hit) parts.push(`MSDS ${p.msds.category} 충돌`);
+    else if (p.msds) parts.push('MSDS 상극 관계 없음');
+    if (p.imdg?.hit) parts.push(`IMDG 격리코드 ${p.imdg.segregationCode}`);
+    else if (p.imdg?.confirmedNoRequirement) parts.push('IMDG 격리 규정 없음(공인 X)');
+    else if (p.imdg) parts.push('IMDG 그래프에 Class 미등재 — 판정 근거 부족');
+    return `${p.berth} ${p.label} — ${parts.join(' · ')}`;
+  };
+
+  const gates = [...pairs.values()].map((p, i) => {
+    const hit = Boolean(p.msds?.hit || p.imdg?.hit);
+    return {
+      rule: ruleOf(p, i),
+      name: nameOf(p),
+      hit,
+      severity: p.msds?.hit
+        ? 'BLOCK'
+        : p.imdg?.hit
+          ? 'HOLD'
+          // IMDG가 안 걸렸어도 두 화물 다 Class가 알려져 있어야 "공인 X"로 확정된다 —
+          // 어느 한쪽이라도 그래프에 Class가 없으면 위반이라 단정할 근거도, 안전하다고
+          // 단정할 근거도 없는 상태다. 이 경우를 조용히 "통과"로 뭉개면 관제사가
+          // 실제로는 확인 안 된 걸 확인됐다고 오해한다.
+          : (p.imdg && !p.imdg.confirmedNoRequirement) ? 'UNKNOWN' : 'INFO',
+      reason: reasonOf(p),
+      detail: { adjacentBerth: p.berth, adjacentCargoName: p.label, msds: p.msds, imdg: p.imdg },
+    };
+  });
+
   if (gates.length === 0) {
     gates.push({
       rule: 'MSDS/IMDG', name: '인접 화물 혼재 검사', hit: false, severity: 'INFO',
@@ -459,7 +546,7 @@ export default function useOnsanApi() {
         ? await postJson('/safety/assess', { target_cargo: target, adjacent_cargos: adj })
         : null;
 
-      const result = data ? mapSafety(data) : {
+      const result = data ? mapSafety(data, adj, target?.chem_id) : {
         risk_level: '판단불가',
         risk_level_basis: { rule_engine_floor: '판단불가', imdg_segregation_code: null, flammability_grade: '정보 없음', gate_hits: [] },
         gates: [{
@@ -518,6 +605,69 @@ export default function useOnsanApi() {
     [postJson, setOrchestration]
   );
 
+  // 판정 + 즉석 확정 — POST /orchestrator/assess-and-commit (§5.3).
+  //
+  // orchestrate()는 판단만 하고 아무것도 안 쓴다. 실제 배정은 원래
+  // arrival_watcher(10분 주기 배경 잡)가 만든 REQUESTED 행을 승인해야만
+  // 생기는데, 관제사가 이 콘솔에서 그 잡이 아직 안 건드린 배를 직접 골라
+  // 판정하면 승인할 행 자체가 없다(2026-08-19 실사용 중 발견 — "승인을
+  // 눌렀는데 선석배정현황엔 계속 대기로 뜬다"). 이 함수는 그 경우를 위한
+  // 것으로, chem_id를 orchestrate()보다 하나 더 챙긴다 — 실화물 조인 결과는
+  // chem_id를 이미 알고 있으므로(cas_no 경유 없이) 그대로 써야 배정 행의
+  // cargo_chem_id가 정확하다.
+  const commitAssignment = useCallback(
+    async ({
+      cargoName, chemId, casNo, dwt, draught, vesselName, callSign, imoNo, approvedBy,
+    }) => {
+      const cargo = resolveCargoRef({ chem_id: chemId, cas_no: casNo, cargo_name: cargoName });
+      if (!cargo) throw new Error(`화물 '${cargoName}' 식별 불가 — chem_id/CAS 매핑이 없습니다.`);
+      const now = Date.now();
+      const data = await postJson('/orchestrator/assess-and-commit', {
+        vessel: {
+          draught_m: Number(draught) || 7.5,
+          dwt_t: dwt ? Number(dwt) : null,
+          name_hint: vesselName,
+        },
+        cargo,
+        window_start: new Date(now).toISOString(),
+        window_end: new Date(now + 8 * 3600 * 1000).toISOString(),
+        call_sign: callSign,
+        vessel_name: vesselName,
+        imo_no: imoNo ?? null,
+        approved_by: approvedBy,
+      });
+      if (!data) throw new Error('백엔드 응답이 없습니다.');
+      return {
+        committed: data.committed,
+        assignmentId: data.assignment_id ?? null,
+        notCommittedReason: data.not_committed_reason ?? null,
+        orchestration: mapOrchestration({ ...data.result, _vessel_name: vesselName, _cargo_name: cargoName }),
+      };
+    },
+    [postJson]
+  );
+
+  // 즉석 반려 — POST /orchestrator/reject (§5.3, commitAssignment의 반려판).
+  //
+  // REQUESTED 행이 없어도(=arrival_watcher가 아직 이 배를 안 건드렸어도) 관제사가
+  // 콘솔에서 본 판정을 그 자리에서 반려할 수 있어야 한다 — REQUESTED 행의 유무는
+  // "승인할지 반려할지"라는 관제사의 판단과 무관하다(2026-08-20).
+  const rejectAssignment = useCallback(
+    async ({ vesselName, callSign, imoNo, chemId, rejectedBy, reason }) => {
+      const data = await postJson('/orchestrator/reject', {
+        call_sign: callSign,
+        vessel_name: vesselName,
+        imo_no: imoNo ?? null,
+        cargo_chem_id: chemId ?? null,
+        rejected_by: rejectedBy,
+        reason: reason ?? null,
+      });
+      if (!data) throw new Error('백엔드 응답이 없습니다.');
+      return { assignmentId: data.assignment_id };
+    },
+    [postJson]
+  );
+
   // ─── 관제사 질의응답 (RAG) ───
   // 백엔드 /rag/query 가 준비되면 그대로 쓰고, 없으면 MSDS 섹션 직접 인용으로 답한다.
   // 폴백이라도 "근거 없는 문장"은 만들지 않는다 — 원문 문장을 그대로 인용한다.
@@ -560,5 +710,5 @@ export default function useOnsanApi() {
     [postJson]
   );
 
-  return { fetchBerthGroups, assessBerthWeather, assessSafetyGates, orchestrate, ragQuery };
+  return { fetchBerthGroups, assessBerthWeather, assessSafetyGates, orchestrate, commitAssignment, rejectAssignment, ragQuery };
 }

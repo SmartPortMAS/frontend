@@ -4,6 +4,7 @@ import DigitalTwinPage from './pages/DigitalTwinPage';
 import DashboardPage from './pages/DashboardPage';
 import SafetyPage from './pages/SafetyPage';
 import SensorPage from './pages/SensorPage';
+import BerthAssignmentPage from './pages/BerthAssignmentPage';
 
 // 첫 화면은 대시보드다.
 //
@@ -14,6 +15,7 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/berth-assignments" element={<BerthAssignmentPage />} />
         <Route path="/twin" element={<DigitalTwinPage />} />
         <Route path="/safety" element={<SafetyPage />} />
         <Route path="/sensors" element={<SensorPage />} />

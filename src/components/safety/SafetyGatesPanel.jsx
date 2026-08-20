@@ -4,7 +4,8 @@ import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
 import { ONSAN_BERTHS, onsanAdjacentBerthNames } from '../../utils/geoUtils';
-import { FaShieldAlt, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import ReasoningGraph from './ReasoningGraph';
+import { FaShieldAlt, FaCheckCircle, FaTimesCircle, FaQuestionCircle } from 'react-icons/fa';
 
 // risk_level 4등급 (결정론: 같은 입력 = 같은 등급)
 const RISK_STYLE = {
@@ -194,6 +195,21 @@ export default function SafetyGatesPanel() {
   const hits = (result?.gates || []).filter((g) => g.hit);
   const passes = (result?.gates || []).filter((g) => !g.hit);
 
+  // 추론 그래프 펼침 상태 — 심사를 새로 돌릴 때마다 초기화한다. 히트가 하나뿐이면
+  // 굳이 눌러보게 하지 않고 바로 펼쳐 둔다("이게 그래프로 나온 판정이다"를 한눈에
+  // 보여주는 게 목적이라, 유일한 근거를 클릭 한 번 더 시켜 숨길 이유가 없다).
+  // 히트가 여럿이면 각자 근거 그래프가 달라 다 펼치면 화면이 길어지므로 접어 둔다.
+  const [expandedGraphs, setExpandedGraphs] = useState(() => new Set());
+  useEffect(() => {
+    const graphable = (result?.gates || []).filter((g) => g.hit && g.detail);
+    setExpandedGraphs(graphable.length === 1 ? new Set([graphable[0].rule]) : new Set());
+  }, [result]);
+  const toggleGraph = (rule) => setExpandedGraphs((prev) => {
+    const next = new Set(prev);
+    if (next.has(rule)) next.delete(rule); else next.add(rule);
+    return next;
+  });
+
   const inputStyle = {
     width: '100%', background: COLORS.card, color: COLORS.textPrimary,
     border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '7px 10px', fontSize: '13px',
@@ -376,6 +392,27 @@ export default function SafetyGatesPanel() {
                       border: `1px solid ${COLORS.red}`, borderRadius: '4px', padding: '1px 6px',
                     }}>{g.severity}</span>
                     <div style={{ color: COLORS.textSecondary, marginTop: '2px' }}>{g.reason}</div>
+                    {g.detail && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => toggleGraph(g.rule)}
+                          style={{
+                            display: 'block', background: 'none', border: 'none', color: COLORS.info,
+                            cursor: 'pointer', fontSize: '11.5px', fontWeight: 600, padding: '8px 0 0', fontFamily: 'inherit',
+                          }}
+                        >
+                          {expandedGraphs.has(g.rule) ? '▲ 추론 그래프 접기' : '▼ 추론 그래프 보기'}
+                        </button>
+                        {expandedGraphs.has(g.rule) && (
+                          <ReasoningGraph
+                            targetBerth={form.berth_name}
+                            targetCargo={result.target_cargo_name || selectedCargo?.name_ko}
+                            gate={g}
+                          />
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -389,11 +426,36 @@ export default function SafetyGatesPanel() {
             {showAllGates ? '▲ 통과 게이트 접기' : `▼ 통과 게이트 ${passes.length}개 펼치기`}
           </button>
           {showAllGates && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '6px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {passes.map((g) => (
                 <div key={g.rule} style={{ fontSize: '12px', color: COLORS.textSecondary, display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
-                  <FaCheckCircle color={COLORS.teal} style={{ marginTop: '2px', flexShrink: 0, opacity: 0.6 }} />
-                  <span><b>{g.rule}</b> {g.name} — {g.reason}</span>
+                  {g.severity === 'UNKNOWN'
+                    ? <FaQuestionCircle color={COLORS.yellow} style={{ marginTop: '2px', flexShrink: 0 }} />
+                    : <FaCheckCircle color={COLORS.teal} style={{ marginTop: '2px', flexShrink: 0, opacity: 0.6 }} />}
+                  <div style={{ flex: 1 }}>
+                    <span><b>{g.rule}</b> {g.name} — {g.reason}</span>
+                    {g.detail && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => toggleGraph(g.rule)}
+                          style={{
+                            display: 'block', background: 'none', border: 'none', color: COLORS.info,
+                            cursor: 'pointer', fontSize: '11.5px', fontWeight: 600, padding: '6px 0 0', fontFamily: 'inherit',
+                          }}
+                        >
+                          {expandedGraphs.has(g.rule) ? '▲ 추론 그래프 접기' : '▼ 추론 그래프 보기'}
+                        </button>
+                        {expandedGraphs.has(g.rule) && (
+                          <ReasoningGraph
+                            targetBerth={form.berth_name}
+                            targetCargo={result.target_cargo_name || selectedCargo?.name_ko}
+                            gate={g}
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

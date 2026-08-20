@@ -174,6 +174,18 @@ export function onsanAdjacentBerthNames(berthName) {
   return names.filter(Boolean);
 }
 
+// 두 선석의 ADJACENT_TO 실측 거리(m). 표에 없는 조합이면 null —
+// "인접하다고 들었지만 이 값은 근거표에 없다"를 구분하기 위해 0으로 얼버무리지 않는다.
+export function onsanAdjacencyDistanceM(berthNameA, berthNameB) {
+  const idA = findBerthIdByName(berthNameA);
+  const idB = findBerthIdByName(berthNameB);
+  if (!idA || !idB) return null;
+  const edge = ONSAN_ADJACENCY.find(
+    ({ a, b }) => (a === idA && b === idB) || (a === idB && b === idA)
+  );
+  return edge ? edge.distanceM : null;
+}
+
 // 선석 → 기상 임계 선석군 (berth_weather_thresholds.csv 의 berth_group)
 // 지도에서 선석 클릭 시 선석별 하역 판정 패널과 연동하는 데 쓴다.
 export const ONSAN_WEATHER_GROUP = {
