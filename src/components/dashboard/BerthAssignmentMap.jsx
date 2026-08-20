@@ -3,17 +3,25 @@ import { MapContainer, TileLayer, Marker, Tooltip, Popup, Rectangle } from 'reac
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { fetchBerthAssignments } from '../../api/backendAdapter';
-import { COLORS, ULSAN_BBOX_BOUNDS, MAP_CENTER, MAP_DEFAULT_ZOOM } from '../../utils/constants';
+import { COLORS, ULSAN_BBOX_BOUNDS } from '../../utils/constants';
+
+const ONSAN_MAP_CENTER = [35.435, 129.365];
+const ONSAN_MAP_ZOOM = 14;
+const ONSAN_FIT = { padding: [48, 48], maxZoom: 15 };
 
 // 08_스케줄링_전면재설계_자동배정_설계문서.md §7.2 — 선석 배정현황 전용 지도.
 //
-// PortMap.jsx(온산 14개, VTS 관측 점유)와는 다른 질문에 답한다: "우리 시스템이
+// PortMap.jsx(온산 선석, VTS 관측 점유)와는 다른 질문에 답한다: "우리 시스템이
 // 이 선석에 무엇을 배정했는가". 그래서 PortMap.jsx를 확장하지 않고 새
 // 페이지·새 컴포넌트로 분리했다(§7.1) — 데이터 출처가 다르면 화면도 분리해야
 // "이게 실제 상황인지 우리 시스템 결정인지"가 헷갈리지 않는다.
 //
-// 표시 범위는 처음부터 울산항 전체다(69개 선석, 좌표 있는 것만) — PortMap.jsx처럼
-// 온산으로 시작해 나중에 넓히는 게 아니라 이 API 자체가 전체를 반환한다.
+// [2026-08-21] 표시 범위를 온산항(달포부두 포함 15개 선석)으로 좁혔다 —
+// 예전엔 울산항 전체 69개를 보여줬는데, 스케줄링 에이전트가 이제 온산항
+// 선석에만 배정하도록 바뀌었고(scheduling/graph_queries.py의 onsan_scope 하드
+// 필터) PortMap.jsx도 원래 온산만 그린다 — 세 화면(스케줄링·이 지도·PortMap)의
+// 범위를 일치시켰다. 범위 자체는 백엔드 GET /dashboard/berth-assignments가
+// port_name='온산항'으로 이미 걸러서 내려준다(dashboard.py 참고).
 //
 // (2026-08-19) 이 화면에서는 승인 대기/확정을 구분하지 않는다 — REQUESTED든
 // APPROVED든 우리 시스템이 이미 배정한 슬롯이면 그냥 "점유"다. 승인/반려
@@ -264,6 +272,13 @@ export default function BerthAssignmentMap() {
   const [berths, setBerths] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const mapRef = useRef(null);
+  // PortMap.jsx처럼 실제 선석 좌표에 맞춰 화면을 잡는다 — 다만 여기 데이터는
+  // API에서 비동기로 온다(PortMap의 ONSAN_BERTHS는 정적 큐레이션이라 마운트
+  // 즉시 fitBounds 가능했던 것과 다름). 그래서 최초 로드 한 번만 fitBounds하고,
+  // 이후 30초 폴링 갱신마다 다시 맞추지는 않는다 — 관제사가 지도를 옮겨/확대해
+  // 보고 있는데 갱신 때마다 시점이 리셋되면 방해가 된다.
+  const hasFitRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -289,34 +304,21 @@ export default function BerthAssignmentMap() {
     (sum, b) => sum + b.slots.filter((s) => s.status).length, 0
   );
 
-  // 선석 좌표 전체가 들어오는 범위로 지도를 맞춘다(좌표 고정 대신).
-  const mapRef = useRef(null);
-  const fitToBerths = () => {
-    if (!mapRef.current || withCoords.length === 0) return;
-    mapRef.current.fitBounds(
-      withCoords.map((b) => [b.latitude, b.longitude]),
-      { padding: [48, 48], maxZoom: 14 },
-    );
-  };
-  // 선석 목록은 API 응답 뒤에 채워지므로, 도착 시점에 한 번 더 맞춘다.
-  useEffect(fitToBerths, [withCoords.length]);
+  useEffect(() => {
+    if (hasFitRef.current || withCoords.length === 0 || !mapRef.current) return;
+    const bounds = withCoords.map((b) => [b.latitude, b.longitude]);
+    requestAnimationFrame(() => mapRef.current?.fitBounds(bounds, ONSAN_FIT));
+    hasFitRef.current = true;
+  }, [withCoords]);
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%', borderRadius: '16px', overflow: 'hidden' }}>
       <MapContainer
         ref={mapRef}
-        center={MAP_CENTER}
-        zoom={MAP_DEFAULT_ZOOM}
+        center={ONSAN_MAP_CENTER}
+        zoom={ONSAN_MAP_ZOOM}
         style={{ height: '100%', width: '100%', background: COLORS.bg }}
         attributionControl={false}
-        whenReady={() => {
-          // 좌표가 도착한 뒤 실제 선석 범위에 맞춘다.
-          //
-          // 울산 전체 뷰(MAP_DEFAULT_ZOOM)로 두면 온산·본항 선석이 화면 한구석에
-          // 뭉쳐 이름표가 서로를 덮는다 — 어느 선석이 점유인지 읽을 수 없다.
-          // 좌표를 손으로 박지 않고 데이터에 맞추면 선석이 늘거나 옮겨져도 따라간다.
-          requestAnimationFrame(() => fitToBerths());
-        }}
       >
         <TileLayer
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"

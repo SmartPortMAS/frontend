@@ -124,6 +124,7 @@ export const BERTHS = {
 // BU-SOIL/BU-OILHUB(SPM 부이 2기)는 좌표 미확보(해도 필요)로 지도에서 제외.
 // ─────────────────────────────────────────────
 export const ONSAN_BERTHS = {
+  'CY-DP': { lat: 35.4394, lon: 129.35444, name: '달포부두', operator: '공용부두', waterway: '산암리(추정)', maxDwt: 3000, lengthM: 325, depthM: 7, berthCount: 1, cargoTypes: '유류·잡화', singleton: true },
   'CY-OTK1': { lat: 35.45661, lon: 129.35119, name: 'OTK 1부두', operator: '오드펠터미널코리아', waterway: '처용리', maxDwt: 40000, lengthM: 391, depthM: 11, berthCount: 2, cargoTypes: '케미칼류' },
   'CY-OTK2': { lat: 35.45661, lon: 129.35119, name: 'OTK 2부두', operator: '오드펠터미널코리아', waterway: '처용리', maxDwt: 10000, lengthM: 275, depthM: 9, berthCount: 2, cargoTypes: '케미칼류', offset: [-0.0012, 0], rep: true },
   'CY-UTK': { lat: 35.46225, lon: 129.34753, name: 'UTK 부두', operator: '유나이티드터미널코리아', waterway: '처용리', maxDwt: 30000, lengthM: 287, depthM: 12, berthCount: 2, cargoTypes: '케미칼류' },
