@@ -11,3 +11,4 @@ dist-snapshot/
 public/snapshot/
 shot*.mjs
 shots/
+diag*.mjs
