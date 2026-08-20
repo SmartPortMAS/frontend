@@ -35,6 +35,11 @@ GETS = {
     "/api/v1/dashboard/alerts": f"{BACKEND}/dashboard/alerts",
     "/api/v1/dashboard/safety-index": f"{BACKEND}/dashboard/safety-index",
     "/api/v1/chatbot/chemicals": f"{BACKEND}/chatbot/chemicals",
+    # 2026-08-21 확장 — 선석 배정현황 페이지가 부르는 GET 들.
+    # 빠뜨리면 그 페이지가 배포본에서 통째로 빈 화면이 된다(실제로 그랬다).
+    "/api/v1/dashboard/berth-assignments": f"{BACKEND}/dashboard/berth-assignments",
+    "/api/v1/dashboard/berth-dwell": f"{BACKEND}/dashboard/berth-dwell",
+    "/api/v1/approvals/pending": f"{BACKEND}/approvals/pending",
 }
 
 # 선석 그룹 목록은 API 가 아니라 프론트 상수(geoUtils.ONSAN_WEATHER_GROUP)에서 온다.
@@ -98,6 +103,25 @@ def main() -> None:
         sys.exit("백엔드 응답을 못 받았습니다 - 관제시스템_시작.bat 으로 서버부터 켜세요")
 
     path = os.path.join(OUT, "snapshot.json")
+
+    # 이미 녹화해 둔 POST 판정(안전 심사·선석 후보)은 보존한다.
+    #
+    # 이 스크립트는 GET 만 굳히고, POST 는 record_agents.mjs 가 브라우저로 녹화해
+    # 나중에 같은 파일에 넣는다. 예전에는 여기서 snap 을 통째로 덮어써서, GET 을
+    # 다시 굳히는 순간 녹화분이 조용히 사라졌다 — 배포본에서 안전 심사와 선석
+    # 후보가 통째로 "판단 보류"가 되는데, 화면만 봐서는 원인을 알 수 없었다
+    # (2026-08-21 실측). 순서를 외우게 하는 대신 구조로 막는다.
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                previous = json.load(f)
+        except (OSError, ValueError):
+            previous = {}
+        for key in ("/api/v1/safety/assess", "/api/v1/scheduling/candidates"):
+            if key not in snap and previous.get(key):
+                snap[key] = previous[key]
+                print(f"[유지] {key} (녹화분 {len(previous[key])}건 보존)")
+
     with open(path, "w", encoding="utf-8") as f:
         json.dump(snap, f, ensure_ascii=False)
     size = os.path.getsize(path)

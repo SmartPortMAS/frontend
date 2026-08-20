@@ -37,6 +37,9 @@ const safetyKey = (b) => {
 
 const safety = {};
 const candidates = {};
+// 종합 판정(오케스트레이터) — 배포본에서 이게 없으면 우리 대표 기능이
+// 통째로 "판단 보류"로 보인다. 호출부호로 갈라 저장한다.
+const orchestrations = {};
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
@@ -51,6 +54,9 @@ page.on('response', async (res) => {
     else if (url.includes('/scheduling/candidates')) {
       const name = body.vessel?.name_hint;
       if (name) candidates[name] = await res.json();
+    } else if (url.includes('/orchestrator/assess')) {
+      const cs = body.vessel?.call_sign;
+      if (cs) orchestrations[cs] = await res.json();
     }
   } catch { /* 본문 못 읽으면 건너뛴다 */ }
 });
@@ -93,6 +99,7 @@ await browser.close();
 const snap = JSON.parse(fs.readFileSync(SNAP, 'utf-8'));
 snap['/api/v1/safety/assess'] = safety;
 snap['/api/v1/scheduling/candidates'] = candidates;
+if (Object.keys(orchestrations).length) snap['/api/v1/orchestrator/assess'] = orchestrations;
 fs.writeFileSync(SNAP, JSON.stringify(snap), 'utf-8');
 console.log(`\n녹화 완료 — 안전 심사 ${Object.keys(safety).length}건 · 선석 후보 ${Object.keys(candidates).length}건`);
 console.log(`${SNAP} (${fs.statSync(SNAP).size.toLocaleString()} bytes)`);

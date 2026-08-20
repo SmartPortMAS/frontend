@@ -44,6 +44,28 @@ if (ENABLED && typeof window !== 'undefined') {
       if (group && byGroup[group]) return jsonResponse(byGroup[group]);
     }
 
+    // 종합 판정은 호출부호로 갈라 저장해 뒀다.
+    if (path.endsWith('/orchestrator/assess')) {
+      const byCallSign = snap['/api/v1/orchestrator/assess'] || {};
+      try {
+        const cs = JSON.parse(init?.body ?? '{}').vessel?.call_sign;
+        if (cs && byCallSign[cs]) return jsonResponse(byCallSign[cs]);
+      } catch { /* 아래 503 */ }
+      return jsonResponse(
+        { detail: '스냅샷 배포본에 이 선박의 종합 판정이 없습니다 - 실시간 서버가 필요합니다' },
+        503,
+      );
+    }
+
+    // 승인/반려는 상태를 바꾸는 동작이라 정적 배포본에서 할 수 없다.
+    // 없는 성공을 지어내지 않고, 왜 안 되는지 그대로 말한다.
+    if (path.includes('/approvals/') && path.endsWith('/decision')) {
+      return jsonResponse(
+        { detail: '스냅샷 배포본은 읽기 전용입니다 - 승인/반려는 실시간 서버에서만 가능합니다' },
+        503,
+      );
+    }
+
     // 안전 심사는 '대상 화물 + 인접 선석 재항 화물' 조합으로 갈라 저장해 뒀다.
     // 입력이 정확히 같을 때만 캐시를 쓴다 — 인접 화물이 다른데 같은 판정을
     // 돌려주면 혼재 판정이 틀린 답을 내게 된다. 안 맞으면 판단 보류로 흘린다.
