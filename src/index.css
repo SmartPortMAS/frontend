@@ -226,6 +226,20 @@ html, body, #root {
 }
 .leaflet-tooltip.berth-label::before { display: none; }
 
+/* 선석배정현황 지도 — 점유 중인 선석의 이름표를 초록 박스로 채운다(원 마커 대신) */
+.leaflet-tooltip.berth-label.occupied {
+  background: var(--teal);
+  border-color: var(--teal-dark);
+  color: #FFFFFF;
+}
+
+/* 이름표 전용 마커 — 위치 앵커 역할만 하고 화면엔 안 보인다(leaflet 기본
+   div-icon 흰 배경·테두리 제거) */
+.invisible-marker {
+  background: transparent;
+  border: none;
+}
+
 /* ── Layout ── */
 .app-layout {
   display: flex;
@@ -885,6 +899,9 @@ html, body, #root {
   position: relative;
   overflow-y: auto;
   min-height: 0;
+  min-width: 0; /* 그리드 아이템 기본 min-width:auto 때문에, 안의 가로 스크롤 그래프(1200px
+    고정 폭)가 이 칸을 뚫고 페이지 전체를 옆으로 밀어내는 걸 막는다 — 이 값이 없으면
+    overflow-x:auto 를 안쪽에 걸어도 이 칸 자체가 컨텐츠 크기만큼 넓어져 버린다. */
   padding-right: 4px;
 }
 
