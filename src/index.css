@@ -1,0 +1,1398 @@
+/* ═══════════════════════════════════════════════════
+   울산항 디지털 트윈 — Global Styles
+   Dark Navy + Glassmorphism Theme
+   ═══════════════════════════════════════════════════ */
+
+/* ── Reset & Base ── */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* PORT-MIS(울산항만공사 GIS 항만 모니터링) 톤 — 라이트 팔레트.
+   값의 근거와 "트윈 HUD 는 왜 계속 어두운가"는 utils/constants.js 주석 참고. */
+:root {
+  --bg: #EEF2F5;
+  --panel: #FFFFFF;
+  --card: #FFFFFF;
+  --card-hover: #F4F8FA;
+  --border: #DCE4EA;
+  --border-hover: #9CC3DE;
+  --navy: #12354F;          /* 활성 탭·상단 바 — PORT-MIS 짙은 남색 */
+  --teal: #0E7C6B;
+  --teal-dark: #0A5F52;
+  --red: #C4322E;
+  --yellow: #B26A00;
+  --amber: #E8A317;         /* 강조 버튼 채움 (전자해도 버튼 톤) */
+  --info: #1E6FA8;
+  --blue: #0B4A8F;
+  --purple: #5B3E9B;
+  --text-primary: #16232B;
+  --text-secondary: #4A5A63;
+  --text-dim: #7A8A92;
+  --glass: rgba(255, 255, 255, 0.92);
+  --glass-border: #DCE4EA;
+  /* 3D 트윈 HUD 전용 — 씬 위 오버레이는 어둡게 유지 */
+  --hud-panel: rgba(10, 22, 32, 0.86);
+  --hud-border: rgba(120, 190, 215, 0.32);
+  --hud-text: #E8F0F2;
+  --hud-dim: #A9BCC6;
+  --sidebar-width: 260px;
+  --sidebar-collapsed: 72px;
+  --header-height: 64px;
+  --portmis-bar: 44px;      /* PORT-MIS 연계 상단 바 높이 */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow: 0 2px 12px rgba(18, 53, 79, 0.10);
+  --shadow-glow: 0 0 0 3px rgba(11, 74, 143, 0.12);
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+/* ── PORT-MIS 연계 상단 바 ── */
+.portmis-bar {
+  height: var(--portmis-bar);
+  min-height: var(--portmis-bar);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 18px;
+  background: #FFFFFF;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 300;
+}
+
+.portmis-brand { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
+
+.portmis-mark {
+  width: 26px; height: 26px; border-radius: 5px;
+  background: var(--blue); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 15px; font-family: ui-monospace, Consolas, monospace;
+}
+
+.portmis-brand-text {
+  display: flex; flex-direction: column; line-height: 1.15;
+  font-size: 12.5px; font-weight: 700; color: var(--blue); white-space: nowrap;
+}
+.portmis-brand-text em {
+  font-style: normal; font-size: 8.5px; letter-spacing: .06em;
+  color: var(--text-dim); font-weight: 600;
+}
+
+/* 활성 서비스 pill — 이 자리가 우리 시스템 */
+.portmis-active {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--navy); color: #fff;
+  padding: 8px 18px; border-radius: 999px;
+  font-size: 13.5px; font-weight: 700; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(18, 53, 79, 0.22);
+}
+
+/* PORT-MIS 의 다른 축 — 맥락 표시용이라 동작하지 않는다 */
+.portmis-menus {
+  display: flex; align-items: center; gap: 22px;
+  font-size: 13px; color: var(--text-secondary); font-weight: 600;
+  overflow: hidden;
+}
+.portmis-menus span { white-space: nowrap; cursor: default; }
+
+.portmis-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+.portmis-demo {
+  font-size: 11px; font-weight: 700; color: var(--yellow);
+  border: 1px solid var(--yellow); border-radius: 4px; padding: 2px 8px;
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .portmis-menus { display: none; }
+}
+
+/* ── 3D 트윈 HUD 공용 조작 요소 ──
+   씬 위에 뜨는 오버레이라 다크를 유지한다(라이트 팔레트와 별개).
+   패널 본체는 pointerEvents:none 이고 조작 요소만 auto 를 받는다. */
+.cctv-controls,
+.hud-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 5px 8px;
+  background: var(--hud-panel);
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+  color: var(--hud-text);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+}
+
+.cctv-controls select,
+.hud-toolbar select {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--hud-text);
+  border: 1px solid var(--hud-border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+/* 드롭다운 목록은 OS 가 그리므로 밝은 배경에 맞춰 글자색을 따로 준다 */
+.cctv-controls select option,
+.hud-toolbar select option { background: #16232B; color: #E8F0F2; }
+
+.cctv-controls button,
+.hud-toolbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--hud-dim);
+  border: 1px solid var(--hud-border);
+  border-radius: 3px;
+  padding: 3px 7px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+}
+.cctv-controls button:hover:not(:disabled),
+.hud-toolbar button:hover:not(:disabled) { color: var(--hud-text); border-color: #6FD3BE; }
+.cctv-controls button.on,
+.hud-toolbar button.on { color: #39C0A8; border-color: #39C0A8; }
+.cctv-controls button:disabled,
+.hud-toolbar button:disabled { opacity: 0.4; cursor: default; }
+
+/* 접었을 때 남는 칩 */
+.hud-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--hud-panel);
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+  color: var(--hud-text);
+  padding: 6px 12px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+}
+.hud-chip:hover { border-color: #6FD3BE; }
+
+/* 지도 위 부두 이름표 — 배 아이콘에 묻히지 않게 항상 띄운다 */
+.leaflet-tooltip.berth-label {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: none;
+  color: var(--navy);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 6px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.leaflet-tooltip.berth-label::before { display: none; }
+
+/* 선석배정현황 지도 — 점유 중인 선석의 이름표를 초록 박스로 채운다(원 마커 대신) */
+.leaflet-tooltip.berth-label.occupied {
+  background: var(--teal);
+  border-color: var(--teal-dark);
+  color: #FFFFFF;
+}
+
+/* 이름표 전용 마커 — 위치 앵커 역할만 하고 화면엔 안 보인다(leaflet 기본
+   div-icon 흰 배경·테두리 제거) */
+.invisible-marker {
+  background: transparent;
+  border: none;
+}
+
+/* ── Layout ── */
+.app-layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* PORT-MIS 바가 위에 붙으면서 세로 공간이 그만큼 줄어든다 */
+.app-shell { display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; }
+.app-shell .app-layout { height: calc(100vh - var(--portmis-bar)); }
+.app-shell .sidebar { height: calc(100vh - var(--portmis-bar)); }
+
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: margin-left var(--transition);
+}
+
+.page-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 28px 32px;
+  position: relative;
+}
+
+/* 대시보드 카드 사이 간격 — 예전엔 각 섹션이 인라인 marginBottom:20px 을 따로
+   들고 있었다. 한 곳에서 정하면 카드 크기를 조정할 때 같이 움직인다. */
+.dashboard-page > .dash-section {
+  margin-bottom: 24px;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  height: 100vh;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  transition: all var(--transition);
+  position: relative;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed);
+  min-width: var(--sidebar-collapsed);
+}
+
+.sidebar-logo {
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-logo .logo-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--teal), var(--info));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  box-shadow: 0 0 16px rgba(11, 74, 143, 0.25);
+}
+
+.sidebar-logo .logo-text {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: linear-gradient(135deg, var(--teal), var(--info));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  opacity: 1;
+  transition: opacity var(--transition);
+}
+
+.sidebar.collapsed .logo-text,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .sidebar-footer-text {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 600;
+  transition: all var(--transition);
+  position: relative;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nav-item:hover {
+  background: rgba(11, 74, 143, 0.06);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: rgba(11, 74, 143, 0.10);
+  color: var(--teal);
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 24px;
+  background: var(--teal);
+  border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 12px var(--teal);
+}
+
+.nav-icon {
+  font-size: 20px;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-toggle {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.sidebar-toggle:hover {
+  background: rgba(11, 74, 143, 0.06);
+  border-color: var(--border-hover);
+  color: var(--teal);
+}
+
+/* ── Header ── */
+.header {
+  height: var(--header-height);
+  min-height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 16px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-title {
+  font-size: 19px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.status-dot.connected { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+.status-dot.disconnected { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.weather-badge {
+  color: var(--info);
+  border-color: var(--border);
+}
+
+.alert-badge {
+  position: relative;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* ── 헤더 알림 벨 드롭다운 (구 대시보드 "경고 센터" 카드) ── */
+.alert-bell {
+  position: relative;
+}
+
+.alert-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(520px, calc(100vw - 48px));
+  /* 헤더 팝오버는 페이지 위 오버레이 전부보다 위에 떠야 한다.
+     아래 레이어들이 이미 자리를 잡고 있다 —
+       트윈 상단 경고 전광판 2000 · 선박 상세 패널 2500 · 협상 콘솔 3000
+     예전 값(1200)은 전광판(2000)보다 낮아서, 디지털 트윈에서 벨을 열면
+     드롭다운 상단이 전광판에 깔려 목록 머리가 가려졌다.
+     토스트(9999)만 이 위에 남긴다. */
+  z-index: 3200;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(18, 53, 79, 0.18);
+  overflow: hidden;
+}
+
+.alert-dropdown-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.alert-dropdown-allack {
+  background: var(--teal);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.alert-dropdown-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  padding: 4px;
+}
+
+.alert-dropdown-sub {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+
+.alert-dropdown-list {
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alert-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--card);
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
+.alert-row-level {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 1px 7px;
+  margin-top: 1px;
+}
+
+.alert-row-risk {
+  margin-left: 7px;
+  font-size: 10.5px;
+  font-weight: 800;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
+.alert-row-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--info);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.alert-row-btn--ack {
+  border: none;
+  background: var(--teal);
+  color: #FFFFFF;
+}
+
+.alert-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--red);
+  color: white;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+/* ── Glass Card ── */
+/* 카드 여백·제목 크기는 관제 화면 기준으로 키웠다. 예전 값(패딩 20 / 제목 14px
+   대문자변환)은 대시보드를 한 화면에 욱여넣던 시절 값이라, 항목 수가 줄어든
+   지금은 내용이 실제보다 작고 빽빽해 보였다. */
+.glass-card {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 26px 28px;
+  transition: all var(--transition);
+}
+
+.glass-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-glow);
+}
+
+.glass-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+/* text-transform: uppercase 를 뺐다 — 제목이 대부분 한글이라 효과가 없고,
+   영문·숫자만 커져서 '온산항 관제 지도' 같은 제목이 뒤죽박죽으로 보였다. */
+.glass-card-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+}
+
+/* ── KPI Cards ── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.kpi-card {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 26px 28px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  transition: all var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--teal), transparent);
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.kpi-card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow);
+}
+
+.kpi-card:hover::before { opacity: 1; }
+
+.kpi-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 27px;
+  flex-shrink: 0;
+}
+
+.kpi-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.kpi-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: -0.1px;
+  margin-bottom: 6px;
+}
+
+.kpi-value {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.1;
+  /* 숫자가 폴링마다 바뀌어도 자릿수 폭이 흔들리지 않게 */
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-unit {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-left: 5px;
+}
+
+.kpi-change {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 7px;
+  line-height: 1.5;
+}
+
+.kpi-change.positive { color: var(--teal); }
+.kpi-change.negative { color: var(--red); }
+.kpi-change.neutral { color: var(--yellow); }
+
+/* ── Dashboard Grid ── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.dashboard-grid .full-width {
+  grid-column: 1 / -1;
+}
+
+/* ── Chart Containers ── */
+.chart-container {
+  width: 100%;
+  height: 280px;
+}
+
+/* ── Tank Gauge ── */
+.tank-gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.tank-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(27, 40, 56, 0.5);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  transition: all var(--transition);
+}
+
+.tank-gauge:hover {
+  border-color: var(--border-hover);
+  background: rgba(27, 40, 56, 0.8);
+}
+
+.tank-gauge-visual {
+  width: 80px;
+  height: 100px;
+  border: 2px solid var(--text-dim);
+  border-radius: 4px 4px 8px 8px;
+  position: relative;
+  overflow: hidden;
+  background: rgba(10, 15, 28, 0.6);
+}
+
+.tank-gauge-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  transition: height 1s ease-out;
+  border-radius: 0 0 6px 6px;
+}
+
+.tank-gauge-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.tank-gauge-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.tank-gauge-cargo {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ── Agent Log ── */
+.agent-log-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-log-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(27, 40, 56, 0.4);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--teal);
+  font-size: 13px;
+  transition: all var(--transition);
+}
+
+.agent-log-item:hover {
+  background: rgba(27, 40, 56, 0.7);
+}
+
+.agent-log-time {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+.agent-log-action {
+  font-weight: 600;
+  color: var(--teal);
+}
+
+.agent-log-detail {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* ── Safety Panel ── */
+.safety-layout {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: 20px;
+  /* page-content 세로 패딩(28px × 2)을 뺀 높이 — 이 값이 어긋나면 안전 페이지
+     오른쪽 열이 화면 밖으로 밀린다 */
+  height: calc(100vh - var(--portmis-bar) - var(--header-height) - 56px);
+  min-height: 0;
+}
+
+/* 왼쪽(심사 폼 + 안전지수)은 세로로 길다 — 예전엔 overflow:hidden 이라 화면을 넘는
+   부분이 잘려 나갔고, 스크롤도 안 됐다. 심사를 실행하면 결과·게이트·체크리스트가
+   아래로 붙는데 그게 통째로 안 보이는 상태였다. 자체 프레임(배경·테두리)도 뺀다 —
+   안에 들어가는 glass-card 들이 이미 각자 프레임을 갖고 있어 이중 액자였다. */
+.safety-graph-container {
+  position: relative;
+  overflow-y: auto;
+  min-height: 0;
+  min-width: 0; /* 그리드 아이템 기본 min-width:auto 때문에, 안의 가로 스크롤 그래프(1200px
+    고정 폭)가 이 칸을 뚫고 페이지 전체를 옆으로 밀어내는 걸 막는다 — 이 값이 없으면
+    overflow-x:auto 를 안쪽에 걸어도 이 칸 자체가 컨텐츠 크기만큼 넓어져 버린다. */
+  padding-right: 4px;
+}
+
+/* 오른쪽(현재 위험 선석)은 카드가 열 높이를 채우고 목록만 안에서 구른다 —
+   "위험 선석 24개" 헤더가 스크롤에 딸려 올라가지 않게 하기 위함. */
+.safety-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.safety-panel > .glass-card {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 좁은 화면(노트북 세로 분할·프로젝터)에서는 한 열로 쌓고 페이지 자체를 스크롤한다 */
+@media (max-width: 1100px) {
+  .safety-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .safety-graph-container,
+  .safety-panel {
+    overflow: visible;
+    height: auto;
+  }
+  .safety-panel > .glass-card {
+    flex: none;
+  }
+}
+
+.safety-grade-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 22px;
+  font-weight: 900;
+  border: 2px solid;
+}
+
+.safety-rationale {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  padding: 16px;
+  background: rgba(27, 40, 56, 0.4);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--info);
+  white-space: pre-wrap;
+}
+
+.safety-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.safety-select {
+  flex: 1;
+  min-width: 120px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+
+.safety-select:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
+.safety-btn {
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: linear-gradient(135deg, var(--teal), var(--teal-dark));
+  color: var(--bg);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: 'Inter', sans-serif;
+}
+
+.safety-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(11, 74, 143, 0.25);
+}
+
+.safety-btn:active {
+  transform: translateY(0);
+}
+
+/* ── Sensor Page ── */
+.sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.sensor-card {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: all var(--transition);
+}
+
+.sensor-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-glow);
+}
+
+.sensor-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.sensor-id {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+.sensor-status {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sensor-status.online { background: rgba(11, 74, 143, 0.12); color: var(--teal); }
+.sensor-status.offline { background: rgba(255, 75, 110, 0.15); color: var(--red); }
+
+.sensor-readings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.sensor-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sensor-reading-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sensor-reading-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.sensor-reading-unit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+/* 3D 트윈 위에 뜨는 팝업 — 씬이 어두워서 여기만 다크를 유지한다
+   (PORT-MIS 도 밝은 지도 위에 어두운 툴바를 쓴다). */
+.glass-hud {
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  color: #f8fafc;
+  width: 260px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255,255,255,0.05);
+  font-family: 'Inter', system-ui, sans-serif;
+  animation: hudFadeIn 0.3s ease-out;
+}
+
+/* ── Toast Notifications ── */
+/* ToastContainer 컴포넌트를 삭제해(경고는 헤더 알림 벨이 담당) 관련 CSS도 함께 걷어냈다. */
+
+@keyframes hudFadeIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.hud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.hud-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.hud-icon {
+  font-size: 1.2rem;
+}
+
+.hud-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.hud-close:hover {
+  color: #ef4444;
+}
+
+.hud-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  background: rgba(0,0,0,0.3);
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.status-dot[data-status="operating"] { background: #10b981; color: #10b981; }
+.status-dot[data-status="active"] { background: #10b981; color: #10b981; }
+.status-dot[data-status="mooring"] { background: #f59e0b; color: #f59e0b; }
+.status-dot[data-status="departing"] { background: #3b82f6; color: #3b82f6; }
+
+.status-text {
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
+.hud-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.detail-row span {
+  color: #94a3b8;
+}
+
+.detail-row strong {
+  color: #f1f5f9;
+}
+
+.progress-container {
+  margin-top: 8px;
+  width: 100%;
+  height: 6px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  transition: width 0.5s ease;
+}
+
+.tank-progress .progress-bar {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+/* ── Digital Twin Page ── */
+.digital-twin-page {
+  display: flex;
+  height: calc(100vh - var(--portmis-bar) - var(--header-height));
+  overflow: hidden;
+  padding: 0;
+}
+
+.scene-container {
+  flex: 1;
+  position: relative;
+  background: var(--bg);
+}
+
+.scene-overlay {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scene-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.twin-sidebar {
+  width: 340px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Force Graph ── */
+.graph-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.graph-node {
+  cursor: pointer;
+}
+
+.graph-tooltip {
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-primary);
+  position: absolute;
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: var(--shadow);
+}
+
+/* ── Animations ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 212, 170, 0.2); }
+  50% { box-shadow: 0 0 20px var(--border-hover); }
+}
+
+.fade-in { animation: fadeIn 0.5s ease-out; }
+.slide-in-right { animation: slideInRight 0.4s ease-out; }
+.glow-pulse { animation: glowPulse 3s ease-in-out infinite; }
+
+/* ── Loading Spinner ── */
+.loading-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--teal);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Empty State ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--text-dim);
+  text-align: center;
+  gap: 12px;
+}
+
+.empty-state-icon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.empty-state-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ── Alert Toast ── */
+.alert-container {
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+}
+
+.alert-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  animation: slideInRight 0.3s ease-out;
+  box-shadow: var(--shadow);
+}
+
+.alert-toast.danger { border-left: 3px solid var(--red); }
+.alert-toast.warning { border-left: 3px solid var(--yellow); }
+.alert-toast.info { border-left: 3px solid var(--info); }
+
+.alert-toast-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.alert-toast-message {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.alert-toast-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  line-height: 1;
+}
+
+.alert-toast-close:hover { color: var(--red); }

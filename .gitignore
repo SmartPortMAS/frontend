@@ -1,0 +1,14 @@
+node_modules
+dist
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+dist-snapshot/
+public/snapshot/
+shot*.mjs
+shots/
+diag*.mjs
