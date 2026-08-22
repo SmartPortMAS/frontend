@@ -142,7 +142,8 @@ async function localMsdsAnswer({ question, cargoHint }) {
   }
   if (!payload) {
     return {
-      answer: `'${cargoName}'의 MSDS를 조회하지 못했습니다. 백엔드(8001)가 떠 있는지 확인해주세요.`,
+      // 관제사에게 포트 번호는 정보가 아니다 — 무엇이 안 됐고 어디를 보면 되는지만 말한다
+      answer: `'${cargoName}' 정보를 조회하지 못했습니다. 관제 서버 연결 상태를 확인한 뒤 다시 시도해주세요.`,
       citations: [], is_local_fallback: true, source: 'MSDS_UNAVAILABLE',
     };
   }

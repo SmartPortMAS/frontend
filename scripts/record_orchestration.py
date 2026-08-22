@@ -98,9 +98,28 @@ def main() -> None:
     if not out:
         sys.exit("녹화된 판정이 없습니다 - 백엔드가 떠 있는지 확인하세요")
 
+
+    # 챗봇 추천 질문 4개 — 화면(AgentConsole.SUGGESTED)과 문구가 정확히 같아야
+    # 배포본에서 그 버튼이 답을 찾는다. 바꿀 때 양쪽을 같이 바꿀 것.
+    suggested = [
+        "벤젠 취급 시 착용해야 할 보호구는?",
+        "메탄올이 누출되면 어떻게 대처하나요?",
+        "황산은 어떤 물질과 함께 두면 안 되나요?",
+        "톨루엔 인화점이 몇 도인가요?",
+    ]
+    rag = {}
+    for q in suggested:
+        try:
+            rag[q] = post("/rag/query", {"question": q})
+            print(f"[OK] 챗봇: {q[:24]}...")
+        except Exception as e:  # noqa: BLE001
+            print(f"[챗봇 실패] {q[:20]}: {e}")
+
     with io.open(SNAP, encoding="utf-8") as f:
         snap = json.load(f)
     snap["/api/v1/orchestrator/assess"] = out
+    if rag:
+        snap["/api/v1/rag/query"] = rag
     # 브라우저 녹화분(record_agents.mjs)이 있으면 합치고, 없으면 새로 넣는다.
     if cands:
         merged = dict(snap.get("/api/v1/scheduling/candidates") or {})
