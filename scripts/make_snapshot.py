@@ -17,7 +17,7 @@ import urllib.request
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(BASE, "public", "snapshot")
 
-BACKEND = "http://localhost:8001/api/v1"
+BACKEND = "http://127.0.0.1:8001/api/v1"
 
 # 저장 키는 화면이 호출하는 경로와 1:1 로 맞춘다 (snapshotMode.js 가 이 키로 찾는다)
 GETS = {

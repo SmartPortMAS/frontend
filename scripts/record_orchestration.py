@@ -25,7 +25,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SNAP = os.path.join(BASE, "public", "snapshot", "snapshot.json")
-BACKEND = "http://localhost:8001/api/v1"
+BACKEND = "http://127.0.0.1:8001/api/v1"
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 15
 
 
