@@ -503,6 +503,31 @@ export default function useOnsanApi() {
     }
   }, []);
 
+  // 승인/반려 계열 전용 — postJson 과 달리 실패 사유(detail)를 삼키지 않는다.
+  //
+  // postJson 은 실패 시 null 을 돌려주고 호출부가 로컬 폴백으로 도망가는 조회용
+  // 계약이다. 그런데 승인은 폴백이 없다 — 실패했으면 "왜"가 화면에 떠야 한다.
+  // 예전엔 여기서도 postJson 을 써서, 스냅샷 배포본의 "읽기 전용" 503 사유가
+  // "백엔드 응답이 없습니다"라는 개발자 문구로 뭉개졌다(2026-08-23 실사고 —
+  // 사용자가 배포본에서 승인을 눌렀는데 왜 안 되는지 알 수 없었다).
+  const postJsonStrict = useCallback(async (path, body) => {
+    let res;
+    try {
+      res = await fetch(`${BACKEND_BASE}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw new Error('관제 서버가 응답하지 않습니다. 연결 상태를 확인해주세요.');
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.detail || `요청이 거부되었습니다 (HTTP ${res.status})`);
+    if (data == null) throw new Error('서버 응답을 해석할 수 없습니다.');
+    return data;
+  }, []);
+
+
   // 선석군 목록 — 백엔드에 조회 엔드포인트가 없어 로컬 매핑을 쓴다
   // (berth_weather_threshold 시드와 동일한 문자열)
   const fetchBerthGroups = useCallback(async () => {
@@ -626,7 +651,7 @@ export default function useOnsanApi() {
       const cargo = resolveCargoRef({ chem_id: chemId, cas_no: casNo, cargo_name: cargoName });
       if (!cargo) throw new Error(`화물 '${cargoName}' 식별 불가 — chem_id/CAS 매핑이 없습니다.`);
       const now = Date.now();
-      const data = await postJson('/orchestrator/assess-and-commit', {
+      const data = await postJsonStrict('/orchestrator/assess-and-commit', {
         vessel: {
           draught_m: Number(draught) || 7.5,
           dwt_t: dwt ? Number(dwt) : null,
@@ -640,7 +665,7 @@ export default function useOnsanApi() {
         imo_no: imoNo ?? null,
         approved_by: approvedBy,
       });
-      if (!data) throw new Error('백엔드 응답이 없습니다.');
+      // 실패는 postJsonStrict 가 사유와 함께 throw 한다
       return {
         committed: data.committed,
         assignmentId: data.assignment_id ?? null,
@@ -648,7 +673,7 @@ export default function useOnsanApi() {
         orchestration: mapOrchestration({ ...data.result, _vessel_name: vesselName, _cargo_name: cargoName }),
       };
     },
-    [postJson]
+    [postJsonStrict]
   );
 
   // 즉석 반려 — POST /orchestrator/reject (§5.3, commitAssignment의 반려판).
@@ -658,7 +683,7 @@ export default function useOnsanApi() {
   // "승인할지 반려할지"라는 관제사의 판단과 무관하다(2026-08-20).
   const rejectAssignment = useCallback(
     async ({ vesselName, callSign, imoNo, chemId, rejectedBy, reason }) => {
-      const data = await postJson('/orchestrator/reject', {
+      const data = await postJsonStrict('/orchestrator/reject', {
         call_sign: callSign,
         vessel_name: vesselName,
         imo_no: imoNo ?? null,

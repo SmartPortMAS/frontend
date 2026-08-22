@@ -117,7 +117,14 @@ def main() -> None:
                 previous = json.load(f)
         except (OSError, ValueError):
             previous = {}
-        for key in ("/api/v1/safety/assess", "/api/v1/scheduling/candidates"):
+        for key in (
+            "/api/v1/safety/assess",
+            "/api/v1/scheduling/candidates",
+            # 아래 둘을 빠뜨렸다가 GET 재굳힘 한 번에 종합 판정 20건·챗봇 4건이
+            # 조용히 사라졌다(2026-08-23 실사고). 녹화 계열 키는 전부 여기 있어야 한다.
+            "/api/v1/orchestrator/assess",
+            "/api/v1/rag/query",
+        ):
             if key not in snap and previous.get(key):
                 snap[key] = previous[key]
                 print(f"[유지] {key} (녹화분 {len(previous[key])}건 보존)")

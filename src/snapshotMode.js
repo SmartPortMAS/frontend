@@ -77,6 +77,13 @@ if (ENABLED && typeof window !== 'undefined') {
 
     // 승인/반려는 상태를 바꾸는 동작이라 정적 배포본에서 할 수 없다.
     // 없는 성공을 지어내지 않고, 왜 안 되는지 그대로 말한다.
+    if (path.endsWith('/orchestrator/assess-and-commit') || path.endsWith('/orchestrator/reject')) {
+      return jsonResponse(
+        { detail: '이 공개 데모는 읽기 전용입니다 — 승인·반려는 실시간 관제 서버에서만 가능합니다.' },
+        503,
+      );
+    }
+
     if (path.includes('/approvals/') && path.endsWith('/decision')) {
       return jsonResponse(
         { detail: '스냅샷 배포본은 읽기 전용입니다 - 승인/반려는 실시간 서버에서만 가능합니다' },
