@@ -3,7 +3,6 @@ import KPICard from '../components/dashboard/KPICard';
 import AgentConsole from '../components/dashboard/AgentConsole';
 import WeatherPanel from '../components/dashboard/WeatherPanel';
 import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
-import BerthDecisionPanel from '../components/dashboard/BerthDecisionPanel';
 import PortMap from '../components/dashboard/PortMap';
 import PortCallTable from '../components/dashboard/PortCallTable';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
@@ -82,11 +81,10 @@ export default function DashboardPage() {
         <BerthWeatherPanel />
       </div>
 
-      {/* 선석 배정 시뮬레이션 (Full Width) */}
-      <div className="dash-section">
-        <BerthDecisionPanel />
-      </div>
-
+      {/* 선석 배정 시뮬레이션 패널은 내렸다(2026-08-21) — 협상 로그(우하단 콘솔)의
+          스케줄링 발화가 같은 배정 경로(전용/대체/정박지)를 이미 보여준다. 같은
+          판정을 두 곳에 그리면 어느 쪽이 정본인지 화면만 봐서는 알 수 없다.
+          판정 실행과 결과 표시는 협상 로그 하나로 단일화. */}
       {/* Gantt Chart (Full Width) */}
       <div className="dash-section">
         <GanttChart />

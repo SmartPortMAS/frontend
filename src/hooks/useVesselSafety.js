@@ -40,8 +40,13 @@ export default function useVesselSafety(vessel) {
   const { data } = useDashboardData();
   const [state, setState] = useState({ assessment: null, loading: false });
 
-  const cargoName = vessel?.cargo?.name || null;
-  const cargoCasNo = vessel?.cargo?.cas_no || null;
+  // 대상 화물: 실신고 우선, 없으면 선종 추정(backendAdapter.assumed_cargo).
+  // 인접 화물은 실신고만 쓴다 — 인접까지 추정으로 채우면 혼재 판정이
+  // 추정 × 추정이 되어 근거가 사라진다.
+  const effCargo = vessel?.cargo ?? vessel?.assumed_cargo ?? null;
+  const cargoName = effCargo?.name || null;
+  const cargoCasNo = effCargo?.cas_no || null;
+  const cargoAssumed = Boolean(!vessel?.cargo && vessel?.assumed_cargo);
   const berth = vessel?.berth || null;
   const isLiquid = Boolean(vessel?.is_liquid_cargo_vessel);
 
@@ -73,7 +78,13 @@ export default function useVesselSafety(vessel) {
     // 인한 "CAS 매핑 없음" 오탐이 없다.
     assessSafetyGates({ cargo_name: cargoName, cas_no: cargoCasNo, adjacent_operations: adjacent })
       .then((res) => {
-        if (!cancelled) setState({ assessment: toPanelShape(res), loading: false });
+        if (!cancelled) {
+          const shaped = toPanelShape(res);
+          // 추정 화물 기반이면 판정에도 그 사실을 실어 화면 끝까지 보이게 한다
+          shaped.cargo_assumed = cargoAssumed;
+          shaped.cargo_assumed_basis = vessel?.assumed_cargo?.basis || null;
+          setState({ assessment: shaped, loading: false });
+        }
       })
       .catch(() => {
         // 실패해도 '안전'으로 떨어뜨리지 않는다 — fail-safe

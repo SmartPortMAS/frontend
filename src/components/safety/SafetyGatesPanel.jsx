@@ -257,7 +257,10 @@ export default function SafetyGatesPanel() {
         </div>
       )}
 
-      {/* 재항 선박에서 불러오기 — 수기 입력 대신 실제 붙어 있는 배를 고른다 */}
+      {/* 재항 선박에서 불러오기 — 수기 입력 대신 실제 붙어 있는 배를 고른다.
+          목록 기준(PORT-MIS 재항 + 위험물 신고, 화물은 선종 기반 합성) 설명은
+          화면에서 뺐다 — 관제사에게는 소음이고, 데이터 계보는 설계문서 몫이다
+          (2026-08-21 피드백). */}
       {berthedVessels.length > 0 && (
         <div style={{
           marginBottom: '12px', background: COLORS.card,
@@ -283,17 +286,6 @@ export default function SafetyGatesPanel() {
             <span style={{ fontSize: '11px', color: COLORS.textDim, whiteSpace: 'nowrap' }}>
               {berthedVessels.length} / {berthedTotal}건
             </span>
-          </div>
-          {/* 이 목록이 어디서 왔는지 화면에서 답할 수 있어야 한다 —
-              "무슨 기준으로 뜨는 배냐"는 질문이 실제로 나온다. */}
-          <div style={{ fontSize: '11px', color: COLORS.textDim, marginTop: '7px', lineHeight: 1.6 }}>
-            기준: PORT-MIS 입출항 기록 중 <strong style={{ color: COLORS.textSecondary }}>출항 신고가 없는 배</strong>(재항 중)
-            + 위험물 신고 건 · <code>mart.berth_current_cargo</code>
-            <br />
-            선박·선석·입항시각은 <strong style={{ color: COLORS.teal }}>실수집</strong>,
-            화물 배정은 <strong style={{ color: COLORS.yellow }}>합성</strong>입니다
-            — 화물 신고 원문은 공공데이터로 열리지 않아 PORT-MIS 실선종(석유제품·케미칼·LPG 운반선 등)에
-            맞는 위험물을 규칙으로 배정했습니다.
           </div>
         </div>
       )}

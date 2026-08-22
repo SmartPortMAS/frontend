@@ -26,6 +26,9 @@ const SHIP_SVG_PATH =
 // 속성(크기·색) 차이로 구분한다.
 const createVesselIcon = (vessel) => {
   const confirmed = Boolean(vessel.cargo); // 화물까지 확인된 배
+  // 화물 미확인 액체화물선은 속이 빈 배로 그린다 — "꽉 찬 빨강(확인)" 과
+  // "빈 빨강(선종 추정)" 은 링 유무보다 한눈에 갈린다(2026-08-21 피드백).
+  const hollow = !confirmed && vessel.is_liquid_cargo_vessel;
   const status = NAV_STATUS[vessel.nav_status_category] || NAV_STATUS.UNKNOWN;
   const color = vessel.is_liquid_cargo_vessel ? COLORS.red : status.color;
   const size = confirmed ? 34 : 20;
@@ -34,7 +37,8 @@ const createVesselIcon = (vessel) => {
     <div class="vessel-marker ${confirmed ? 'vessel-marker--danger' : 'vessel-marker--lite'}"
          style="width:${size}px;height:${size}px;">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-           width="${size}" height="${size}" fill="${color}">
+           width="${size}" height="${size}"
+           fill="${hollow ? 'white' : color}" stroke="${color}" stroke-width="${hollow ? 1.7 : 0}">
         <path d="${SHIP_SVG_PATH}"/>
       </svg>
     </div>`;
@@ -118,17 +122,18 @@ function VesselPopup({ vessel }) {
 // 생김새를 설명했는데, 색 점이 이미 옆에 찍혀 있으니 생김새 묘사는 소음이었다
 // (2026-08-17 피드백). 크기 차이는 화면에서 저절로 보인다 — 화물까지 확인된
 // 배가 크게, 위치만 수신된 배가 작게 그려진다는 규칙은 빨강 항목 하나에만 적는다.
+// 범례는 한 단어씩만 — 문장 설명은 뺐다(2026-08-21 피드백: "구분만 확실하면
+// 된다"). 색·모양의 뜻은 hover 툴팁(title)이 보조한다.
 const LEGEND_BASE = [
-  { color: COLORS.red, label: '빨강 — 액체화물선 (링 = 화물 확인 · 클릭 시 판정)' },
-  { color: COLORS.info, label: '파랑 원 — 온산 선석 (클릭 시 기상 판정)' },
-  { color: COLORS.yellow, label: '노랑 선 — 인접 선석 혼재감시' },
+  { color: COLORS.red, label: '화물 확인', hint: '꽉 찬 빨강 + 링 — 재항 위험물 신고까지 확인된 배. 클릭하면 판정.' },
+  { color: COLORS.red, label: '액체화물선', hollow: true, hint: '빈 빨강 — PORT-MIS 선종상 액체화물선(화물 미신고). 클릭하면 선종 기반 추정 판정.' },
+  { color: COLORS.info, label: '온산 선석', hint: '파랑 원 — 클릭하면 선석별 기상 판정' },
 ];
-// 배 색 = 상태. NAV_STATUS 와 같은 색을 써서 목록·상세 패널과 어긋나지 않게 한다.
 const LEGEND_AIS = [
-  { color: NAV_STATUS.UNDER_WAY.color, label: '파랑 — 항해 중' },
-  { color: NAV_STATUS.MOORED.color, label: '초록 — 접안 중' },
-  { color: NAV_STATUS.AT_ANCHOR.color, label: '노랑 — 정박지 대기' },
-  { color: NAV_STATUS.UNKNOWN.color, label: '회색 — 항내 소형선' },
+  { color: NAV_STATUS.UNDER_WAY.color, label: '항해' },
+  { color: NAV_STATUS.MOORED.color, label: '접안' },
+  { color: NAV_STATUS.AT_ANCHOR.color, label: '대기' },
+  { color: NAV_STATUS.UNKNOWN.color, label: '소형선' },
 ];
 
 // 온산 2클러스터(처용리/산암리) 뷰.
@@ -467,7 +472,9 @@ export default function PortMap() {
         </div>
         {[
           { label: '온산 부두', bounds: ONSAN_WHARF_BOUNDS },
-          { label: '온산 전체 (원유부이 포함)', bounds: ONSAN_ALL_BOUNDS },
+          // '온산 전체(원유부이 포함)' 버튼은 뺐다(2026-08-21) — 온산 부두 뷰와
+          // 차이가 석유공사부이 하나뿐이라 선택지 값을 못 했다. 부이는 '울산항
+          // 전체'에서 보인다.
           { label: '울산항 전체', center: MAP_CENTER, zoom: MAP_DEFAULT_ZOOM },
         ].map((v) => (
           <button
@@ -533,15 +540,19 @@ export default function PortMap() {
             <span style={{ color: COLORS.textDim }}> (실측)</span>
           </div>
         )}
-        {[...LEGEND_BASE, ...(showAis ? LEGEND_AIS : [])].map((item) => (
-          <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
-            <span style={{
-              width: '10px', height: '10px', borderRadius: '50%',
-              background: item.color, display: 'inline-block',
-            }} />
-            {item.label}
-          </div>
-        ))}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', maxWidth: '250px' }}>
+          {[...LEGEND_BASE, ...(showAis ? LEGEND_AIS : [])].map((item) => (
+            <span key={item.label} title={item.hint || item.label}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
+              <span style={{
+                width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block',
+                background: item.hollow ? 'white' : item.color,
+                border: `2px solid ${item.color}`,
+              }} />
+              {item.label}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );

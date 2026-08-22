@@ -112,6 +112,20 @@ function toMessages({ orchestration, berthWeather, vessel }) {
     });
   }
 
+  // 3.5) 후보가 없어 안전 심사까지 가지 못한 경우.
+  //
+  // 안전 에이전트가 "왜 조용한지"를 화면이 말하지 않으면, 관제사에게는 세 에이전트
+  // 협업이라는 구조 자체가 보이지 않는다("안전은 안 돌았나?"는 질문이 실제로 나왔다,
+  // 2026-08-21). 안전 심사는 구체적 선석이 정해진 뒤에야 그 선석의 인접 화물로
+  // 실행되므로, 생략된 이유를 안전 에이전트의 발화로 남긴다.
+  if (!orchestration.risk_level && (trace.length || rejected.length)) {
+    msgs.push({
+      agent: 'safety', time: at(2),
+      text: '안전 심사 생략 — 배정할 선석이 확보되지 않았습니다',
+      detail: ['안전 심사는 선석이 정해진 뒤 그 선석의 인접 화물 기준으로 실행됩니다.'],
+    });
+  }
+
   // 4) 종합
   msgs.push({
     agent: 'orchestrator', time: at(1),
@@ -193,7 +207,9 @@ export default function AgentConsole() {
   // 판정 대상: 실AIS + berth-cargo(실 신고 위험물) 조인 결과를 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
   const realCargoVessels = useMemo(
-    () => (data?.real_traffic ?? []).filter((v) => v.is_liquid_cargo_vessel && v.cargo),
+    // 실신고 화물 + 선종 추정 화물(assumed_cargo) 모두 판정 대상 —
+    // "모든 액체화물선을 판정한다"(2026-08-21). 추정은 목록·결과에 표식.
+    () => (data?.real_traffic ?? []).filter((v) => v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo)),
     [data]
   );
   // 폴백 없음 — 실화물이 확인된 배만 판정 대상으로 둔다.
@@ -233,8 +249,8 @@ export default function AgentConsole() {
       const group = berthId ? ONSAN_WEATHER_GROUP[berthId] : null;
       if (group) await assessBerthWeather({ berthGroup: group });
       await orchestrate({
-        cargoName: target.cargo?.name,
-        casNo: target.cargo?.cas_no, // 실 신고 화물이면 CAS를 이미 알고 있음 — 데모 이름사전 우회
+        cargoName: (target.cargo ?? target.assumed_cargo)?.name,
+        casNo: (target.cargo ?? target.assumed_cargo)?.cas_no, // 실신고 우선, 없으면 선종 추정
         dwt: null, // 실AIS 위치 데이터엔 DWT가 없음 — 미상으로 보내 오케스트레이터가 보수적으로 판단하게 함
         draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
@@ -436,7 +452,7 @@ export default function AgentConsole() {
               {/* 부두 이름은 안 보여준다 — 이 콘솔은 항상 탐색모드로 새로 추천받는다(위
                   run() 참고). 지금 있는 자리를 먼저 보여주면 "이미 정해진 자리를
                   확인하는 화면"처럼 보여 탐색모드로 바꾼 의도와 어긋난다. */}
-              {v.vessel_name} · {v.cargo?.name}
+              {v.vessel_name} · {v.cargo?.name ?? `${v.assumed_cargo?.name} (선종 추정)`}
             </option>
           ))}
         </select>
@@ -488,11 +504,28 @@ export default function AgentConsole() {
                     </div>
                   )}
                   {m.text}
-                  {m.detail?.length > 0 && (
+                  {/* 근거가 길면 접는다 — 스케줄링 trace 는 후보·대체 탐색이 전부 실려
+                      십수 줄이 되는데, 관제사가 매번 읽을 글이 아니다(정보 과부하 피드백,
+                      2026-08-21). 첫 2건으로 결론의 근거를 보이고 나머지는 펼침으로. */}
+                  {m.detail?.length > 0 && (m.detail.length <= 3 ? (
                     <ul style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
                       {m.detail.map((d, j) => <li key={j}>{d}</li>)}
                     </ul>
-                  )}
+                  ) : (
+                    <>
+                      <ul style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
+                        {m.detail.slice(0, 2).map((d, j) => <li key={j}>{d}</li>)}
+                      </ul>
+                      <details style={{ marginTop: 3 }}>
+                        <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>
+                          판단 과정 {m.detail.length - 2}건 더 보기
+                        </summary>
+                        <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
+                          {m.detail.slice(2).map((d, j) => <li key={j}>{d}</li>)}
+                        </ul>
+                      </details>
+                    </>
+                  ))}
                 </div>
               </div>
             </div>

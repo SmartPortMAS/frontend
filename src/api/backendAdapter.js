@@ -106,6 +106,28 @@ function isRecentlyPresent(row) {
 // 실측(2026-08-15, 재항 356척): true 66 / false 19 / null 271.
 // null 이 압도적인 이유는 조인 키 문제다 — PORT-MIS 에는 MMSI 컬럼이 없어 호출부호로만
 // 붙일 수 있는데, AIS 호출부호는 선택 필드라 74척이 아예 빈 값이다.
+// ─────────────────────────────────────────────────────────────────────────────
+// 선종 → 대표 화물 (화물 신고가 조인되지 않은 액체화물선의 판정 폴백)
+//
+// "모든 액체화물선을 판정한다"가 이 시스템의 목적인데, 화물 신고(berth-cargo
+// 조인)가 없는 배는 판정 입력이 없어 지금까지 전부 '조회 불가'였다(2026-08-21
+// 피드백: "왜 링 안 쳐진 빨간 배는 판정이 안 되나"). PORT-MIS 선종은 그 배가
+// 어떤 부류의 화물을 싣는 배인지 공식적으로 말해주므로, 카테고리 대표 화물로
+// 추정 판정한다 — 백엔드 스케줄링 에이전트가 인접 화물을 근사할 때 쓰는
+// 대표(category_map.REPRESENTATIVE_CHEM_BY_CATEGORY)와 같은 값이라 판정 기준이
+// 두 벌로 갈라지지 않는다.
+//
+// 추정은 반드시 추정으로 보이게 한다 — is_assumed 를 화면 끝까지 끌고 가서
+// '선종 기반 추정' 표식 없이 실신고처럼 보이는 일이 없게 한다.
+const SHIP_KIND_ASSUMED_CARGO = {
+  '석유제품 운반선': { name: '디젤 연료', chem_id: '000973', cas_no: '68334-30-5' },
+  '기타 유조선':    { name: '디젤 연료', chem_id: '000973', cas_no: '68334-30-5' },
+  '원유운반선':     { name: '석유(원유)', chem_id: '000751', cas_no: '8002-05-9' },
+  '케미칼 운반선':  { name: '벤젠', chem_id: '001008', cas_no: '71-43-2' },
+  'LPG 운반선':     { name: '프로페인', chem_id: '015420', cas_no: '74-98-6' },
+  'LNG 운반선':     { name: '메테인', chem_id: '015390', cas_no: '74-82-8' },
+};
+
 function liquidByShipType(row) {
   return row.is_liquid_cargo_vessel == null ? null : Boolean(row.is_liquid_cargo_vessel);
 }
@@ -168,6 +190,12 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
       un_no: cargo.dg_un_no, cas_no: cargo.cas_no,
       imdg_class: cargo.imdg_class, is_synthetic: cargo.is_synthetic,
     } : null,
+    // 화물 신고가 없을 때만 선종 대표 화물을 추정으로 붙인다.
+    // cargo 와 별도 필드로 둔다 — 지도 링(화물 '확인' 표식)과 KPI 는 실신고만
+    // 세야 하고, 추정을 cargo 에 섞으면 그 구분이 사라진다.
+    assumed_cargo: (!cargo && byShipType === true && SHIP_KIND_ASSUMED_CARGO[row.ship_kind_nm])
+      ? { ...SHIP_KIND_ASSUMED_CARGO[row.ship_kind_nm], is_assumed: true, basis: row.ship_kind_nm }
+      : null,
   };
 }
 

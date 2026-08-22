@@ -197,8 +197,18 @@ export default function VesselDetailPanel() {
       <Row label="화물">
         {vessel.cargo
           ? `${vessel.cargo.name} (${vessel.cargo.un_no})`
-          : vessel.liquid_by_ship_type === true ? '액체화물선 · 화물 미신고'
-            : vessel.liquid_by_ship_type === false ? '일반화물' : '미확인'}
+          : vessel.assumed_cargo
+            ? (
+              <span>
+                {vessel.assumed_cargo.name}{' '}
+                <span style={{ color: COLORS.yellow, fontSize: '11px', fontWeight: 700 }}
+                  title={`화물 신고가 없어 PORT-MIS 선종(${vessel.assumed_cargo.basis})의 대표 화물로 추정합니다`}>
+                  선종 추정
+                </span>
+              </span>
+            )
+            : vessel.liquid_by_ship_type === true ? '액체화물선 · 화물 미신고'
+              : vessel.liquid_by_ship_type === false ? '일반화물' : '미확인'}
       </Row>
       {vessel.ship_kind_nm && <Row label="선종 (PORT-MIS)">{vessel.ship_kind_nm}</Row>}
       {/* arrival_at_utc 는 지도 마커로 연 경우에만 채워진다(PortMap 이 붙여준다).
@@ -410,12 +420,14 @@ export default function VesselDetailPanel() {
           이 목록은 "확정 배정"이 아니라 조건을 만족하는 후보다 — 확정은 종합 판정
           (기상·안전 게이트까지 통과)에서 난다. 문구로 그 차이를 분명히 적는다. */}
       <SectionTitle icon={<FaMapMarkerAlt />}>배정 가능 선석 (후보)<AgentChip agent="scheduling" /></SectionTitle>
-      {(vessel.draught_m == null || !(vessel.cargo?.chem_id || vessel.cargo?.cas_no)) ? (
+      {/* 판정 입력 화물: 실신고 우선, 없으면 선종 추정(표식과 함께) */}
+      {(() => { return null; })()}
+      {(vessel.draught_m == null || !((vessel.cargo ?? vessel.assumed_cargo)?.chem_id || (vessel.cargo ?? vessel.assumed_cargo)?.cas_no)) ? (
         <div style={{ fontSize: '12.5px', color: COLORS.textDim, lineHeight: 1.7 }}>
           {/* 없는 값을 가정으로 채워 후보를 만들지 않는다 — 근거 없는 "배정 가능"이 된다 */}
           조회 불가 — {vessel.draught_m == null ? '흘수 미수신' : ''}
           {vessel.draught_m == null && !(vessel.cargo?.chem_id || vessel.cargo?.cas_no) ? ' · ' : ''}
-          {!(vessel.cargo?.chem_id || vessel.cargo?.cas_no) ? '재항 화물 미확인(PORT-MIS 대조 안 됨)' : ''}
+          {!((vessel.cargo ?? vessel.assumed_cargo)?.chem_id || (vessel.cargo ?? vessel.assumed_cargo)?.cas_no) ? '화물·선종 모두 미확인(PORT-MIS 대조 안 됨)' : ''}
         </div>
       ) : (
         <>
@@ -426,8 +438,8 @@ export default function VesselDetailPanel() {
               try {
                 setCands(await fetchBerthCandidates({
                   draught_m: vessel.draught_m,
-                  chem_id: vessel.cargo.chem_id,
-                  cas_no: vessel.cargo.cas_no,
+                  chem_id: (vessel.cargo ?? vessel.assumed_cargo).chem_id,
+                  cas_no: (vessel.cargo ?? vessel.assumed_cargo).cas_no,
                   name_hint: vessel.vessel_name,
                 }));
               } catch (e) {
@@ -445,7 +457,7 @@ export default function VesselDetailPanel() {
             {candLoading ? '스케줄링 에이전트 조회 중...' : '이 선박이 접안 가능한 선석 조회'}
           </button>
           <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginTop: '6px', lineHeight: 1.6 }}>
-            흘수 {vessel.draught_m} m · {vessel.cargo.name} 기준, 앞으로 24시간 창.
+            흘수 {vessel.draught_m} m · {(vessel.cargo ?? vessel.assumed_cargo).name}{vessel.assumed_cargo && !vessel.cargo ? ' (선종 추정)' : ''} 기준, 앞으로 24시간 창.
             수심·화물 카테고리 조건을 만족하는 후보이며 확정 배정은 아닙니다.
           </div>
           {candError && (

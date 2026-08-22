@@ -30,7 +30,15 @@ export default function SafetyGraph() {
     return () => { alive = false; clearInterval(timer); };
   }, []);
 
-  const axes = index?.axes ?? [];
+  // '데이터 신선도' 축은 지수에서 뺀다(2026-08-21 피드백).
+  // 신선도는 "이 항만이 지금 안전한가"가 아니라 "우리 시스템이 지금 건강한가"라서,
+  // 하역 안전 지수에 섞이면 수집기 지연이 항만 위험처럼 읽힌다. 시스템 상태는
+  // 헤더의 수집 배지가 이미 전담한다. 축이 빠지므로 종합도 남은 축으로 다시 낸다.
+  const axes = (index?.axes ?? []).filter((a) => a.subject !== '데이터 신선도');
+  const scoredAxes = axes.filter((a) => a.score !== null);
+  const overall = scoredAxes.length
+    ? Math.round((scoredAxes.reduce((t, a) => t + a.score, 0) / scoredAxes.length) * 10) / 10
+    : null;
   // 판정 불가 축(재료 없음)은 0으로 그리면 "최악"으로 보인다 — 차트에서 빼고
   // 아래에 이름을 따로 밝힌다.
   const chartData = axes
@@ -43,12 +51,12 @@ export default function SafetyGraph() {
         다차원 안전 평가 지수
         {index?.overall != null && (
           <span style={{ marginLeft: '12px', fontSize: '15px', color: 'var(--text-primary)' }}>
-            종합 {index.overall}
+            종합 {overall ?? index.overall}
           </span>
         )}
       </h3>
       <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '8px' }}>
-        수집 중인 실데이터로 계산한 6개 축입니다. 각 축의 근거는 아래에 함께 표시됩니다.
+        수집 중인 실데이터로 계산한 5개 축입니다. 각 축의 근거는 아래에 함께 표시됩니다.
       </p>
       {/* 무엇을 재는 지수인지 화면이 스스로 답해야 한다. 설비 안전도(탱크 압력·가스
           농도 같은)로 오해하기 쉬운데, 그건 우리가 수집하지 않는 값이다. */}

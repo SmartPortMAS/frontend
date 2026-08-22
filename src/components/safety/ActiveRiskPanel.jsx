@@ -171,8 +171,28 @@ export default function ActiveRiskPanel() {
                   {g.items.map((a, i) => (
                     <div key={i} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
                       <FaExclamationTriangle size={10} color={levelStyle(a.level).color} style={{ marginTop: '3px', flexShrink: 0 }} />
-                      {/* 선석 이름은 위에 이미 있으므로 문장에서 뺀다 */}
-                      <span>{(a.message || '').replace(`${g.berth}: `, '')}</span>
+                      {/* 선석 이름은 위에 이미 있으므로 문장에서 뺀다.
+                          LLM 상세 설명(괄호 안 서너 문장)은 접는다 — 카드마다 전문이
+                          펼쳐져 있으면 목록이 아니라 보고서가 된다(정보 과부하 피드백,
+                          2026-08-21). 결론 한 줄 + 펼침. */}
+                      {(() => {
+                        const msg = (a.message || '').replace(`${g.berth}: `, '');
+                        const cut = msg.indexOf(' (');
+                        if (cut === -1 || msg.length < 90) return <span>{msg}</span>;
+                        const head = msg.slice(0, cut);
+                        const rest = msg.slice(cut + 2).replace(/\)\s*$/, '');
+                        return (
+                          <span style={{ minWidth: 0 }}>
+                            {head}
+                            <details style={{ marginTop: '2px' }}>
+                              <summary style={{ cursor: 'pointer', color: COLORS.info, fontSize: '11px', fontWeight: 600 }}>
+                                상세 설명
+                              </summary>
+                              <span style={{ color: COLORS.textDim }}>{rest}</span>
+                            </details>
+                          </span>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
