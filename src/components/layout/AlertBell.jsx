@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
-import { alertId, LEVEL_STYLE, levelStyle, typeLabel, formatAlertKST } from '../../utils/alertUtils';
+import { alertId, LEVEL_STYLE, levelStyle, typeLabel, formatAlertKST, splitAlertMessage } from '../../utils/alertUtils';
 import { FaExclamationTriangle, FaCheck, FaShip, FaTimes, FaShieldAlt } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,7 +172,22 @@ export default function AlertBell() {
                   </span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.4 }}>
-                      {a.message}
+                      {/* 결론만 먼저 — LLM 상세는 펼침(splitAlertMessage 참고) */}
+                      {(() => {
+                        const { head, detail } = splitAlertMessage(a.message);
+                        if (!detail) return head;
+                        return (
+                          <>
+                            {head}
+                            <details style={{ marginTop: '3px' }}>
+                              <summary style={{ cursor: 'pointer', color: COLORS.info, fontSize: '11.5px', fontWeight: 600 }}>
+                                상세 설명
+                              </summary>
+                              <span style={{ fontWeight: 400, color: COLORS.textSecondary, fontSize: '12px' }}>{detail}</span>
+                            </details>
+                          </>
+                        );
+                      })()}
                       {a.risk_level && (
                         <span className="alert-row-risk" style={{ color: style.color, borderColor: style.color }}>
                           {a.risk_level}

@@ -268,8 +268,17 @@ function BerthPopupContent({ berth, filled }) {
 
 const POLL_MS = 30_000;
 
-export default function BerthAssignmentMap() {
+// 참고 선석(배정 범위 밖) — 작은 회색 사각 라벨. 배정 마커와 형태부터 다르게.
+const refIcon = L.divIcon({
+  className: 'ref-berth-icon',
+  html: '<div style="width:9px;height:9px;border-radius:2px;background:#9AA7AE;border:1px solid #7A8A92;"></div>',
+  iconSize: [9, 9], iconAnchor: [4, 4],
+});
+
+export default function BerthAssignmentMap({ scope = 'onsan', onScopeChange }) {
   const [berths, setBerths] = useState([]);
+  // 참고 레이어(울산 전체 선석) — 배정 범위 밖. scope 전환 시 1회 로드.
+  const [refBerths, setRefBerths] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const mapRef = useRef(null);
@@ -298,9 +307,14 @@ export default function BerthAssignmentMap() {
     return () => clearInterval(timer);
   }, [load]);
 
+  // 배정 API 는 온산 MVP 스코프만 준다(2026-08-21, 스케줄링 에이전트가 온산
+  // 하드 필터로 바뀌면서 함께 좁힘 — dashboard.py 주석 참고). 그래서 '울산 전체'
+  // 는 배정 뷰가 아니라 **참고 레이어**다: 배정이 붙을 수 없는 항만 전체 선석을
+  // 회색으로 깔아 "온산이 울산의 어디쯤인가"를 보여준다(2026-08-23 피드백 —
+  // 온산/전체 구분). 참고 선석은 실측 /dashboard/berths(69개)에서 온다.
   const withCoords = berths.filter((b) => b.latitude != null && b.longitude != null);
   const occupiedBerthCount = withCoords.filter((b) => isOccupied(b.slots)).length;
-  const occupiedSlotCount = berths.reduce(
+  const occupiedSlotCount = withCoords.reduce(
     (sum, b) => sum + b.slots.filter((s) => s.status).length, 0
   );
 
@@ -310,6 +324,30 @@ export default function BerthAssignmentMap() {
     requestAnimationFrame(() => mapRef.current?.fitBounds(bounds, ONSAN_FIT));
     hasFitRef.current = true;
   }, [withCoords]);
+
+  // 스코프 전환: 참고 선석을 (필요 시) 불러오고, 그 범위로 시야를 맞춘다
+  useEffect(() => {
+    let alive = true;
+    const apply = async () => {
+      let ref = refBerths;
+      if (scope === 'all' && ref === null) {
+        try {
+          const res = await fetch('/api/v1/dashboard/berths');
+          ref = res.ok ? await res.json() : [];
+        } catch { ref = []; }
+        if (!alive) return;
+        setRefBerths(ref);
+      }
+      if (!mapRef.current) return;
+      const pts = scope === 'all'
+        ? (ref || []).filter((b) => b.latitude != null).map((b) => [b.latitude, b.longitude])
+        : withCoords.map((b) => [b.latitude, b.longitude]);
+      if (pts.length) mapRef.current.flyToBounds(pts, { ...ONSAN_FIT, duration: 0.6 });
+    };
+    apply();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope]);
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%', borderRadius: '16px', overflow: 'hidden' }}>
@@ -328,6 +366,22 @@ export default function BerthAssignmentMap() {
           bounds={ULSAN_BBOX_BOUNDS}
           pathOptions={{ color: COLORS.info, weight: 1.5, dashArray: '8 6', fillOpacity: 0.02 }}
         />
+
+        {/* 참고 레이어: 배정 범위 밖 울산 선석 (회색 · 클릭 액션 없음) */}
+        {scope === 'all' && (refBerths || [])
+          .filter((b) => b.latitude != null && b.port_name !== '온산항')
+          .map((b) => (
+            <Marker
+              key={`ref-${b.wharf_name}-${b.wharf_se_name || ''}`}
+              position={[b.latitude, b.longitude]}
+              opacity={0.55}
+              icon={refIcon}
+            >
+              <Tooltip direction="top">
+                {b.wharf_name} — 배정 범위 밖 (온산 MVP)
+              </Tooltip>
+            </Marker>
+          ))}
 
         {withCoords.map((b) => {
           const occupied = isOccupied(b.slots);
@@ -367,7 +421,28 @@ export default function BerthAssignmentMap() {
         padding: '10px 14px', color: COLORS.textPrimary, fontSize: '12px',
       }}>
         <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>
+          <span style={{ display: 'inline-flex', gap: '6px', marginRight: '10px' }}>
+            {[['onsan', '온산항 (배정 대상)'], ['all', '울산 전체 보기']].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onScopeChange?.(key)}
+                style={{
+                  border: `1px solid ${scope === key ? COLORS.teal : COLORS.border}`,
+                  background: scope === key ? `${COLORS.teal}18` : 'transparent',
+                  color: scope === key ? COLORS.teal : COLORS.textSecondary,
+                  borderRadius: '14px', padding: '2px 10px', fontSize: '11.5px',
+                  fontWeight: 700, cursor: 'pointer',
+                }}
+              >{label}</button>
+            ))}
+          </span>
           선석 {withCoords.length}개 · 점유 {occupiedBerthCount}개({occupiedSlotCount}슬롯)
+          {scope === 'all' && (
+            <span style={{ color: COLORS.textDim, marginLeft: '8px' }}>
+              · 회색 {Math.max(0, (refBerths || []).filter((b) => b.latitude != null && b.port_name !== '온산항').length)}개 = 배정 범위 밖(참고)
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{ width: 14, height: 10, borderRadius: '3px', background: COLORS.teal, display: 'inline-block' }} />

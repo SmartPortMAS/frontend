@@ -61,3 +61,24 @@ export function groupAlertsByBerth(alerts) {
   const rank = { DANGER: 0, WARNING: 1, INFO: 2 };
   return [...byBerth.values()].sort((a, b) => rank[a.worst] - rank[b.worst]);
 }
+
+
+/**
+ * 경고 문구를 "결론"과 "LLM 상세 설명"으로 가른다.
+ *
+ * arrival_watcher 의 자동배정 경고는 "GRAND WINNER 6: 자동 배정 불가 — 전 후보
+ * 배정 불가(안전) (이번에 배정된 선박…다행입니다.)" 처럼 결론 뒤 괄호에 서너
+ * 문장의 LLM 설명이 붙는다. 목록에서 전문이 다 펼쳐지면 스캔이 불가능해지므로
+ * (2026-08-23 피드백) 결론만 보이고 상세는 펼침으로 넘긴다.
+ * 판정 내용은 하나도 버리지 않는다 — 자르는 게 아니라 접는 것이다.
+ */
+export function splitAlertMessage(message) {
+  const msg = message || '';
+  const cut = msg.indexOf(' (');
+  // 괄호가 없거나 짧은 부가어(단위·코드 등)면 그대로 둔다
+  if (cut === -1 || msg.length - cut < 60) return { head: msg, detail: null };
+  return {
+    head: msg.slice(0, cut),
+    detail: msg.slice(cut + 2).replace(/\)\s*$/, ''),
+  };
+}

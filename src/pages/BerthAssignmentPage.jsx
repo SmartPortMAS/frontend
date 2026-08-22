@@ -48,7 +48,7 @@ function periodLabel(row) {
 // 것과 같은 이유다. 이 목록도 지도와 같은 질문("지금 뭐가 배정돼 있나")에
 // 맞춰 GET /dashboard/berth-assignments 기준 점유 목록으로 바꿨다.
 
-function OccupiedList() {
+function OccupiedList({ scope }) {
   const [berths, setBerths] = useState([]);
   const [error, setError] = useState(null);
 
@@ -70,8 +70,12 @@ function OccupiedList() {
   // 선석×슬롯 구조를 평평한 행 목록으로 편다 — 이 표는 "지금 뭐가 어디 붙어
   // 있나"만 보면 되므로 빈 슬롯은 뺀다.
   const requestConsole = useSensorStore((st) => st.requestConsole);
+  // 지도와 목록이 같은 스코프를 본다 — 지도만 온산인데 목록은 전체면 숫자가 안 맞는다
 
-  const rows = berths
+  const scopedBerths = scope === 'onsan'
+    ? berths.filter((b) => b.port_name === '온산항')
+    : berths;
+  const rows = scopedBerths
     .flatMap((b) => b.slots
       .filter((s) => s.status)
       .map((s) => ({ wharf_name: b.wharf_name, ...s })))
@@ -139,6 +143,8 @@ function OccupiedList() {
 }
 
 export default function BerthAssignmentPage() {
+  // 기본 스코프는 온산항 — 이 시스템의 관제 대상(2026-08-23 피드백)
+  const [scope, setScope] = useState('onsan');
   return (
     <div className="dashboard-page">
       <div className="glass-card dash-section">
@@ -146,12 +152,12 @@ export default function BerthAssignmentPage() {
           <h3 className="glass-card-title">선석 배정현황</h3>
         </div>
         <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
-          <BerthAssignmentMap />
+          <BerthAssignmentMap scope={scope} onScopeChange={setScope} />
         </div>
       </div>
 
       <div className="dash-section">
-        <OccupiedList />
+        <OccupiedList scope={scope} />
       </div>
     </div>
   );
