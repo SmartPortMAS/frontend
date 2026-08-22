@@ -1,6 +1,5 @@
 import GanttChart from '../components/dashboard/GanttChart';
 import KPICard from '../components/dashboard/KPICard';
-import AgentConsole from '../components/dashboard/AgentConsole';
 import WeatherPanel from '../components/dashboard/WeatherPanel';
 import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
 import PortMap from '../components/dashboard/PortMap';
@@ -105,8 +104,8 @@ export default function DashboardPage() {
       {/* 선박 상세 패널 (지도 마커/입항 목록/경고 벨에서 선박 클릭 시) */}
       <VesselDetailPanel />
 
-      {/* 멀티 에이전트 협상 콘솔 — 판정 진입점 단일화 (우하단 고정 탭) */}
-      <AgentConsole />
+      {/* 협상 콘솔은 App 전역 마운트로 올렸다(2026-08-22) — 배정현황·안전 탭에서도
+          승인·판정에 닿아야 해서. 여기서 또 그리면 두 개가 겹친다. */}
     </div>
   );
 }

@@ -1,0 +1,14 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const p = await b.newPage({ viewport:{width:1600,height:1000} });
+const errs=[]; p.on('pageerror',e=>errs.push(e.message.slice(0,100)));
+const t0=Date.now();
+await p.goto('http://localhost:3000/',{waitUntil:'networkidle',timeout:60000});
+console.log('대시보드 networkidle:', Date.now()-t0, 'ms');
+await p.waitForTimeout(4000);
+await p.screenshot({path:'shots/r1-dashboard.png'});
+await p.goto('http://localhost:3000/safety',{waitUntil:'networkidle'});
+await p.waitForTimeout(5000);
+await p.screenshot({path:'shots/r4-safety.png'});
+console.log('ERRORS:',errs.length?errs.slice(0,3):'0');
+await b.close();

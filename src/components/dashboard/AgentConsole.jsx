@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   FaCloudSun, FaRoute, FaShieldAlt, FaRobot, FaComments, FaTimes, FaPlay, FaSpinner,
   FaSearch, FaPaperPlane, FaBookOpen, FaUser,
@@ -152,6 +153,8 @@ const SUGGESTED = [
 ];
 
 export default function AgentConsole() {
+  // 3D 관제 화면에서는 띄우지 않는다 — 전체화면 연출과 HUD 를 가린다
+  const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('negotiation'); // negotiation | qa
   const [loading, setLoading] = useState(false);
@@ -359,6 +362,8 @@ export default function AgentConsole() {
       setTimeout(() => qaEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
     }
   };
+
+  if (pathname.startsWith('/twin')) return null;
 
   if (!open) {
     if (hideFloatingButton) return null;
@@ -836,7 +841,10 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
       {activeCitation && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 20,
-          background: 'rgba(8,15,24,0.98)', display: 'flex', flexDirection: 'column',
+          // 어두운 배경 잔재 — 콘솔을 라이트로 전환할 때(2026-08-21) 이 오버레이만
+          // 남아, 어두운 바탕 위에 라이트 팔레트 잉크색 글자가 얹혀 읽을 수 없었다
+          // (2026-08-22 실발견, /safety 인용 원문). 표면 규칙은 하나여야 한다.
+          background: COLORS.panel, display: 'flex', flexDirection: 'column',
         }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',

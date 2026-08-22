@@ -5,6 +5,7 @@ import DashboardPage from './pages/DashboardPage';
 import SafetyPage from './pages/SafetyPage';
 import SensorPage from './pages/SensorPage';
 import BerthAssignmentPage from './pages/BerthAssignmentPage';
+import AgentConsole from './components/dashboard/AgentConsole';
 
 // 첫 화면은 대시보드다.
 //
@@ -12,6 +13,7 @@ import BerthAssignmentPage from './pages/BerthAssignmentPage';
 // 관제 업무의 출발점은 "지금 항만이 어떤 상태인가"이고 그게 대시보드다.
 export default function App() {
   return (
+    <>
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<DashboardPage />} />
@@ -24,5 +26,13 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+    {/* 에이전트 협상 로그(종합 판정·승인)는 전역 고정이다.
+        대시보드에만 마운트돼 있던 시절, 배정현황 페이지가 "승인/반려는 우하단
+        협상 로그에서 처리하세요"라고 안내하는데 정작 그 페이지에는 콘솔이 없어
+        사용자가 대시보드로 되돌아가야 했다(2026-08-22 실발견 — "사용흐름이
+        보기 어렵다"는 피드백의 실례). 판정 진입점이 하나라면 어디서든 닿아야 한다.
+        3D 관제(/twin)만 제외 — 전체화면 연출 위에 겹치면 HUD 를 가린다. */}
+    <AgentConsole />
+    </>
   );
 }
