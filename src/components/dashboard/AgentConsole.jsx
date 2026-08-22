@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   FaCloudSun, FaRoute, FaShieldAlt, FaRobot, FaComments, FaTimes, FaPlay, FaSpinner,
@@ -206,6 +206,8 @@ export default function AgentConsole() {
   // 하나만 보고 뜨는 조건이라, 콘솔 드롭박스에서 선박만 골라도 그 큰 상세 패널이
   // 뒤에서 같이 열려버렸다(지도/목록 클릭 때와 똑같은 조건을 공유해서 생긴 부작용).
   const [localTarget, setLocalTarget] = useState(null);
+  const consoleRequest = useSensorStore((st) => st.consoleRequest);
+  const clearConsoleRequest = useSensorStore((st) => st.clearConsoleRequest);
 
   // 판정 대상: 실AIS + berth-cargo(실 신고 위험물) 조인 결과를 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
@@ -224,6 +226,23 @@ export default function AgentConsole() {
     : selectedVessel && vessels.some((v) => v.port_call_id === selectedVessel.port_call_id)
       ? selectedVessel
       : vessels[0];
+
+  // 배정현황의 "협상 로그 →" 클릭을 받는다 — 그 배를 대상으로 콘솔을 연다.
+  // 실제 판정 대상 목록(vessels)에서 호출부호로 찾은 실선박만 지정한다.
+  // 목록에 없으면(화물·선종 모두 미확인) 대상 지정 없이 열기만 한다 —
+  // 가짜 항목을 만들어 채우지 않는다.
+  useEffect(() => {
+    if (!consoleRequest) return;
+    const hit = vessels.find(
+      (v) => v.callsgn && consoleRequest.callsgn
+        && v.callsgn.trim().toUpperCase() === consoleRequest.callsgn.trim().toUpperCase(),
+    );
+    if (hit) setLocalTarget(hit);
+    setTab('negotiation');
+    setOpen(true);
+    clearConsoleRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consoleRequest, vessels]);
 
   const messages = useMemo(
     () => toMessages({ orchestration, berthWeather, vessel: target }),

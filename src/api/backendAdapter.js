@@ -295,9 +295,18 @@ export async function fetchBackendDashboard() {
     // 지도 성능 때문에 200척만 그린다. 다만 KPI 까지 200 으로 보이면 "관제 선박이
     // 항상 200척"이라는 잘못된 인상을 준다 — 실제 수는 realTrafficTotal 로 따로 넘겨
     // 화면이 "몇 척 중 몇 척을 그리는 중"인지 정직하게 말할 수 있게 한다.
-    realTraffic: presentVessels
-      .slice(0, MAP_VESSEL_LIMIT)
-      .map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns)),
+    // 상한(200척)은 지도 마커 성능 때문이지 판정 때문이 아니다. 그런데 이 목록이
+    // 협상 콘솔의 판정 대상으로도 쓰여서, 상한에 잘린 액체화물선은 배정을 받아
+    // 놓고도 콘솔에서 찾을 수 없었다 — 배정현황의 "협상 로그 →" 가 그 배 대신
+    // 기본값을 여는 실사고(2026-08-23, 미시칸/D8BD). 판정 대상(액체화물선 중
+    // 화물 확인·선종 추정)은 상한과 무관하게 항상 포함하고, 나머지 배경 표적만
+    // 남은 자리를 채운다.
+    realTraffic: (() => {
+      const mapped = presentVessels.map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns));
+      const judgeable = mapped.filter((v) => v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo));
+      const rest = mapped.filter((v) => !(v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo)));
+      return [...judgeable, ...rest.slice(0, Math.max(0, MAP_VESSEL_LIMIT - judgeable.length))];
+    })(),
     realTrafficTotal: presentVessels.length,
     // 선석별 재항 위험물 화물 원본 — 안전 심사 폼이 "재항 선박에서 불러오기"에 쓴다.
     // (화물을 수기로 고르는 대신 지금 실제로 붙어 있는 배를 선택하게 하기 위함)

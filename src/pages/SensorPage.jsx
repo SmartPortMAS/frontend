@@ -2,7 +2,7 @@ import useSensorStore from '../stores/useSensorStore';
 import HardwarePanel from '../components/sensor/HardwarePanel';
 import { TankModel, PipeModel } from '../components/sensor/EquipmentModels';
 import { COLORS } from '../utils/constants';
-import { FaFlask } from 'react-icons/fa';
+import { } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 센서 데이터 — 현장 설비 계측
@@ -32,14 +32,9 @@ export default function SensorPage() {
             저장탱크·이송배관·승인 게이트의 설비 모형입니다.
           </p>
         </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px',
-          fontSize: '13px', fontWeight: 700, color: COLORS.yellow,
-          background: `${COLORS.yellow}14`, border: `1px solid ${COLORS.yellow}55`, borderRadius: '20px',
-        }}
-          title="탱크·배관 센서값은 하드웨어 도입 보류로 모형 데이터입니다. 대시보드·안전 관제·3D 화면은 전부 실수집 데이터(AIS·PORT-MIS·기상·MSDS)로 동작합니다.">
-          <FaFlask /> 시뮬레이션 모드
-        </div>
+        {/* '시뮬레이션 모드' 배지도 내렸다(2026-08-23) — 시연 UI 는 도입 후 제품
+            모습을 보여준다는 원칙. 이 탭의 값이 하드웨어 부재로 모형이라는 사실은
+            설계서·보고서 한계점 절에 명시한다. */}
       </div>
 
       {/* "실측 아님" 장문 안내는 내렸다(2026-08-21 피드백) — 데이터 계보는

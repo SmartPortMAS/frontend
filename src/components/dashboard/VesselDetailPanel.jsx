@@ -196,6 +196,11 @@ export default function VesselDetailPanel() {
       <Row label="호출부호 / MMSI">{vessel.callsgn} / {vessel.mmsi}</Row>
       <Row label="화물">
         {vessel.cargo
+          /* 화물명이 합성(is_synthetic — 신고 원문 비공개로 실선종 기반 규칙 배정)
+             이라는 표식은 화면에 두지 않는다(2026-08-23 결정). 시연 UI 는 "실제로
+             도입됐을 때의 제품"을 보여주고, 데이터 계보의 사실 명시는 설계서·
+             보고서 한계점 절이 담당한다. 이 원칙을 되돌리려면 여기서
+             vessel.cargo.is_synthetic 을 쓰면 된다 — 필드는 계속 내려온다. */
           ? `${vessel.cargo.name} (${vessel.cargo.un_no})`
           : vessel.assumed_cargo
             ? (
