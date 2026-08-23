@@ -317,6 +317,24 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
   const conflicts = r.conflicts || [];
   const imdg = r.imdg_conflicts || [];
   const imdgClasses = r.imdg_classes || {}; // chem_id -> class code (충돌 여부와 무관하게 화물 자신의 Class)
+  // 2026-08-21 추가 — 벌크 액체화학물질 호환성그룹 참고축(MSDS·IMDG와 별개
+  // 세 번째 신호, backend/app/agents/safety/bulk_compatibility.py 참고)과
+  // "IMDG 미확정" 판정을 백엔드가 이미 정확히 계산해 내려준다. 예전엔 여기서
+  // targetClass/adjacentClass가 둘 다 있으면 무조건 "공인 X(안전 확정)"로
+  // 프론트가 자체 재계산했는데, 이건 백엔드가 2026-08-21에 고친 것과 같은
+  // 버그다(같은 Class끼리만 우연히 맞고, 서로 다른 Class인데 확정 안 된
+  // 조합은 잘못 안전으로 표시됨). 판정 로직의 권위는 백엔드 하나뿐이어야
+  // 하므로, 프론트는 재계산하지 말고 백엔드가 내려주는 목록을 그대로 읽는다.
+  const bulk = r.bulk_compatibility_conflicts || [];
+  const imdgUnconfirmedIds = new Set((r.imdg_unconfirmed_pairs || []).map((p) => p.adjacent_chem_id));
+  // [2026-08-23] 판정 근거 부족(unassessed_pairs) — 백엔드가 rule_engine_floor를
+  // 최소 '주의'로 격상시키는 **실제 판정 근거**다. 그런데 화면이 이걸 안 읽어서,
+  // 등급은 '주의'인데 사유가 어디에도 안 나오는 상태였다(실측: 프로페인+크실렌
+  // 조합에서 '주의'의 진짜 이유는 "크실렌 MSDS에 화물 대상 기피 정보 없음"인데
+  // 화면은 엉뚱하게 IMDG 격리코드를 사유로 보여줬다).
+  const unassessedByChemId = new Map(
+    (r.unassessed_pairs || []).map((u) => [u.adjacent_chem_id, u])
+  );
 
   // 인접 화물쌍(선석+화물) 단위로 MSDS 신호와 IMDG 신호를 한 gate로 묶는다.
   // 예전엔 "MSDS 충돌"과 "IMDG 충돌"을 서로 다른 gate로 쪼개서, 같은 화물쌍인데도
@@ -329,7 +347,12 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
   const pairs = new Map();
   const ensurePair = (berth, chemId, label) => {
     const key = pairKey(berth, chemId);
-    if (!pairs.has(key)) pairs.set(key, { berth, chemId, label, msds: null, imdg: null });
+    if (!pairs.has(key)) {
+      pairs.set(key, {
+        berth, chemId, label, msds: null, imdg: null, bulk: null,
+        unassessed: unassessedByChemId.get(chemId) || null,
+      });
+    }
     const p = pairs.get(key);
     if (label && !p.label) p.label = label;
     return p;
@@ -346,6 +369,13 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
       segregationCode: c.segregation_code,
     };
   });
+  bulk.forEach((c) => {
+    ensurePair(c.adjacent_berth, c.adjacent_chem_id, c.adjacent_name).bulk = {
+      hit: true, targetGroup: c.target_group, targetGroupName: c.target_group_name,
+      adjacentGroup: c.adjacent_group, adjacentGroupName: c.adjacent_group_name,
+      reason: c.reason,
+    };
+  });
   // 실제로 요청에 실렸던(=그래프에 실제로 조회된) 인접 화물만 대상으로, 아직 안 채워진
   // 신호를 채운다. chem_id가 없는 대상(CAS만 아는 경우)은 그래프 id 매칭이 안 되니
   // 건너뛴다.
@@ -359,57 +389,77 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
     if (!cargo?.chem_id) continue;
     const p = ensurePair(berth_name, cargo.chem_id, cargo.name_hint);
     if (!p.msds) p.msds = { hit: false };
+    if (!p.bulk) p.bulk = { hit: false };
     if (!p.imdg) {
       const adjacentClass = imdgClasses[cargo.chem_id];
       p.imdg = {
         hit: false,
         targetClassKnown: targetClass ?? null,
         adjacentClassKnown: adjacentClass ?? null,
-        confirmedNoRequirement: Boolean(targetClass && adjacentClass), // 둘 다 알려져 있어야 "공인 X" 확정
+        // 백엔드가 imdg_unconfirmed_pairs로 이미 확정한 값을 그대로 읽는다 —
+        // 이 목록에 있으면 "진짜 미확정", 없으면(둘 다 Class를 알면서) NO_SEGREGATION_
+        // REQUIRED로 확인된 "공인 X" 확정이다(rule_engine.compute_imdg_unconfirmed_floor
+        // 참고). 프론트가 다시 계산하지 않는다.
+        confirmedNoRequirement: Boolean(targetClass && adjacentClass) && !imdgUnconfirmedIds.has(cargo.chem_id),
       };
     }
   }
 
+  // [2026-08-23] IMDG를 위반 목록에서 뺐다. 부두 간 판정에서 IMDG는 판정 근거가
+  // 아니라 참고 정보다(백엔드 compute_imdg_berth_adjacency_floor는 항상 SAFE를
+  // 반환한다 — IMDG Ch.7.2는 단일 선박 내 적부 규정이라 부두 간에는 적용 대상이
+  // 없고, IMO도 항만 구역은 MSC.1/Circ.1216으로 분리해 둔다). 이름에 "IMDG 격리
+  // 위반"이라고 쓰면 화면이 판정과 다른 말을 하게 된다.
   const nameOf = (p) => {
-    if (p.msds?.hit && p.imdg?.hit) return '혼재금지 + IMDG 격리 동시 위반';
-    if (p.msds?.hit) return '혼재금지 (MSDS 반응성)';
-    if (p.imdg?.hit) return 'IMDG 격리 요구';
-    if (p.imdg && !p.imdg.confirmedNoRequirement) return '인접 화물 혼재 검사 — IMDG 판정 근거 부족';
+    const hits = [p.msds?.hit && 'MSDS 혼재금지', p.bulk?.hit && '벌크호환성그룹'].filter(Boolean);
+    if (hits.length > 1) return `${hits.join(' + ')} 동시 위반`;
+    if (hits.length === 1) return `${hits[0]} 위반`;
+    if (p.unassessed) return '인접 화물 혼재 검사 — 판정 근거 부족';
     return '인접 화물 혼재 검사 통과';
   };
   const ruleOf = (p, i) => {
     const bits = [];
     if (p.msds?.hit) bits.push(`MSDS-${i + 1}`);
-    if (p.imdg?.hit) bits.push(`IMDG-${p.imdg.segregationCode}`);
+    if (p.bulk?.hit) bits.push(`BULK-${p.bulk.targetGroup}x${p.bulk.adjacentGroup}`);
+    if (!bits.length && p.unassessed) bits.push(`UNASSESSED-${i + 1}`);
     return bits.length ? bits.join('+') : `PASS-${i + 1}`;
   };
+  // 판정 근거가 된 축을 먼저 쓰고, IMDG는 "참고"로 명시해 뒤에 붙인다 —
+  // 같은 줄에 섞어 쓰면 관제사가 IMDG 때문에 등급이 나온 것으로 읽는다.
   const reasonOf = (p) => {
     const parts = [];
     if (p.msds?.hit) parts.push(`MSDS ${p.msds.category} 충돌`);
     else if (p.msds) parts.push('MSDS 상극 관계 없음');
-    if (p.imdg?.hit) parts.push(`IMDG 격리코드 ${p.imdg.segregationCode}`);
-    else if (p.imdg?.confirmedNoRequirement) parts.push('IMDG 격리 규정 없음(공인 X)');
-    else if (p.imdg) parts.push('IMDG 그래프에 Class 미등재 — 판정 근거 부족');
-    return `${p.berth} ${p.label} — ${parts.join(' · ')}`;
+    if (p.bulk?.hit) parts.push(`벌크호환성그룹(참고축) ${p.bulk.reason}`);
+    if (p.unassessed) parts.push(`판정 근거 부족 — ${p.unassessed.reason}`);
+    const ref = p.imdg?.hit
+      ? `IMDG Class ${p.imdg.targetClass}↔${p.imdg.adjacentClass} 격리코드 ${p.imdg.segregationCode} (선내 적부 기준 — 부두 간 판정에는 미적용)`
+      : null;
+    const head = `${p.berth} ${p.label} — ${parts.join(' · ') || '충돌 근거 없음'}`;
+    return ref ? `${head}  [참고] ${ref}` : head;
   };
 
+  // hit 판정에서 IMDG를 뺀다 — hit는 빨간 카드 렌더링과 "판단 과정 N건" 카운트를
+  // 동시에 좌우하므로, 판정 근거가 아닌 신호가 여기 들어가면 라벨을 아무리 바꿔도
+  // 구조가 "이게 판정 이유다"라고 말하게 된다.
   const gates = [...pairs.values()].map((p, i) => {
-    const hit = Boolean(p.msds?.hit || p.imdg?.hit);
+    const hit = Boolean(p.msds?.hit || p.bulk?.hit);
     return {
       rule: ruleOf(p, i),
       name: nameOf(p),
       hit,
       severity: p.msds?.hit
         ? 'BLOCK'
-        : p.imdg?.hit
+        : p.bulk?.hit
           ? 'HOLD'
-          // IMDG가 안 걸렸어도 두 화물 다 Class가 알려져 있어야 "공인 X"로 확정된다 —
-          // 어느 한쪽이라도 그래프에 Class가 없으면 위반이라 단정할 근거도, 안전하다고
-          // 단정할 근거도 없는 상태다. 이 경우를 조용히 "통과"로 뭉개면 관제사가
-          // 실제로는 확인 안 된 걸 확인됐다고 오해한다.
-          : (p.imdg && !p.imdg.confirmedNoRequirement) ? 'UNKNOWN' : 'INFO',
+          // 판정 근거 부족은 "확인 안 됨"이지 "통과"가 아니다 — 백엔드도 이걸
+          // 최소 '주의'로 격상한다(rule_engine.compute_assessability_floor).
+          : p.unassessed ? 'UNKNOWN' : 'INFO',
       reason: reasonOf(p),
-      detail: { adjacentBerth: p.berth, adjacentCargoName: p.label, msds: p.msds, imdg: p.imdg },
+      detail: {
+        adjacentBerth: p.berth, adjacentCargoName: p.label,
+        msds: p.msds, imdg: p.imdg, bulk: p.bulk, unassessed: p.unassessed,
+      },
     };
   });
 
@@ -424,7 +474,10 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
     risk_level: r.risk_level,
     risk_level_basis: {
       rule_engine_floor: r.rule_engine_floor,
-      imdg_segregation_code: imdg[0]?.segregation_code ?? null,
+      // [2026-08-23] null 고정. 이 값은 뱃지 옆에 "· IMDG 격리코드 N"으로 붙어
+      // 등급의 근거처럼 읽혔는데, 부두 간 판정에서 IMDG는 근거가 아니다.
+      // 참고 정보는 게이트 카드의 [참고] 문구로만 노출한다.
+      imdg_segregation_code: null,
       flammability_grade: flam,
       gate_hits: gates.filter((g) => g.hit).map((g) => g.rule),
     },
@@ -463,11 +516,28 @@ function mapOrchestration(r) {
     // 비어 있었다). "왜 위험인지"가 이 시스템의 핵심인데 그게 안 보였다.
     safety_reasoning: r.safety_assessment?.reasoning || null,
     safety_hazards: r.safety_assessment?.key_hazards || [],
-    safety_imdg: (r.safety_assessment?.imdg_conflicts || []).map(
-      (c) => `${c.adjacent_berth} ${c.adjacent_name} (${c.target_imdg_class} ↔ ${c.adjacent_imdg_class}) 격리코드 ${c.segregation_code}`
+    // [2026-08-23] IMDG는 **참고 정보**로 내렸다 — 판정 근거 목록과 분리한다.
+    //
+    // 예전 문구: "S-Oil 4부두 부탄 (3 ↔ 2.1) 격리코드 2"
+    // 선석 이름과 격리코드를 한 줄에 붙여 놓아, 마치 그 부두에 그 화물이 있어서
+    // 격리 규정을 위반한 것처럼 읽혔다. 실제로는 IMDG Ch.7.2가 **단일 선박 안**의
+    // 화물 적부 기준(이격 3~24m)이라 부두와 부두 사이에는 적용 대상이 아니고,
+    // 백엔드도 이 맥락에서는 판정에 쓰지 않는다(compute_imdg_berth_adjacency_floor는
+    // 항상 SAFE). 그래서 "안전 판정: 안전"인데 바로 아래 격리코드가 뜨는 모순이
+    // 화면에 그대로 나왔다.
+    safety_imdg_reference: (r.safety_assessment?.imdg_conflicts || []).map(
+      (c) => `${c.adjacent_name}: IMDG Class ${c.target_imdg_class} ↔ ${c.adjacent_imdg_class} 격리코드 ${c.segregation_code}`
     ),
     safety_conflicts: (r.safety_assessment?.conflicts || []).map(
       (c) => `${c.adjacent_berth} ${c.adjacent_name} — ${c.shared_category} 혼재금지`
+    ),
+    // 벌크 호환성그룹은 실제 판정 근거다(배정불가 62건 전부 이 축에서 나온다).
+    safety_bulk: (r.safety_assessment?.bulk_compatibility_conflicts || []).map(
+      (c) => `${c.adjacent_berth} ${c.adjacent_name} — 호환성그룹 ${c.target_group_name}(${c.target_group}) ↔ ${c.adjacent_group_name}(${c.adjacent_group})`
+    ),
+    // 판정 근거 부족 — 등급을 최소 '주의'로 올리는 실제 근거인데 화면에 없었다.
+    safety_unassessed: (r.safety_assessment?.unassessed_pairs || []).map(
+      (u) => `${u.adjacent_berth} ${u.adjacent_name} — ${u.assessability}: ${u.reason}`
     ),
     safety_checklist: r.safety_assessment?.checklist || [],
     weather_grade: r.weather_assessment?.status || null,
@@ -558,6 +628,34 @@ export default function useOnsanApi() {
   // DashboardPage KPI에 표시되던 "최근 안전 심사" 결과가 다른 선박 값으로 조용히
   // 덮어써졌다. 이제 전역 상태에 반영할지는 호출자가 결정한다
   // (SafetyGatesPanel만 반영 — useVesselSafety는 자기 로컬 state만 씀).
+  // [2026-08-23] 판정만 먼저 받는 경로 — POST /safety/verdict (LLM 미사용, 실측 65ms).
+  // assessSafetyGates(=/safety/assess)는 LLM 서술까지 기다리느라 2.5~4초가 걸리는데,
+  // 등급과 충돌 근거는 규칙엔진이 그 전에 이미 확정한다. 화면이 결론을 먼저 띄우고
+  // 체크리스트만 나중에 채우도록 둘로 나눴다.
+  //
+  // 여기서 받은 risk_level은 뒤이어 오는 /safety/assess의 risk_level과 **항상 같다** —
+  // 등급을 규칙엔진이 정하므로 뒤집히지 않는다(백엔드 실측 격상률 0%). 그래서 먼저
+  // 표시해도 안전하다. 반환 모양은 assessSafetyGates와 같게 맞춰서(explanation만 비어
+  // 있음) 화면이 같은 컴포넌트로 렌더링할 수 있게 한다.
+  const assessSafetyVerdict = useCallback(
+    async (req) => {
+      const target = resolveCargoRef(req);
+      const adj = (req.adjacent_operations || [])
+        .map((o) => {
+          const c = resolveCargoRef(o);
+          return c ? { berth_name: o.berth_name, cargo: c } : null;
+        })
+        .filter(Boolean);
+      if (!target) return null;
+
+      const data = await postJson('/safety/verdict', { target_cargo: target, adjacent_cargos: adj });
+      if (!data) return null;
+      // mapSafety는 checklist/reasoning이 없어도 동작한다(옵셔널 체이닝).
+      return { ...mapSafety(data, adj, target.chem_id), is_verdict_only: true };
+    },
+    [postJson]
+  );
+
   const assessSafetyGates = useCallback(
     async (req) => {
       const target = resolveCargoRef(req);
@@ -739,5 +837,8 @@ export default function useOnsanApi() {
     [postJson]
   );
 
-  return { fetchBerthGroups, assessBerthWeather, assessSafetyGates, orchestrate, commitAssignment, rejectAssignment, ragQuery };
+  return {
+    fetchBerthGroups, assessBerthWeather, assessSafetyVerdict, assessSafetyGates,
+    orchestrate, commitAssignment, rejectAssignment, ragQuery,
+  };
 }

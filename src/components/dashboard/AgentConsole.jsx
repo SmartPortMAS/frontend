@@ -99,12 +99,20 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   // 끝났다 — 기상·스케줄링 발화는 근거를 보여주는데 안전만 비어 있어서, 정작 이
   // 시스템의 핵심인 "왜 위험한가"를 협상 로그에서 확인할 수 없었다.
   if (orchestration.risk_level) {
+    // [2026-08-23] 판정 근거를 먼저, 참고 정보는 맨 뒤에 접두사를 붙여 싣는다.
+    // 예전엔 IMDG 격리코드가 목록 맨 위에 선석 이름과 붙어 나와, 부두 간 배치가
+    // 규정을 위반한 것처럼 읽혔다(IMDG는 단일 선박 내 적부 기준이라 부두 간에는
+    // 적용 대상이 아니다 — useOnsanApi.safety_imdg_reference 주석 참고).
     const detail = [
-      ...(orchestration.safety_imdg || []),
       ...(orchestration.safety_conflicts || []),
+      ...(orchestration.safety_bulk || []),
+      ...(orchestration.safety_unassessed || []),
       ...(orchestration.safety_reasoning ? [orchestration.safety_reasoning] : []),
       ...(orchestration.safety_hazards?.length
         ? [`주요 위험성: ${orchestration.safety_hazards.join(' · ')}`] : []),
+      ...(orchestration.safety_imdg_reference || []).map(
+        (t) => `[참고 · 판정 미반영] ${t} — 선내 적부 기준이라 부두 간 배치에는 적용되지 않습니다`
+      ),
     ];
     msgs.push({
       agent: 'safety', time: at(3),
@@ -183,6 +191,7 @@ export default function AgentConsole() {
   const [decisionError, setDecisionError] = useState(null);
   const { orchestrate, commitAssignment, rejectAssignment, assessBerthWeather, ragQuery } = useOnsanApi();
   const setOrchestration = useSensorStore((s) => s.setOrchestration);
+  const setBerthWeather = useSensorStore((s) => s.setBerthWeather);
 
   // 질의응답 탭 상태
   const [question, setQuestion] = useState('');
@@ -244,6 +253,24 @@ export default function AgentConsole() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [consoleRequest, vessels]);
 
+  // [2026-08-23] 대상 선박이 바뀌면 이전 배의 판정 로그를 비운다.
+  // 드롭다운에서 다른 배를 고르면 화면의 배 이름만 바뀌고 아래 판정 내용은
+  // 이전 배 것이 그대로 남아 있었다 — 판정을 다시 누르기 전까지 둘이 섞여 보인다.
+  const shownTargetId = useRef(null);
+  useEffect(() => {
+    const id = target?.port_call_id ?? null;
+    if (shownTargetId.current !== null && shownTargetId.current !== id) {
+      setOrchestration(null);
+      setBerthWeather(null);
+      setDecision(null);
+      setApprovalId(null);
+      setApprovalChecked(false);
+      setDecisionError(null);
+    }
+    shownTargetId.current = id;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.port_call_id]);
+
   const messages = useMemo(
     () => toMessages({ orchestration, berthWeather, vessel: target }),
     [orchestration, berthWeather, target]
@@ -266,6 +293,15 @@ export default function AgentConsole() {
     setApprovalId(null);
     setApprovalChecked(false);
     setDecisionError(null);
+    // [2026-08-23] 이전 판정 로그도 함께 비운다.
+    //
+    // 예전엔 decision/approvalId만 지우고 orchestration·berthWeather는 그대로
+    // 뒀다. messages는 orchestration에서 만들어지므로, 판정이 도는 5~8초 동안
+    // **직전 결과가 그대로 떠 있었다**. 게다가 toMessages는 vessel로 지금 선택된
+    // 배를 받으므로, 배를 바꾸고 판정을 누르면 "새 배 이름 + 이전 배의 판정"이
+    // 섞여 보였다 — 관제사가 그걸 새 결과로 읽으면 잘못된 배에 승인을 누른다.
+    setOrchestration(null);
+    setBerthWeather(null);
     try {
       const berthId = findBerthIdByName(target.berth);
       const group = berthId ? ONSAN_WEATHER_GROUP[berthId] : null;
@@ -785,7 +821,11 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
                   <div style={{ fontSize: 12.5, fontWeight: 800, color: RISK_COLOR(m.assessment.risk_level) }}>
                     판정: {m.assessment.risk_level}
                     <span style={{ fontSize: 10.5, fontWeight: 400, color: COLORS.textDim }}>
-                      {' '}· 규칙엔진 하한 {m.assessment.rule_engine_floor} (LLM이 낮출 수 없음)
+                      {/* [2026-08-23] "(LLM이 낮출 수 없음)"을 뺐다 — 이제 LLM은
+                          등급을 낮추지도 올리지도 않는다. 규칙엔진 값이 그대로
+                          최종 등급이고(risk_level == rule_engine_floor), LLM은
+                          근거 서술만 만든다. */}
+                      {' '}· 규칙엔진 확정
                     </span>
                   </div>
                   {m.assessment.reasoning && (
@@ -803,9 +843,13 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
                   background: `${COLORS.yellow}14`, border: `1px solid ${COLORS.yellow}55`,
                   color: COLORS.yellow, lineHeight: 1.6,
                 }}>
-                  ⚠ <strong>판정 불가</strong> — {m.unresolved.join(', ')}는 MSDS DB에 없습니다.
+                  {/* [2026-08-23] "MSDS DB에 없습니다"는 관제사에게 시스템 용어다.
+                      무엇이 문제이고 무엇을 확인하면 되는지로 바꿨다. */}
+                  ⚠ <strong>판정하지 못했습니다</strong> — {m.unresolved.join(', ')}은(는)
+                  {' '}울산항 화물 목록에 없습니다.
                   <div style={{ color: COLORS.textSecondary, fontSize: 11.5 }}>
-                    “혼재금지 관계가 없다(안전)”는 뜻이 아닙니다. 관제사 확인이 필요합니다.
+                    “위험이 없다”는 뜻이 아니라 <strong>확인 자체를 못 했다</strong>는 뜻입니다.
+                    화물명 표기를 다시 확인하시고, 맞다면 관제사가 직접 판단해 주세요.
                   </div>
                 </div>
               )}
