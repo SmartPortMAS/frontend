@@ -6,15 +6,17 @@ import { onsanAdjacencyDistanceM } from '../../utils/geoUtils';
 
 const normalize = (s) => (s || '').replace(/\s+/g, '');
 
-// 인접 화물쌍(선석+화물) 하나에 대해, MSDS(INCOMPATIBLE_WITH)·IMDG(SEGREGATE) 두
-// 그래프 신호를 한 그림에서 같이 보여준다. 새 데이터를 계산하지 않는다 —
-// useOnsanApi.mapSafety() 가 백엔드 conflicts[]/imdg_conflicts[] 원본 필드를
-// gate.detail.msds/detail.imdg 에 그대로 옮겨 둔 것만 그리므로, 이 그림의 근거는
-// 항상 옆에 있는 reason 문장과 같다.
+// 인접 화물쌍(선석+화물) 하나에 대해, MSDS(INCOMPATIBLE_WITH)·IMDG(SEGREGATE)·
+// 벌크 호환성그룹(INCOMPATIBLE_WITH_GROUP, 2026-08-21 추가) 세 그래프 신호를
+// 한 그림에서 같이 보여준다. 새 데이터를 계산하지 않는다 —
+// useOnsanApi.mapSafety() 가 백엔드 conflicts[]/imdg_conflicts[]/
+// bulk_compatibility_conflicts[] 원본 필드를 gate.detail.msds/imdg/bulk 에
+// 그대로 옮겨 둔 것만 그리므로, 이 그림의 근거는 항상 옆에 있는 reason 문장과 같다.
 //
 // 레이아웃: 선석(ADJACENT_TO/동일 선석) → 화물(재항 중) → [MSDS 신호 행 → IMDG
-// 신호 행](둘 다 조회됐으면 순서대로 이어그림 — 실제로는 서로 독립 조회지만, 같은
-// 화물에 대해 두 그래프를 차례로 훑었다는 걸 하나의 추론 흐름으로 보여주기 위함) →
+// 신호 행 → 벌크그룹 신호 행](조회된 것만 순서대로 이어그림 — 실제로는 서로
+// 독립 조회지만, 같은 화물에 대해 여러 그래프를 차례로 훑었다는 걸 하나의
+// 추론 흐름으로 보여주기 위함) →
 // 최종 판정. 각 신호 행은 세 상태 중 하나로 그린다: 충돌(빨강, 좌우 두 분류 박스 +
 // 점선) / 관계없음 확정(초록, IMDG는 두 화물의 실제 Class를 좌우 박스로, MSDS는
 // 화물별 분류를 몰라 가운데 박스 하나로) / 판정 근거 부족(호박, 가운데 박스 하나 —
@@ -33,7 +35,7 @@ export default function ReasoningGraph({ targetBerth, targetCargo, gate }) {
   const berthEdgeLabel = sameBerth
     ? '동일 선석'
     : hasAdjacencyEdge
-      ? (distanceM > 0 ? `ADJACENT_TO · 실측 ${distanceM}m` : 'ADJACENT_TO · 동일 부두군')
+      ? (distanceM > 0 ? `인접 · 실측 ${distanceM}m` : '인접 · 동일 부두군')
       : '근접 작업 중';
   const berthEdgeColor = sameBerth || !hasAdjacencyEdge ? COLORS.textDim : COLORS.yellow;
 
@@ -57,29 +59,59 @@ export default function ReasoningGraph({ targetBerth, targetCargo, gate }) {
     tiers.push({
       kind: 'msds', status, label: 'MSDS 반응성', classifyEdgeLabel: 'MSDS 조회',
       layout: status === 'hit' ? 'two' : 'one',
-      crossLabel: status === 'hit' ? `${d.msds.category} 충돌` : 'INCOMPATIBLE_WITH 관계 없음',
+      crossLabel: status === 'hit' ? `${d.msds.category} 충돌` : '반응성 충돌 없음',
       target: status === 'hit' ? d.msds.category : null,
       adjacent: status === 'hit' ? d.msds.category : null,
-      centerValue: 'INCOMPATIBLE_WITH 관계 없음',
+      centerValue: '반응성 충돌 없음 (MSDS 확인)',
     });
   }
+  // [2026-08-23] IMDG 행은 **참고**로 내렸다(status: 'ref').
+  // IMDG Ch.7.2는 단일 선박 내 적부 규정이라 부두 간 배치에는 적용 대상이 아니고,
+  // 백엔드도 이 맥락에서는 판정에 쓰지 않는다(compute_imdg_berth_adjacency_floor는
+  // 항상 SAFE). 그런데 이 그림은 IMDG 행을 다른 축과 똑같이 그려 판정 노드로
+  // 화살표를 이어, 등급이 IMDG 때문에 나온 것처럼 읽혔다(실측: 프로페인+크실렌
+  // 조합의 '주의'는 실제로 "크실렌 MSDS에 기피 정보 없음"이 이유인데 화면은
+  // IMDG 격리코드 2를 사유로 보여줬다).
   if (d.imdg) {
-    const status = d.imdg.hit ? 'hit' : d.imdg.confirmedNoRequirement ? 'safe' : 'unknown';
+    const hit = Boolean(d.imdg.hit);
     tiers.push({
-      kind: 'imdg', status, label: 'IMDG 등급', classifyEdgeLabel: 'IMDG 매핑',
-      layout: status === 'unknown' ? 'one' : 'two',
-      crossLabel: status === 'hit' ? `격리코드 ${d.imdg.segregationCode}`
-        : status === 'safe' ? 'SEGREGATE 관계 없음 (공인 X)' : undefined,
-      target: status === 'hit' ? (d.imdg.targetClass || '분류 없음') : status === 'safe' ? d.imdg.targetClassKnown : null,
-      adjacent: status === 'hit' ? (d.imdg.adjacentClass || '분류 없음') : status === 'safe' ? d.imdg.adjacentClassKnown : null,
-      centerValue: '두 화물 중 하나 이상 그래프에 Class 미등재 — 판정 근거 부족',
+      kind: 'imdg', status: 'ref', label: 'IMDG 등급 (참고)', classifyEdgeLabel: 'IMDG 매핑',
+      layout: hit ? 'two' : 'one',
+      crossLabel: hit ? `격리코드 ${d.imdg.segregationCode} — 선내 적부 기준` : undefined,
+      target: hit ? (d.imdg.targetClass || '분류 없음') : null,
+      adjacent: hit ? (d.imdg.adjacentClass || '분류 없음') : null,
+      centerValue: hit ? undefined : '부두 간 판정에는 적용되지 않는 참고 정보',
     });
   }
+  // 판정 근거 부족(unassessed) — 이게 실제로 등급을 올린 축이라 그림에도 넣는다.
+  if (d.unassessed) {
+    tiers.push({
+      kind: 'unassessed', status: 'unknown', label: '판정 가능성', classifyEdgeLabel: '근거 확인',
+      layout: 'one',
+      centerValue: `판정 근거 부족 — ${d.unassessed.reason}`,
+    });
+  }
+  // 2026-08-21 추가 — 벌크 액체화학물질 호환성그룹 참고축(MSDS·IMDG와 근거가
+  // 다른 세 번째 신호, backend/app/agents/safety/bulk_compatibility.py 참고).
+  // 이 축만 단독으로 걸리는 조합(예: 이소시아네이트류-알코올류)이 있어 빠뜨리면
+  // 위험한 조합이 이 그래프에서만 "안전"처럼 보일 수 있었다.
+  if (d.bulk) {
+    const status = d.bulk.hit ? 'hit' : 'safe';
+    tiers.push({
+      kind: 'bulk', status, label: '호환성그룹', classifyEdgeLabel: '벌크그룹 매핑',
+      layout: status === 'hit' ? 'two' : 'one',
+      crossLabel: status === 'hit' ? '불호환 그룹(참고축)' : '호환성그룹 충돌 없음',
+      target: status === 'hit' ? `${d.bulk.targetGroupName}(그룹${d.bulk.targetGroup})` : null,
+      adjacent: status === 'hit' ? `${d.bulk.adjacentGroupName}(그룹${d.bulk.adjacentGroup})` : null,
+      centerValue: '호환성그룹 충돌 없음(참고용)',
+    });
+  }
+  // 'ref'(참고) 행은 판정 색에 기여하지 않는다 — 판정 근거가 아니기 때문.
   const anyHit = tiers.some((t) => t.status === 'hit');
   const anyUnknown = !anyHit && tiers.some((t) => t.status === 'unknown');
   const verdictColor = anyHit ? COLORS.red : anyUnknown ? COLORS.yellow : COLORS.teal;
-  const statusColor = { hit: COLORS.red, safe: COLORS.teal, unknown: COLORS.yellow };
-  const boxColor = { hit: COLORS.purple, safe: COLORS.teal, unknown: COLORS.yellow };
+  const statusColor = { hit: COLORS.red, safe: COLORS.teal, unknown: COLORS.yellow, ref: COLORS.textDim };
+  const boxColor = { hit: COLORS.purple, safe: COLORS.teal, unknown: COLORS.yellow, ref: COLORS.textDim };
 
   // 카드 폭(width:100%, 위 주석 참고)은 그대로 두고 내부 좌표계만 줄인다 —
   // 같은 물리적 너비라도 좌표 단위당 픽셀이 늘어나 텍스트·선이 더 커 보인다
@@ -224,11 +256,13 @@ export default function ReasoningGraph({ targetBerth, targetCargo, gate }) {
           fill={anyHit ? 'rgba(196, 50, 46, 0.06)' : anyUnknown ? 'rgba(178, 106, 0, 0.06)' : 'rgba(14, 124, 107, 0.06)'}
           stroke={verdictColor} strokeWidth="1.8"
         />
-        <text x={midX} y={verdictY + 17 * SCALE} textAnchor="middle" fontFamily="ui-monospace, Consolas, monospace" fontSize="11.5" fontWeight="700" fill={verdictColor}>
-          [{gate.rule}] {gate.name}
-        </text>
-        <text x={midX} y={verdictY + 31 * SCALE} textAnchor="middle" style={textStyle} fontSize="10" fill={verdictColor}>
-          {gate.severity} — 사유는 위 카드 문구와 같음
+        {/* [2026-08-23] 판정 노드를 한 줄로 줄였다.
+            예전에는 "[PASS-1] 인접 화물 혼재 검사 통과" + "INFO — 사유는 위 카드
+            문구와 같음" 두 줄이었는데, 규칙 코드([PASS-1])는 내부 식별자라
+            관제사에게 의미가 없고 둘째 줄은 바로 위 카드를 가리키는 안내라
+            그림 안에서 읽을 이유가 없었다. 판정 이름만 남긴다. */}
+        <text x={midX} y={verdictY + verdictH / 2 + 4 * SCALE} textAnchor="middle" style={textStyle} fontSize="11.5" fontWeight="700" fill={verdictColor}>
+          {gate.name}
         </text>
       </svg>
     );

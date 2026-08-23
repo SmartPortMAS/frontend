@@ -25,7 +25,7 @@ const RISK_STYLE = {
 const BERTHS = Object.values(ONSAN_BERTHS).map((b) => b.name);
 
 export default function SafetyGatesPanel() {
-  const { assessSafetyGates } = useOnsanApi();
+  const { assessSafetyVerdict, assessSafetyGates } = useOnsanApi();
   // 이 패널의 판정 결과는 DashboardPage "최근 안전 심사" KPI가 참조하므로
   // 여기서만 전역 스토어(gateAssessment)에 반영한다 — 다른 화면에서 선박을
   // 클릭할 때 자동으로 도는 useVesselSafety는 이 스토어를 건드리지 않는다.
@@ -169,6 +169,8 @@ export default function SafetyGatesPanel() {
   // 심사는 LLM + MSDS 조회라 수 초~1분이 걸린다(처음 보는 물질은 MSDS 수집까지 한다).
   // 로딩 표시가 없으면 눌러도 아무 반응이 없어 "먹통"으로 보인다 — 실제로 그랬다.
   const [running, setRunning] = useState(false);
+  // 등급은 확정됐고 체크리스트/근거문장만 아직 오는 중 — 그 자리에만 스켈레톤을 띄운다.
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
 
   const run = async () => {
     if (running) return;
@@ -176,18 +178,40 @@ export default function SafetyGatesPanel() {
       ? [{ berth_name: adjacentBerth, chem_id: adjacentCargo.chem_id, cargo_name: adjacentCargo.name_ko, activity: '하역중' }]
       : [];
     setRunning(true);
+    // 백엔드 입력 계약 그대로만 보낸다 (대상 화물 + 인접 화물). 쓰이지 않는 값을
+    // 같이 보내면 "저 입력도 판정에 들어가나 보다"라는 오해가 코드에도 남는다.
+    const req = {
+      cargo_name: selectedCargo?.name_ko,
+      chem_id: form.cargo_chem_id,
+      berth_name: form.berth_name,
+      adjacent_operations,
+    };
+
+    // [2026-08-23] 2단계 표시 — 등급·충돌근거를 먼저 그리고(실측 0.07초) 체크리스트를
+    // 이어서 채운다(약 2.5초). 두 응답의 risk_level은 백엔드가 같은 규칙엔진 값을
+    // 쓰므로 항상 같다 — 먼저 그린 뱃지가 나중에 바뀌지 않는다.
+    //
+    // ★ setGateAssessment는 (v) => set({ gateAssessment: v }) 형태라 함수
+    //   업데이터를 지원하지 않는다. 함수를 넘기면 그게 그대로 스토어에 들어가
+    //   화면이 통째로 빈다(뱃지 공백 · "인화성 undefined"). 역전 방지는
+    //   지역 플래그로 처리한다.
+    let narrativeArrived = false;
+    setNarrativeLoading(true);
+
+    assessSafetyVerdict(req)
+      .then((verdict) => {
+        // 서술이 이미 도착했으면 늦게 온 판정으로 되돌리지 않는다.
+        if (verdict && !narrativeArrived) setGateAssessment(verdict);
+      })
+      .catch(() => { /* 판정 실패는 아래 최종 조회의 catch가 처리 */ });
+
     try {
-      // 백엔드 입력 계약 그대로만 보낸다 (대상 화물 + 인접 화물). 쓰이지 않는 값을
-      // 같이 보내면 "저 입력도 판정에 들어가나 보다"라는 오해가 코드에도 남는다.
-      const res = await assessSafetyGates({
-        cargo_name: selectedCargo?.name_ko,
-        chem_id: form.cargo_chem_id,
-        berth_name: form.berth_name,
-        adjacent_operations,
-      });
+      const res = await assessSafetyGates(req);
+      narrativeArrived = true;
       setGateAssessment(res);
     } finally {
       setRunning(false);
+      setNarrativeLoading(false);
     }
   };
 
@@ -344,9 +368,14 @@ export default function SafetyGatesPanel() {
           {running ? '판정 중…' : '안전 심사 실행'}
         </button>
       </div>
-      {running && (
+      {/* [2026-08-23] 판정이 뜨기 "전"에만 보여준다.
+          2단계 표시로 바뀌면서 등급 뱃지가 0.07초에 먼저 뜨는데, 이 문구가
+          그 위에 남아 있으면 "생성하는 중"이라는 안내가 이미 나온 판정보다
+          위에 놓여 순서가 거꾸로 읽힌다. 판정 이후의 진행 상황은 뱃지 바로
+          아래 문구가 이어받는다. */}
+      {running && !result && (
         <div style={{ fontSize: '12px', color: COLORS.info, marginBottom: '12px' }}>
-          규칙엔진(Neo4j 혼재금지 + IMDG 격리) 조회 후 LLM 근거를 생성하는 중입니다 —
+          규칙엔진(Neo4j 혼재금지 + IMDG 격리)을 조회하는 중입니다 —
           처음 조회하는 물질은 MSDS 수집까지 하느라 1~2분 걸릴 수 있습니다.
         </div>
       )}
@@ -361,13 +390,26 @@ export default function SafetyGatesPanel() {
             }}>
               {result.risk_level}
             </div>
+            {/* [2026-08-23] "혼재 룰엔진 하한 OO · 인화성 OO" 줄을 뺐다.
+                · 하한: 등급을 규칙엔진이 확정하게 바뀌면서(risk_level ==
+                  rule_engine_floor) 왼쪽 뱃지와 항상 같은 값이 됐다. 예전엔
+                  LLM이 하한 위로 올릴 수 있어 둘을 나란히 보여줄 이유가 있었다.
+                · 인화성: key_hazards에서 '인화'가 든 문장을 뽑아 앞에 "인화성"을
+                  또 붙이는 구조라 "인화성 인화성 가스 폭발 위험"으로 찍혔다.
+                  등급값(고인화성 등)이 오던 자리에 문장이 들어오면서 깨진 것.
+                · IMDG 격리코드: 부두 간 판정 근거가 아니라 참고 정보라 제거됨. */}
             <div style={{ fontSize: '12px', color: COLORS.textSecondary, lineHeight: 1.6 }}>
-              {result.explanation?.summary}<br />
-              혼재 룰엔진 하한 {result.risk_level_basis?.rule_engine_floor}
-              {result.risk_level_basis?.imdg_segregation_code != null && ` · IMDG 격리코드 ${result.risk_level_basis.imdg_segregation_code}`}
-              {` · 인화성 ${result.risk_level_basis?.flammability_grade}`}
+              {result.explanation?.summary}
             </div>
           </div>
+
+          {/* 등급은 확정됐고 LLM 서술만 오는 중 — 뱃지 바로 아래에 둬야
+              "무엇이 끝났고 무엇이 남았는지"가 순서대로 읽힌다. */}
+          {narrativeLoading && (
+            <div style={{ fontSize: '12px', color: COLORS.info }}>
+              위험등급은 규칙엔진으로 확정됐습니다. LLM 근거(체크리스트·판단 사유)를 생성하는 중입니다…
+            </div>
+          )}
 
           {hits.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
