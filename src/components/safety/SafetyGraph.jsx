@@ -55,22 +55,15 @@ export default function SafetyGraph() {
           </span>
         )}
       </h3>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '8px' }}>
-        수집 중인 실데이터로 계산한 5개 축입니다. 각 축의 근거는 아래에 함께 표시됩니다.
-      </p>
-      {/* 무엇을 재는 지수인지 화면이 스스로 답해야 한다. 설비 안전도(탱크 압력·가스
-          농도 같은)로 오해하기 쉬운데, 그건 우리가 수집하지 않는 값이다. */}
-      <p style={{ color: 'var(--text-dim)', fontSize: '12px', marginBottom: '20px', lineHeight: 1.6 }}>
-        <strong>100점 = 지금 하역을 막을 이유가 없음.</strong> 설비 건전성이 아니라
-        <strong> &ldquo;지금 이 항만에서 하역을 진행해도 되는가&rdquo;</strong>를 재는 지수입니다 —
-        각 축은 값이 나빠지면 하역을 멈추거나 배정을 바꿔야 하는 항목으로 골랐습니다.
-        판정 재료가 없는 축은 0점이 아니라 차트에서 빼고 &ldquo;판정불가&rdquo;로 적습니다.
+      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '18px', lineHeight: 1.6 }}>
+        <strong>100점 = 지금 하역을 막을 이유가 없음.</strong>{' '}
+        설비 상태가 아니라 <strong>지금 하역을 진행해도 되는가</strong>를 재는 5개 축입니다.
       </p>
 
       <div style={{ flex: 1, minHeight: '300px' }}>
         {error && (
           <div style={{ color: 'var(--text-dim)', fontSize: '13px' }}>
-            안전 지수를 불러오지 못했습니다 ({error}) — 백엔드 연결을 확인하세요.
+            안전 지수를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
           </div>
         )}
         {!error && chartData.length === 0 && (

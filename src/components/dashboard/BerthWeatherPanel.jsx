@@ -212,8 +212,8 @@ export default function BerthWeatherPanel() {
             )}
             <div style={{ fontSize: '11px', color: COLORS.textDim }}>
               {verdict.is_local_fallback
-                ? '※ 백엔드 미응답 — 로컬 임계표로 계산한 결과입니다 (위 입력값 사용)'
-                : '※ 백엔드 기상 에이전트 판정 — 서버가 DB 실측 관측치로 직접 판단합니다 (위 입력값은 폴백 계산용)'}
+                ? '※ 관측값을 받지 못해 위 입력값으로 계산한 결과입니다'
+                : '※ 실측 관측값으로 판정했습니다 (위 입력칸은 참고용)'}
             </div>
             {verdict.forecast_warning && (
               <div style={{ fontSize: '13px', color: COLORS.yellow, display: 'flex', gap: '6px', alignItems: 'center' }}>

@@ -892,7 +892,7 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
                           등급을 낮추지도 올리지도 않는다. 규칙엔진 값이 그대로
                           최종 등급이고(risk_level == rule_engine_floor), LLM은
                           근거 서술만 만든다. */}
-                      {' '}· 규칙엔진 확정
+                      {' '}· 규정 기준으로 확정
                     </span>
                   </div>
                   {m.assessment.reasoning && (
