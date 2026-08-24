@@ -55,12 +55,15 @@ async function glide(x, y, steps = 26) {
   }
   cx = x; cy = y;
 }
-async function clickAt(loc) {
+async function clickAt(loc, opts = {}) {
   const b = await loc.boundingBox();
   if (!b) throw new Error('대상을 찾지 못했습니다');
   await glide(b.x + b.width / 2, b.y + b.height / 2);
   await page.waitForTimeout(320);
-  await loc.click();
+  // 3D 관제 화면에서는 캔버스가 포인터를 가로채, 평범한 클릭이 actionable
+  // 판정을 기다리다 38초까지 지연된 적이 있다(2026-08-24 실측). 그 사이가
+  // 통째로 잘려나가 센서 화면이 영상에서 사라졌다.
+  await loc.click({ force: Boolean(opts.force), timeout: 15000 });
 }
 const beat = (ms) => page.waitForTimeout(ms);
 // 화면 전환 시각을 기록해 둔다. 내레이션 타이밍을 손으로 맞추면 자막이
@@ -121,48 +124,109 @@ mark('종합 판정 실행');
 await clickAt(page.getByRole('button', { name: /종합 판정/ }).first());
 await page.waitForSelector('text=최종 판단', { timeout: 120000 });
 mark('판정 완료 — 3개 에이전트 로그');
-await beat(3200);
+await beat(2000);
 
-// 에이전트 로그를 차례로 읽히도록 패널만 스크롤
+// 에이전트 발화를 하나씩 짚는다.
+//
+// 예전엔 판정이 도는 12초 동안 "기상 에이전트가…"를 말하고, 정작 세 발화가
+// 화면에 나타났을 땐 내레이션이 이미 다음 주제로 넘어가 있었다(2026-08-24
+// 피드백). 각 발화 앞에 지점을 남겨 말이 화면을 따라가게 한다.
 const panel = page.locator('text=에이전트 협상 로그').locator('xpath=ancestor::div[3]');
 const pb = await panel.boundingBox().catch(() => null);
-if (pb) {
-  await glide(pb.x + pb.width / 2, pb.y + pb.height * 0.6, 30);
-  for (let i = 0; i < 2; i++) { await page.mouse.wheel(0, 240); await beat(1700); }
-}
-await beat(900);
+if (pb) await glide(pb.x + pb.width / 2, pb.y + pb.height * 0.55, 26);
 
-// ── 장면 3 · 승인 (1:05–1:35) ────────────────────────────────────────
+for (const [label, needle] of [
+  ['기상 판정 표시', '기상분석 에이전트'],
+  ['스케줄링 판정 표시', '스케줄링 에이전트'],
+  ['안전 판정 표시', '안전관제 에이전트'],
+]) {
+  const el = page.locator(`text=${needle}`).first();
+  if (await el.count()) {
+    await el.scrollIntoViewIfNeeded().catch(() => {});
+    await beat(600);
+    mark(label);
+    await beat(5000);            // 그 발화를 설명할 시간
+  }
+}
+
+// ── 승인 ─────────────────────────────────────────────────────────────
 mark('승인');
 const ok = page.getByRole('button', { name: /^승인$/ }).first();
 if (await ok.count()) {
   await clickAt(ok);
-  await beat(3800);
+  await beat(3600);
   mark('배정현황 반영 확인');
-  await glide(700, 700, 30);           // 왼쪽 목록으로 시선 이동
+  await glide(700, 700, 30);
   await beat(2600);
   await page.mouse.wheel(0, -300);
-  await beat(2200);
+  await beat(2000);
 } else {
   console.log('  [경고] 승인 버튼 없음 — 다른 배로 재촬영 필요');
 }
 
-// ── 장면 4 · 확장 (1:35–2:00) ────────────────────────────────────────
+// ── 질의응답(GraphRAG) ───────────────────────────────────────────────
+const qtab = page.getByRole('tab', { name: /질의응답/ }).first();
+const qtabAlt = page.locator('text=질의응답').first();
+if (await qtab.count() || await qtabAlt.count()) {
+  mark('질의응답 탭');
+  await clickAt(await qtab.count() ? qtab : qtabAlt);
+  await beat(1800);
+  const q = page.locator('button', { hasText: /벤젠|메탄올|황산|톨루엔/ }).first();
+  if (await q.count()) {
+    await clickAt(q);
+    await page.waitForFunction(
+      () => /출처|인화점|보호구|취급|누출/.test(document.body.innerText),
+      { timeout: 90000 },
+    ).catch(() => {});
+    await beat(800);
+    mark('질의응답 답변');
+    await beat(5200);
+  }
+}
+
+// ── 안전/환경 관제 ───────────────────────────────────────────────────
 mark('장면4 안전/환경 관제');
 await clickAt(page.getByRole('link', { name: /안전|환경/ }).first());
-await beat(4500);
+await beat(4000);
 await page.mouse.wheel(0, 300);
 await beat(2400);
 
+// ── 3D 관제 ──────────────────────────────────────────────────────────
 const twin = page.getByRole('link', { name: /3D|관제 화면/ }).first();
 if (await twin.count()) {
-  mark('3D 관제 화면');
+  mark('3D 관제 클릭');
   await clickAt(twin);
+  // 3D 는 뜨는 데 시간이 걸린다. 준비된 시점을 따로 남겨 그 사이를 잘라내면,
+  // 화면에서는 누르자마자 관제 화면이 나오는 것처럼 이어진다.
+  await page.waitForFunction(
+    () => document.querySelector('canvas') && /선석 현황|온산 AIS/.test(document.body.innerText),
+    { timeout: 120000 },
+  ).catch(() => {});
+  await beat(1200);
+  mark('3D 관제 화면');
   await beat(6000);
 }
+
+// ── 센서 데이터 ──────────────────────────────────────────────────────
+const sensor = page.getByRole('link', { name: /센서/ }).first();
+if (await sensor.count()) {
+  await clickAt(sensor, { force: true });
+  // 지점은 '눌렀을 때'가 아니라 '화면이 떴을 때' 남긴다. 누른 시각에 남기면
+  // 전환이 늦어질 때 내레이션이 아직 없는 화면을 설명하게 된다.
+  await page.waitForFunction(
+    () => /저장탱크|이송배관|게이트/.test(document.body.innerText),
+    { timeout: 60000 },
+  ).catch(() => {});
+  await beat(900);
+  mark('센서 데이터');
+  await beat(4200);
+  await page.mouse.wheel(0, 260);
+  await beat(4000);
+}
+
 mark('대시보드로 복귀');
-await clickAt(page.getByRole('link', { name: /^대시보드$/ }).first());
-await beat(2500);
+await clickAt(page.getByRole('link', { name: /^대시보드$/ }).first(), { force: true });
+await beat(3000);
 
 console.log(`\n총 길이 약 ${((Date.now() - T0) / 1000).toFixed(0)}초 · 페이지 오류 ${errs.length}건`);
 errs.slice(0, 3).forEach((e) => console.log('  !', e));
