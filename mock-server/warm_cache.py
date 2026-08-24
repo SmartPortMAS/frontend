@@ -16,8 +16,16 @@
 실행:  python warm_cache.py   (백엔드 8001 이 떠 있어야 한다)
 """
 import json
+import sys
 import time
 import urllib.request
+
+# 한글 콘솔(cp949)에서 em-dash 같은 문자를 못 찍어 스크립트가 통째로 죽던 문제.
+# 캐시 워밍은 시연 직전에 도는 스크립트라, 출력 한 줄 때문에 중단되면
+# 첫 판정이 1분 가까이 걸리는 상태로 촬영에 들어가게 된다(2026-08-24 실측:
+# [2/4] 단계 진입 직후 UnicodeEncodeError 로 종료).
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 BASE = "http://localhost:8001/api/v1"
 

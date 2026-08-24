@@ -160,6 +160,29 @@ const SUGGESTED = [
   '톨루엔 인화점이 몇 도인가요?',
 ];
 
+/**
+ * 배정현황이 지목한 화물로 판정 대상의 화물을 맞춘다.
+ *
+ * 한 배는 후보 선석마다 다른 화물 행을 갖는다(mart.berth_current_cargo 가 선석별
+ * 취급화물로 만들어지기 때문). 어댑터는 그 중 첫 행을 집는데 그게 이 배정의 선석이라는
+ * 보장이 없어, 표에는 톨루엔·콘솔에는 메틸 알코올이 뜨고 안전 판정이 엉뚱한 물질로
+ * 돌아간다(2026-08-24 실측: 승인 대기 5건 중 4건).
+ *
+ * chem_id 가 같은 원본 행을 찾아 통째로 쓴다 — CAS·UN번호·IMDG 등급이 한 물질에서
+ * 같이 와야 판정 근거가 어긋나지 않는다. 못 찾으면 대상을 건드리지 않는다(이름만
+ * 바꿔 놓으면 화면과 판정이 또 어긋난다).
+ */
+function withRequestedCargo(vessel, wanted, berthCargo) {
+  if (!wanted?.chem_id || !vessel?.callsgn) return vessel;
+  const cs = vessel.callsgn.trim().toUpperCase();
+  const row = berthCargo.find(
+    (c) => c.chem_id === wanted.chem_id
+      && (c.callsgn || '').trim().toUpperCase() === cs,
+  );
+  if (!row) return vessel;
+  return { ...vessel, cargo: { ...row, name: row.cargo_name ?? wanted.name } };
+}
+
 export default function AgentConsole() {
   // 3D 관제 화면에서는 띄우지 않는다 — 전체화면 연출과 HUD 를 가린다
   const { pathname } = useLocation();
@@ -253,7 +276,19 @@ export default function AgentConsole() {
     const match = (v) => v.callsgn && v.callsgn.trim().toUpperCase() === want;
     // 화면 목록 우선, 없으면 신호 끊긴 판정 대상에서 찾는다.
     const hit = vessels.find(match) || offscreen.find(match);
-    if (hit) setLocalTarget(hit);
+    if (hit) {
+      // 배정현황이 보여준 화물이 있으면 그것으로 판정한다.
+      //
+      // 한 배가 후보 선석마다 다른 화물 행을 갖는다(mart.berth_current_cargo 는
+      // 선석별 취급화물로 만들어진다). 어댑터는 그 중 첫 행을 집는데, 그 선석이
+      // 이 배정의 선석이라는 보장이 없다 — 표에는 톨루엔, 콘솔에는 메틸 알코올이
+      // 뜨고 안전 판정이 엉뚱한 물질로 돌아간다(2026-08-24 실측 4/5건).
+      //
+      // 화면이 보여준 화물과 판정에 들어간 화물은 같아야 한다.
+      // 판정은 CAS 로 MSDS·혼재규정을 찾는다. chem_id 만 갈아끼우고 CAS 를 그대로
+      // 두면 물질과 근거가 어긋나므로, 화물 원본 행을 통째로 찾아 쓴다.
+      setLocalTarget(withRequestedCargo(hit, consoleRequest.cargo, data?.berth_cargo ?? []));
+    }
     setTab('negotiation');
     setOpen(true);
     clearConsoleRequest();
