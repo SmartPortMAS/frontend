@@ -77,7 +77,18 @@ console.log(`촬영 시작 — 대상 ${VESSEL}`);
 
 // ── 장면 1 · 대시보드 (0:00–0:25) ─────────────────────────────────────
 await page.goto('http://127.0.0.1:3000', { waitUntil: 'networkidle', timeout: 90000 });
-await beat(3200);
+// 실데이터가 화면에 들어찬 시점을 잡는다.
+//
+// 첫 몇 초는 KPI 가 전부 0척이고 지도에 배가 없다. 그 구간에 내레이션을 얹으면
+// "물동량 1위 항만"이라고 말하면서 빈 화면을 보여주게 된다(2026-08-24 실측:
+// 데이터가 차기까지 약 14초). 이 지점을 기록해 두고 앞부분을 잘라낸다.
+await page.waitForFunction(() => {
+  const t = document.body.innerText;
+  const m = t.match(/관제 선박\s*([\d,]+)/);
+  return m && parseInt(m[1].replace(/,/g, ''), 10) > 0;
+}, { timeout: 120000 });
+mark('데이터 로드');
+await beat(1200);
 mark('장면1 대시보드');
 await glide(1280, 75);                 // 헤더의 기상·수집 상태로 시선 유도
 await beat(1800);
