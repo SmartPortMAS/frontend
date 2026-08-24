@@ -426,7 +426,10 @@ export async function postApprovalDecision(assignmentId, { verdict, approvedBy, 
   if (!res.ok) {
     // 409(이미 처리됨/동시승인 경합)는 실제로 발생할 수 있다 — 그대로 드러낸다.
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    const err = new Error(body.detail || `HTTP ${res.status}`);
+    // 조회 전용 배포본이 막은 것과 진짜 실패를 화면이 다른 색으로 그린다.
+    err.readOnly = Boolean(body.read_only);
+    throw err;
   }
   return res.json();
 }

@@ -57,6 +57,26 @@ def main() -> None:
         and (by_cs[v["callsgn"]].get("cas_no") or by_cs[v["callsgn"]].get("chem_id"))
     ]
 
+    # 승인 대기 중인 배를 앞으로 당긴다.
+    #
+    # 배포본에서 사용자가 실제로 판정을 여는 경로는 "배정현황 → 승인 대기 →
+    # 협상 로그 →" 다. 그런데 targets 는 AIS 목록 순서라, 상한(LIMIT)에 걸리면
+    # 정작 그 배들이 통째로 빠진다(2026-08-24 실측: 승인 대기 7척 중 녹화 0건 —
+    # 배포본에서 전부 "판단 보류"로 보였다).
+    #
+    # 상한을 없애는 대신 순서를 바꾼다. 판정 1건마다 LLM 호출이 있어 상한 자체는
+    # 필요하고, 화면이 지목하는 배가 먼저 담기면 상한이 남은 만큼만 잘린다.
+    try:
+        pending_cs = [p.get("call_sign") for p in get("/approvals/pending")]
+    except Exception as exc:  # 승인 대기 조회 실패는 녹화를 막을 일이 아니다
+        print(f"[경고] 승인 대기 조회 실패 - 기본 순서로 녹화합니다 ({exc})")
+        pending_cs = []
+    order = {cs: i for i, cs in enumerate(pending_cs) if cs}
+    targets.sort(key=lambda v: order.get(v.get("callsgn"), len(order) + 1))
+    if order:
+        covered = sum(1 for v in targets[:LIMIT] if v.get("callsgn") in order)
+        print(f"승인 대기 {len(order)}척 중 {covered}척을 우선 녹화합니다")
+
     now = datetime.datetime.now(datetime.timezone.utc)
     out, cands, seen = {}, {}, set()
     for v in targets:

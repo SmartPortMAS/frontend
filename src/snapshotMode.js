@@ -79,14 +79,14 @@ if (ENABLED && typeof window !== 'undefined') {
     // 없는 성공을 지어내지 않고, 왜 안 되는지 그대로 말한다.
     if (path.endsWith('/orchestrator/assess-and-commit') || path.endsWith('/orchestrator/reject')) {
       return jsonResponse(
-        { detail: '이 공개 데모는 읽기 전용입니다 — 승인·반려는 실시간 관제 서버에서만 가능합니다.' },
+        { detail: '이 공개 데모는 조회 전용입니다 — 승인·반려는 실시간 관제 서버에서 수행됩니다.', read_only: true },
         503,
       );
     }
 
     if (path.includes('/approvals/') && path.endsWith('/decision')) {
       return jsonResponse(
-        { detail: '스냅샷 배포본은 읽기 전용입니다 - 승인/반려는 실시간 서버에서만 가능합니다' },
+        { detail: '이 공개 데모는 조회 전용입니다 — 승인·반려는 실시간 관제 서버에서 수행됩니다.', read_only: true },
         503,
       );
     }

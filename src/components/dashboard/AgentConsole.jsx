@@ -189,6 +189,8 @@ export default function AgentConsole() {
   const [approvalChecked, setApprovalChecked] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [decisionError, setDecisionError] = useState(null);
+  // 조회 전용(공개 배포본) 때문에 막힌 것인지 — 문구 색을 가르는 근거
+  const [decisionReadOnly, setDecisionReadOnly] = useState(false);
   const { orchestrate, commitAssignment, rejectAssignment, assessBerthWeather, ragQuery } = useOnsanApi();
   const setOrchestration = useSensorStore((s) => s.setOrchestration);
   const setBerthWeather = useSensorStore((s) => s.setBerthWeather);
@@ -343,6 +345,7 @@ export default function AgentConsole() {
     if (decisionBusy || !target) return;
     setDecisionBusy(true);
     setDecisionError(null);
+    setDecisionReadOnly(false);
     try {
       if (approvalId) {
         // arrival_watcher가 이미 만들어 둔 REQUESTED 행이 있다 — 그 행을 승인/반려한다.
@@ -398,6 +401,7 @@ export default function AgentConsole() {
       }
     } catch (e) {
       setDecisionError(e.message);
+      setDecisionReadOnly(Boolean(e.readOnly));
     } finally {
       setDecisionBusy(false);
     }
@@ -666,7 +670,15 @@ export default function AgentConsole() {
             )}
           </div>
           {decisionError && (
-            <span style={{ fontSize: 11, color: COLORS.red }}>처리 실패: {decisionError}</span>
+            /* 조회 전용 배포본에서 누른 것은 고장이 아니다 — 빨간 "처리 실패"로
+               그리면 심사자가 오류로 읽는다. 안내와 실패를 색으로 구분한다.
+               (판정 결과 자체는 실제 서버가 낸 것이라 그대로 남는다) */
+            <span style={{
+              fontSize: 11,
+              color: decisionReadOnly ? COLORS.textDim : COLORS.red,
+            }}>
+              {decisionReadOnly ? decisionError : `처리 실패: ${decisionError}`}
+            </span>
           )}
         </div>
       )}

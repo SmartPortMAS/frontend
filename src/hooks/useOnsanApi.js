@@ -592,7 +592,12 @@ export default function useOnsanApi() {
       throw new Error('관제 서버가 응답하지 않습니다. 연결 상태를 확인해주세요.');
     }
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.detail || `요청이 거부되었습니다 (HTTP ${res.status})`);
+    if (!res.ok) {
+      const err = new Error(data?.detail || `요청이 거부되었습니다 (HTTP ${res.status})`);
+      // 공개 배포본이 막은 것인지 진짜 실패인지 화면이 구분할 수 있게 표식을 넘긴다.
+      err.readOnly = Boolean(data?.read_only);
+      throw err;
+    }
     if (data == null) throw new Error('서버 응답을 해석할 수 없습니다.');
     return data;
   }, []);
