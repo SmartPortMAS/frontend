@@ -66,6 +66,16 @@ async function clickAt(loc, opts = {}) {
   await loc.click({ force: Boolean(opts.force), timeout: 15000 });
 }
 const beat = (ms) => page.waitForTimeout(ms);
+/** 화면을 내린다.
+ *
+ * page.mouse.wheel 을 쓰면 안 된다 — 커서가 지도 위에 있을 때 굴리면 Leaflet 이
+ * 확대·이동을 먹어, 부두가 사라지고 내륙만 비치는 화면이 영상에 남는다
+ * (2026-08-25 실측: 선석 배정현황이 학남리 산자락을 보여주고 있었다).
+ * 스크롤 컨테이너를 직접 움직이면 지도는 건드리지 않는다. */
+const scrollBy = (dy) => page.evaluate((d) => {
+  const el = document.querySelector('.page-content');
+  if (el) el.scrollTop += d; else window.scrollBy(0, d);
+}, dy);
 // 화면 전환 시각을 기록해 둔다. 내레이션 타이밍을 손으로 맞추면 자막이
 // 화면보다 앞서 뜬다(2026-08-24 피드백: 1~2초 빠름). 실측에서 역산한다.
 const marks = [];
@@ -126,7 +136,12 @@ if (pick) {
   mark('선박 상세');
   await beat(4200);
   await glide(1700, 500, 24);          // 상세 패널을 훑는다
-  await page.mouse.wheel(0, 260);
+  await page.evaluate(() => {
+    const el = [...document.querySelectorAll('div')].find(
+      (d) => d.scrollHeight > d.clientHeight + 40 && /배정 가능 선석/.test(d.innerText),
+    );
+    if (el) el.scrollTop += 260;
+  });
   await beat(3200);
   mark('선박 상세 · 경고');
   await beat(3600);
@@ -144,7 +159,7 @@ if (pick) {
 mark('장면2 선석 배정현황');
 await clickAt(page.getByRole('link', { name: /선석|배정/ }).first());
 await beat(2200);
-await page.mouse.wheel(0, 420);        // 선석 점유 목록이 보이게
+await scrollBy(420);                   // 선석 점유 목록이 보이게
 await beat(1600);
 
 const row = page.locator('tr', { hasText: VESSEL });
@@ -192,7 +207,7 @@ if (await ok.count()) {
   mark('배정현황 반영 확인');
   await glide(700, 700, 26);
   await beat(2200);
-  await page.mouse.wheel(0, -300);
+  await scrollBy(-300);
   await beat(1600);
 } else {
   console.log('  [경고] 승인 버튼 없음 — 다른 배로 재촬영 필요');
@@ -219,9 +234,16 @@ if (await qtab.count() || await qtabAlt.count()) {
 }
 
 // ── 안전/환경 관제 ───────────────────────────────────────────────────
-mark('장면4 안전/환경 관제');
 await clickAt(page.getByRole('link', { name: /안전|환경/ }).first());
-await beat(3200);
+// 안전 지수 레이더는 늦게 그려진다. '불러오는 중…'이 사라지고 차트가 실제로
+// 나온 뒤에 지점을 찍어야, 잘라낸 영상에서 빈 카드를 보여주지 않는다.
+await page.waitForFunction(() => {
+  const t = document.body.innerText;
+  return !/불러오는 중/.test(t) && document.querySelectorAll('svg.recharts-surface, svg').length > 2;
+}, { timeout: 60000 }).catch(() => console.log('  [경고] 안전 지수 차트 대기 시간 초과'));
+await beat(1200);
+mark('장면4 안전/환경 관제');
+await beat(2600);
 await glide(1500, 400, 24);   // 오른쪽 위험 선석 패널
 await beat(3000);
 
@@ -258,7 +280,7 @@ if (await sensor.count()) {
   await beat(800);
   mark('센서 데이터');
   await beat(3600);
-  await page.mouse.wheel(0, 260);
+  await scrollBy(260);
   await beat(3400);
 }
 
