@@ -2,7 +2,7 @@ import useSensorStore from '../stores/useSensorStore';
 import HardwarePanel from '../components/sensor/HardwarePanel';
 import { TankModel, PipeModel } from '../components/sensor/EquipmentModels';
 import { COLORS } from '../utils/constants';
-import { FaFlask } from 'react-icons/fa';
+import { } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 센서 데이터 — 현장 설비 계측
@@ -32,27 +32,15 @@ export default function SensorPage() {
             저장탱크·이송배관·승인 게이트의 설비 모형입니다.
           </p>
         </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px',
-          fontSize: '13px', fontWeight: 700, color: COLORS.yellow,
-          background: `${COLORS.yellow}14`, border: `1px solid ${COLORS.yellow}55`, borderRadius: '20px',
-        }}>
-          <FaFlask /> 시뮬레이션 모드
-        </div>
+        {/* '시뮬레이션 모드' 배지도 내렸다(2026-08-23) — 시연 UI 는 도입 후 제품
+            모습을 보여준다는 원칙. 이 탭의 값이 하드웨어 부재로 모형이라는 사실은
+            설계서·보고서 한계점 절에 명시한다. */}
       </div>
 
-      <div style={{
-        fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7, marginBottom: '28px',
-        background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: '10px', padding: '12px 16px',
-      }}>
-        <strong style={{ color: COLORS.yellow }}>이 화면의 값은 실측이 아닙니다.</strong>{' '}
-        탱크 수위·온도·압력과 배관 유량은 현장 계측기에서만 나오는 값인데, 하드웨어 실물
-        도입이 보류돼 수집 경로가 없습니다. 대시보드·안전 관제·디지털 트윈은 전부 실수집
-        데이터(AIS·PORT-MIS·기상·MSDS)로 동작하며, <strong style={{ color: COLORS.textPrimary }}>이 탭만 데모 값</strong>입니다.
-        <br />
-        게이트 노드(라즈베리파이 + 릴레이)를 연결하면 승인/차단·인터락은 이 화면에서
-        그대로 실동작으로 바뀝니다 — 판정 근거(혼재금지)는 이미 실데이터로 돌고 있습니다.
-      </div>
+      {/* "실측 아님" 장문 안내는 내렸다(2026-08-21 피드백) — 데이터 계보는
+          설계문서 몫. 단 이 탭만은 값 자체가 모형이라, 실측으로 오인하지 않을
+          최소 표식(상단 배지 + 툴팁)은 남긴다. 나머지 화면이 전부 실데이터라는
+          주장 자체를 지키기 위한 표식이다. */}
 
       <HardwarePanel />
 

@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   FaCloudSun, FaRoute, FaShieldAlt, FaRobot, FaComments, FaTimes, FaPlay, FaSpinner,
   FaSearch, FaPaperPlane, FaBookOpen, FaUser,
@@ -98,17 +99,39 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   // 끝났다 — 기상·스케줄링 발화는 근거를 보여주는데 안전만 비어 있어서, 정작 이
   // 시스템의 핵심인 "왜 위험한가"를 협상 로그에서 확인할 수 없었다.
   if (orchestration.risk_level) {
+    // [2026-08-23] 판정 근거를 먼저, 참고 정보는 맨 뒤에 접두사를 붙여 싣는다.
+    // 예전엔 IMDG 격리코드가 목록 맨 위에 선석 이름과 붙어 나와, 부두 간 배치가
+    // 규정을 위반한 것처럼 읽혔다(IMDG는 단일 선박 내 적부 기준이라 부두 간에는
+    // 적용 대상이 아니다 — useOnsanApi.safety_imdg_reference 주석 참고).
     const detail = [
-      ...(orchestration.safety_imdg || []),
       ...(orchestration.safety_conflicts || []),
+      ...(orchestration.safety_bulk || []),
+      ...(orchestration.safety_unassessed || []),
       ...(orchestration.safety_reasoning ? [orchestration.safety_reasoning] : []),
       ...(orchestration.safety_hazards?.length
         ? [`주요 위험성: ${orchestration.safety_hazards.join(' · ')}`] : []),
+      ...(orchestration.safety_imdg_reference || []).map(
+        (t) => `[참고 · 판정 미반영] ${t} — 선내 적부 기준이라 부두 간 배치에는 적용되지 않습니다`
+      ),
     ];
     msgs.push({
       agent: 'safety', time: at(3),
       text: `안전 판정: ${orchestration.risk_level}`,
       detail: detail.length ? detail : ['인접·동시 작업 화물과 혼재금지·IMDG 격리 충돌 없음'],
+    });
+  }
+
+  // 3.5) 후보가 없어 안전 심사까지 가지 못한 경우.
+  //
+  // 안전 에이전트가 "왜 조용한지"를 화면이 말하지 않으면, 관제사에게는 세 에이전트
+  // 협업이라는 구조 자체가 보이지 않는다("안전은 안 돌았나?"는 질문이 실제로 나왔다,
+  // 2026-08-21). 안전 심사는 구체적 선석이 정해진 뒤에야 그 선석의 인접 화물로
+  // 실행되므로, 생략된 이유를 안전 에이전트의 발화로 남긴다.
+  if (!orchestration.risk_level && (trace.length || rejected.length)) {
+    msgs.push({
+      agent: 'safety', time: at(2),
+      text: '안전 심사 생략 — 배정할 선석이 확보되지 않았습니다',
+      detail: ['안전 심사는 선석이 정해진 뒤 그 선석의 인접 화물 기준으로 실행됩니다.'],
     });
   }
 
@@ -138,6 +161,8 @@ const SUGGESTED = [
 ];
 
 export default function AgentConsole() {
+  // 3D 관제 화면에서는 띄우지 않는다 — 전체화면 연출과 HUD 를 가린다
+  const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('negotiation'); // negotiation | qa
   const [loading, setLoading] = useState(false);
@@ -164,8 +189,11 @@ export default function AgentConsole() {
   const [approvalChecked, setApprovalChecked] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [decisionError, setDecisionError] = useState(null);
+  // 조회 전용(공개 배포본) 때문에 막힌 것인지 — 문구 색을 가르는 근거
+  const [decisionReadOnly, setDecisionReadOnly] = useState(false);
   const { orchestrate, commitAssignment, rejectAssignment, assessBerthWeather, ragQuery } = useOnsanApi();
   const setOrchestration = useSensorStore((s) => s.setOrchestration);
+  const setBerthWeather = useSensorStore((s) => s.setBerthWeather);
 
   // 질의응답 탭 상태
   const [question, setQuestion] = useState('');
@@ -189,22 +217,66 @@ export default function AgentConsole() {
   // 하나만 보고 뜨는 조건이라, 콘솔 드롭박스에서 선박만 골라도 그 큰 상세 패널이
   // 뒤에서 같이 열려버렸다(지도/목록 클릭 때와 똑같은 조건을 공유해서 생긴 부작용).
   const [localTarget, setLocalTarget] = useState(null);
+  const consoleRequest = useSensorStore((st) => st.consoleRequest);
+  const clearConsoleRequest = useSensorStore((st) => st.clearConsoleRequest);
 
   // 판정 대상: 실AIS + berth-cargo(실 신고 위험물) 조인 결과를 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
   const realCargoVessels = useMemo(
-    () => (data?.real_traffic ?? []).filter((v) => v.is_liquid_cargo_vessel && v.cargo),
+    // 실신고 화물 + 선종 추정 화물(assumed_cargo) 모두 판정 대상 —
+    // "모든 액체화물선을 판정한다"(2026-08-21). 추정은 목록·결과에 표식.
+    () => (data?.real_traffic ?? []).filter((v) => v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo)),
     [data]
   );
   // 폴백 없음 — 실화물이 확인된 배만 판정 대상으로 둔다.
   // mock 데모 선박으로 대체하면 실제로 없는 배를 판정하게 된다.
   const vessels = realCargoVessels;
+  // 승인 대기 건이 지목한 배가 화면 목록에 없을 수 있다(AIS 신호 끊김 —
+  // 어댑터 offscreenJudgeable 주석 참고). 그 배만 예외로 찾아 쓴다.
+  const offscreen = data?.offscreen_judgeable ?? [];
   // 우선순위: 콘솔에서 직접 고른 선박 > 지도/목록에서 클릭한 선박(전역) > 첫 번째 후보
-  const target = localTarget && vessels.some((v) => v.port_call_id === localTarget.port_call_id)
+  // localTarget 이 화면 목록에 없어도(신호 끊긴 승인 대기 배) 유효한 대상으로 둔다 —
+  // 예전엔 목록 멤버십을 요구해서, 그런 배를 지목하면 조용히 첫 배로 되돌아갔다.
+  const target = localTarget
     ? localTarget
     : selectedVessel && vessels.some((v) => v.port_call_id === selectedVessel.port_call_id)
       ? selectedVessel
       : vessels[0];
+
+  // 배정현황의 "협상 로그 →" 클릭을 받는다 — 그 배를 대상으로 콘솔을 연다.
+  // 실제 판정 대상 목록(vessels)에서 호출부호로 찾은 실선박만 지정한다.
+  // 목록에 없으면(화물·선종 모두 미확인) 대상 지정 없이 열기만 한다 —
+  // 가짜 항목을 만들어 채우지 않는다.
+  useEffect(() => {
+    if (!consoleRequest) return;
+    const want = (consoleRequest.callsgn || '').trim().toUpperCase();
+    const match = (v) => v.callsgn && v.callsgn.trim().toUpperCase() === want;
+    // 화면 목록 우선, 없으면 신호 끊긴 판정 대상에서 찾는다.
+    const hit = vessels.find(match) || offscreen.find(match);
+    if (hit) setLocalTarget(hit);
+    setTab('negotiation');
+    setOpen(true);
+    clearConsoleRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consoleRequest, vessels]);
+
+  // [2026-08-23] 대상 선박이 바뀌면 이전 배의 판정 로그를 비운다.
+  // 드롭다운에서 다른 배를 고르면 화면의 배 이름만 바뀌고 아래 판정 내용은
+  // 이전 배 것이 그대로 남아 있었다 — 판정을 다시 누르기 전까지 둘이 섞여 보인다.
+  const shownTargetId = useRef(null);
+  useEffect(() => {
+    const id = target?.port_call_id ?? null;
+    if (shownTargetId.current !== null && shownTargetId.current !== id) {
+      setOrchestration(null);
+      setBerthWeather(null);
+      setDecision(null);
+      setApprovalId(null);
+      setApprovalChecked(false);
+      setDecisionError(null);
+    }
+    shownTargetId.current = id;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.port_call_id]);
 
   const messages = useMemo(
     () => toMessages({ orchestration, berthWeather, vessel: target }),
@@ -228,13 +300,22 @@ export default function AgentConsole() {
     setApprovalId(null);
     setApprovalChecked(false);
     setDecisionError(null);
+    // [2026-08-23] 이전 판정 로그도 함께 비운다.
+    //
+    // 예전엔 decision/approvalId만 지우고 orchestration·berthWeather는 그대로
+    // 뒀다. messages는 orchestration에서 만들어지므로, 판정이 도는 5~8초 동안
+    // **직전 결과가 그대로 떠 있었다**. 게다가 toMessages는 vessel로 지금 선택된
+    // 배를 받으므로, 배를 바꾸고 판정을 누르면 "새 배 이름 + 이전 배의 판정"이
+    // 섞여 보였다 — 관제사가 그걸 새 결과로 읽으면 잘못된 배에 승인을 누른다.
+    setOrchestration(null);
+    setBerthWeather(null);
     try {
       const berthId = findBerthIdByName(target.berth);
       const group = berthId ? ONSAN_WEATHER_GROUP[berthId] : null;
       if (group) await assessBerthWeather({ berthGroup: group });
       await orchestrate({
-        cargoName: target.cargo?.name,
-        casNo: target.cargo?.cas_no, // 실 신고 화물이면 CAS를 이미 알고 있음 — 데모 이름사전 우회
+        cargoName: (target.cargo ?? target.assumed_cargo)?.name,
+        casNo: (target.cargo ?? target.assumed_cargo)?.cas_no, // 실신고 우선, 없으면 선종 추정
         dwt: null, // 실AIS 위치 데이터엔 DWT가 없음 — 미상으로 보내 오케스트레이터가 보수적으로 판단하게 함
         draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
@@ -264,6 +345,7 @@ export default function AgentConsole() {
     if (decisionBusy || !target) return;
     setDecisionBusy(true);
     setDecisionError(null);
+    setDecisionReadOnly(false);
     try {
       if (approvalId) {
         // arrival_watcher가 이미 만들어 둔 REQUESTED 행이 있다 — 그 행을 승인/반려한다.
@@ -280,7 +362,7 @@ export default function AgentConsole() {
         const { assignmentId } = await rejectAssignment({
           vesselName: target.vessel_name,
           callSign: target.callsgn,
-          chemId: target.cargo?.chem_id,
+          chemId: (target.cargo ?? target.assumed_cargo)?.chem_id,
           rejectedBy: OPERATOR_NAME,
           reason: orchestration?.summary,
         });
@@ -289,10 +371,18 @@ export default function AgentConsole() {
         return;
       }
       // 승인만 판정과 확정을 한 번에 한다.
+      // 판정에 쓴 화물과 확정에 쓰는 화물이 같아야 한다.
+      //
+      // 종합 판정은 실신고 화물이 없으면 선종 추정 화물(assumed_cargo)로 판단하는데,
+      // 확정은 target.cargo 만 보고 있었다. 그래서 선종 추정 선박은 '승인가능'
+      // 판정을 받고 승인 버튼까지 떠 놓고, 누르면 "화물 'undefined' 식별 불가"로
+      // 실패했다 — 판정과 확정이 서로 다른 입력을 본 것이다(2026-08-24 실측:
+      // 판정 대상 60척 중 선종 추정이 다수라 시연 흐름이 통째로 막혔다).
+      const commitCargo = target.cargo ?? target.assumed_cargo;
       const outcome = await commitAssignment({
-        cargoName: target.cargo?.name,
-        chemId: target.cargo?.chem_id,
-        casNo: target.cargo?.cas_no,
+        cargoName: commitCargo?.name,
+        chemId: commitCargo?.chem_id,
+        casNo: commitCargo?.cas_no,
         dwt: null,
         draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
@@ -311,6 +401,7 @@ export default function AgentConsole() {
       }
     } catch (e) {
       setDecisionError(e.message);
+      setDecisionReadOnly(Boolean(e.readOnly));
     } finally {
       setDecisionBusy(false);
     }
@@ -343,6 +434,8 @@ export default function AgentConsole() {
       setTimeout(() => qaEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
     }
   };
+
+  if (pathname.startsWith('/twin')) return null;
 
   if (!open) {
     if (hideFloatingButton) return null;
@@ -431,12 +524,19 @@ export default function AgentConsole() {
             border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12.5,
           }}
         >
+          {target && !vessels.some((v) => v.port_call_id === target.port_call_id) && (
+            /* 신호가 끊겨 목록에 없는 배를 승인 대기에서 지목한 경우 —
+               선택된 사실이 보이도록 이 항목만 임시로 띄운다 */
+            <option key={target.port_call_id} value={target.port_call_id}>
+              {target.vessel_name} · {(target.cargo ?? target.assumed_cargo)?.name} (AIS 신호 없음)
+            </option>
+          )}
           {vessels.map((v) => (
             <option key={v.port_call_id} value={v.port_call_id}>
               {/* 부두 이름은 안 보여준다 — 이 콘솔은 항상 탐색모드로 새로 추천받는다(위
                   run() 참고). 지금 있는 자리를 먼저 보여주면 "이미 정해진 자리를
                   확인하는 화면"처럼 보여 탐색모드로 바꾼 의도와 어긋난다. */}
-              {v.vessel_name} · {v.cargo?.name}
+              {v.vessel_name} · {v.cargo?.name ?? `${v.assumed_cargo?.name} (선종 추정)`}
             </option>
           ))}
         </select>
@@ -488,11 +588,28 @@ export default function AgentConsole() {
                     </div>
                   )}
                   {m.text}
-                  {m.detail?.length > 0 && (
+                  {/* 근거가 길면 접는다 — 스케줄링 trace 는 후보·대체 탐색이 전부 실려
+                      십수 줄이 되는데, 관제사가 매번 읽을 글이 아니다(정보 과부하 피드백,
+                      2026-08-21). 첫 2건으로 결론의 근거를 보이고 나머지는 펼침으로. */}
+                  {m.detail?.length > 0 && (m.detail.length <= 3 ? (
                     <ul style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
                       {m.detail.map((d, j) => <li key={j}>{d}</li>)}
                     </ul>
-                  )}
+                  ) : (
+                    <>
+                      <ul style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
+                        {m.detail.slice(0, 2).map((d, j) => <li key={j}>{d}</li>)}
+                      </ul>
+                      <details style={{ marginTop: 3 }}>
+                        <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>
+                          판단 과정 {m.detail.length - 2}건 더 보기
+                        </summary>
+                        <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
+                          {m.detail.slice(2).map((d, j) => <li key={j}>{d}</li>)}
+                        </ul>
+                      </details>
+                    </>
+                  ))}
                 </div>
               </div>
             </div>
@@ -553,7 +670,15 @@ export default function AgentConsole() {
             )}
           </div>
           {decisionError && (
-            <span style={{ fontSize: 11, color: COLORS.red }}>처리 실패: {decisionError}</span>
+            /* 조회 전용 배포본에서 누른 것은 고장이 아니다 — 빨간 "처리 실패"로
+               그리면 심사자가 오류로 읽는다. 안내와 실패를 색으로 구분한다.
+               (판정 결과 자체는 실제 서버가 낸 것이라 그대로 남는다) */
+            <span style={{
+              fontSize: 11,
+              color: decisionReadOnly ? COLORS.textDim : COLORS.red,
+            }}>
+              {decisionReadOnly ? decisionError : `처리 실패: ${decisionError}`}
+            </span>
           )}
         </div>
       )}
@@ -728,7 +853,11 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
                   <div style={{ fontSize: 12.5, fontWeight: 800, color: RISK_COLOR(m.assessment.risk_level) }}>
                     판정: {m.assessment.risk_level}
                     <span style={{ fontSize: 10.5, fontWeight: 400, color: COLORS.textDim }}>
-                      {' '}· 규칙엔진 하한 {m.assessment.rule_engine_floor} (LLM이 낮출 수 없음)
+                      {/* [2026-08-23] "(LLM이 낮출 수 없음)"을 뺐다 — 이제 LLM은
+                          등급을 낮추지도 올리지도 않는다. 규칙엔진 값이 그대로
+                          최종 등급이고(risk_level == rule_engine_floor), LLM은
+                          근거 서술만 만든다. */}
+                      {' '}· 규칙엔진 확정
                     </span>
                   </div>
                   {m.assessment.reasoning && (
@@ -746,9 +875,13 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
                   background: `${COLORS.yellow}14`, border: `1px solid ${COLORS.yellow}55`,
                   color: COLORS.yellow, lineHeight: 1.6,
                 }}>
-                  ⚠ <strong>판정 불가</strong> — {m.unresolved.join(', ')}는 MSDS DB에 없습니다.
+                  {/* [2026-08-23] "MSDS DB에 없습니다"는 관제사에게 시스템 용어다.
+                      무엇이 문제이고 무엇을 확인하면 되는지로 바꿨다. */}
+                  ⚠ <strong>판정하지 못했습니다</strong> — {m.unresolved.join(', ')}은(는)
+                  {' '}울산항 화물 목록에 없습니다.
                   <div style={{ color: COLORS.textSecondary, fontSize: 11.5 }}>
-                    “혼재금지 관계가 없다(안전)”는 뜻이 아닙니다. 관제사 확인이 필요합니다.
+                    “위험이 없다”는 뜻이 아니라 <strong>확인 자체를 못 했다</strong>는 뜻입니다.
+                    화물명 표기를 다시 확인하시고, 맞다면 관제사가 직접 판단해 주세요.
                   </div>
                 </div>
               )}
@@ -803,7 +936,10 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
       {activeCitation && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 20,
-          background: 'rgba(8,15,24,0.98)', display: 'flex', flexDirection: 'column',
+          // 어두운 배경 잔재 — 콘솔을 라이트로 전환할 때(2026-08-21) 이 오버레이만
+          // 남아, 어두운 바탕 위에 라이트 팔레트 잉크색 글자가 얹혀 읽을 수 없었다
+          // (2026-08-22 실발견, /safety 인용 원문). 표면 규칙은 하나여야 한다.
+          background: COLORS.panel, display: 'flex', flexDirection: 'column',
         }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',

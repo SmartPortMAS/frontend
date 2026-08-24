@@ -106,6 +106,28 @@ function isRecentlyPresent(row) {
 // 실측(2026-08-15, 재항 356척): true 66 / false 19 / null 271.
 // null 이 압도적인 이유는 조인 키 문제다 — PORT-MIS 에는 MMSI 컬럼이 없어 호출부호로만
 // 붙일 수 있는데, AIS 호출부호는 선택 필드라 74척이 아예 빈 값이다.
+// ─────────────────────────────────────────────────────────────────────────────
+// 선종 → 대표 화물 (화물 신고가 조인되지 않은 액체화물선의 판정 폴백)
+//
+// "모든 액체화물선을 판정한다"가 이 시스템의 목적인데, 화물 신고(berth-cargo
+// 조인)가 없는 배는 판정 입력이 없어 지금까지 전부 '조회 불가'였다(2026-08-21
+// 피드백: "왜 링 안 쳐진 빨간 배는 판정이 안 되나"). PORT-MIS 선종은 그 배가
+// 어떤 부류의 화물을 싣는 배인지 공식적으로 말해주므로, 카테고리 대표 화물로
+// 추정 판정한다 — 백엔드 스케줄링 에이전트가 인접 화물을 근사할 때 쓰는
+// 대표(category_map.REPRESENTATIVE_CHEM_BY_CATEGORY)와 같은 값이라 판정 기준이
+// 두 벌로 갈라지지 않는다.
+//
+// 추정은 반드시 추정으로 보이게 한다 — is_assumed 를 화면 끝까지 끌고 가서
+// '선종 기반 추정' 표식 없이 실신고처럼 보이는 일이 없게 한다.
+const SHIP_KIND_ASSUMED_CARGO = {
+  '석유제품 운반선': { name: '디젤 연료', chem_id: '000973', cas_no: '68334-30-5' },
+  '기타 유조선':    { name: '디젤 연료', chem_id: '000973', cas_no: '68334-30-5' },
+  '원유운반선':     { name: '석유(원유)', chem_id: '000751', cas_no: '8002-05-9' },
+  '케미칼 운반선':  { name: '벤젠', chem_id: '001008', cas_no: '71-43-2' },
+  'LPG 운반선':     { name: '프로페인', chem_id: '015420', cas_no: '74-98-6' },
+  'LNG 운반선':     { name: '메테인', chem_id: '015390', cas_no: '74-82-8' },
+};
+
 function liquidByShipType(row) {
   return row.is_liquid_cargo_vessel == null ? null : Boolean(row.is_liquid_cargo_vessel);
 }
@@ -168,6 +190,12 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
       un_no: cargo.dg_un_no, cas_no: cargo.cas_no,
       imdg_class: cargo.imdg_class, is_synthetic: cargo.is_synthetic,
     } : null,
+    // 화물 신고가 없을 때만 선종 대표 화물을 추정으로 붙인다.
+    // cargo 와 별도 필드로 둔다 — 지도 링(화물 '확인' 표식)과 KPI 는 실신고만
+    // 세야 하고, 추정을 cargo 에 섞으면 그 구분이 사라진다.
+    assumed_cargo: (!cargo && byShipType === true && SHIP_KIND_ASSUMED_CARGO[row.ship_kind_nm])
+      ? { ...SHIP_KIND_ASSUMED_CARGO[row.ship_kind_nm], is_assumed: true, basis: row.ship_kind_nm }
+      : null,
   };
 }
 
@@ -238,11 +266,11 @@ export async function fetchBackendDashboard() {
   }
 
   // 지도에 그릴 수 있는 선박(좌표 있음 + bbox 내 + 최근 신호). 상한을 걸기 전 전체.
-  const presentVessels = (vessels ?? [])
+  const inBbox = (vessels ?? [])
     .filter((r) => r.latitude != null && r.longitude != null)
     .filter(inUlsanBbox)
-    .filter(isRecentlyPresent)
     .sort((a, b) => new Date(b.received_at_utc) - new Date(a.received_at_utc));
+  const presentVessels = inBbox.filter(isRecentlyPresent);
 
   // 호출부호는 AIS 에서 선택 입력이라 '500'·'301'·'1263'·'ABCD' 같은 값이 실제로
   // 들어온다(실측 4쌍이 서로 다른 배끼리 겹쳤다). 화물·선종을 이 키로 붙이므로,
@@ -267,10 +295,34 @@ export async function fetchBackendDashboard() {
     // 지도 성능 때문에 200척만 그린다. 다만 KPI 까지 200 으로 보이면 "관제 선박이
     // 항상 200척"이라는 잘못된 인상을 준다 — 실제 수는 realTrafficTotal 로 따로 넘겨
     // 화면이 "몇 척 중 몇 척을 그리는 중"인지 정직하게 말할 수 있게 한다.
-    realTraffic: presentVessels
-      .slice(0, MAP_VESSEL_LIMIT)
-      .map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns)),
+    // 상한(200척)은 지도 마커 성능 때문이지 판정 때문이 아니다. 그런데 이 목록이
+    // 협상 콘솔의 판정 대상으로도 쓰여서, 상한에 잘린 액체화물선은 배정을 받아
+    // 놓고도 콘솔에서 찾을 수 없었다 — 배정현황의 "협상 로그 →" 가 그 배 대신
+    // 기본값을 여는 실사고(2026-08-23, 미시칸/D8BD). 판정 대상(액체화물선 중
+    // 화물 확인·선종 추정)은 상한과 무관하게 항상 포함하고, 나머지 배경 표적만
+    // 남은 자리를 채운다.
+    realTraffic: (() => {
+      const mapped = presentVessels.map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns));
+      const judgeable = mapped.filter((v) => v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo));
+      const rest = mapped.filter((v) => !(v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo)));
+      return [...judgeable, ...rest.slice(0, Math.max(0, MAP_VESSEL_LIMIT - judgeable.length))];
+    })(),
     realTrafficTotal: presentVessels.length,
+    // AIS 신호가 끊긴 액체화물선 — 화면(지도·목록)에는 넣지 않고 '조회용'으로만 싣는다.
+    //
+    // 배정과 화면이 "이 배가 지금 여기 있다"를 다른 기준으로 본다:
+    //   배정(arrival_watcher) = PORT-MIS 재항 기록(출항 신고 없음)
+    //   화면(real_traffic)    = AIS 신호 신선도
+    // 그래서 PORT-MIS 상 재항인데 AIS 가 끊긴 배가 추천·승인 대기에는 오르고
+    // 화면 판정 목록에는 없는 상태가 생긴다(2026-08-24 실측: 승인 대기 9건이
+    // 전부 NO_SIGNAL 이라 "협상 로그 →" 가 엉뚱한 배를 열었다).
+    //
+    // 이 배들을 지도·목록에 올리면 12일 전 위치를 현재처럼 보여주게 되므로 넣지
+    // 않는다. 대신 승인 대기 건에서 지목될 때만 콘솔이 여기서 찾아 쓴다.
+    offscreenJudgeable: inBbox
+      .filter((r) => !isRecentlyPresent(r))
+      .map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns))
+      .filter((v) => v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo)),
     // 선석별 재항 위험물 화물 원본 — 안전 심사 폼이 "재항 선박에서 불러오기"에 쓴다.
     // (화물을 수기로 고르는 대신 지금 실제로 붙어 있는 배를 선택하게 하기 위함)
     berthCargo: berthCargo ?? [],
@@ -374,7 +426,10 @@ export async function postApprovalDecision(assignmentId, { verdict, approvedBy, 
   if (!res.ok) {
     // 409(이미 처리됨/동시승인 경합)는 실제로 발생할 수 있다 — 그대로 드러낸다.
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    const err = new Error(body.detail || `HTTP ${res.status}`);
+    // 조회 전용 배포본이 막은 것과 진짜 실패를 화면이 다른 색으로 그린다.
+    err.readOnly = Boolean(body.read_only);
+    throw err;
   }
   return res.json();
 }

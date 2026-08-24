@@ -36,12 +36,19 @@ function toPanelShape(result) {
 }
 
 export default function useVesselSafety(vessel) {
-  const { assessSafetyGates } = useOnsanApi();
+  const { assessSafetyVerdict, assessSafetyGates } = useOnsanApi();
   const { data } = useDashboardData();
-  const [state, setState] = useState({ assessment: null, loading: false });
+  // narrativeLoading — 등급은 나왔지만 체크리스트/근거문장이 아직 오는 중.
+  // 화면은 이 플래그로 체크리스트 자리에만 스켈레톤을 띄운다(등급 뱃지는 이미 확정).
+  const [state, setState] = useState({ assessment: null, loading: false, narrativeLoading: false });
 
-  const cargoName = vessel?.cargo?.name || null;
-  const cargoCasNo = vessel?.cargo?.cas_no || null;
+  // 대상 화물: 실신고 우선, 없으면 선종 추정(backendAdapter.assumed_cargo).
+  // 인접 화물은 실신고만 쓴다 — 인접까지 추정으로 채우면 혼재 판정이
+  // 추정 × 추정이 되어 근거가 사라진다.
+  const effCargo = vessel?.cargo ?? vessel?.assumed_cargo ?? null;
+  const cargoName = effCargo?.name || null;
+  const cargoCasNo = effCargo?.cas_no || null;
+  const cargoAssumed = Boolean(!vessel?.cargo && vessel?.assumed_cargo);
   const berth = vessel?.berth || null;
   const isLiquid = Boolean(vessel?.is_liquid_cargo_vessel);
 
@@ -62,18 +69,37 @@ export default function useVesselSafety(vessel) {
 
   useEffect(() => {
     if (!isLiquid || !cargoName) {
-      setState({ assessment: null, loading: false });
+      setState({ assessment: null, loading: false, narrativeLoading: false });
       return;
     }
     let cancelled = false;
-    setState((s) => ({ ...s, loading: true }));
+    setState((s) => ({ ...s, loading: true, narrativeLoading: false }));
 
     // cas_no는 실화물 조인(mart.berth_current_cargo)에서 이미 확정된 값이라
     // 그대로 넘긴다 — 화물명 하드코딩 사전(cargoRef)을 안 거치므로 표기 불일치로
     // 인한 "CAS 매핑 없음" 오탐이 없다.
-    assessSafetyGates({ cargo_name: cargoName, cas_no: cargoCasNo, adjacent_operations: adjacent })
+    // [2026-08-23] 2단계 조회 — 판정(65ms)을 먼저 그리고 서술(2.5초)을 이어 채운다.
+    // 두 등급이 항상 같으므로(백엔드가 규칙엔진 값을 그대로 씀) 먼저 그린 뱃지가
+    // 나중에 바뀌지 않는다. 서술 조회가 실패해도 등급은 이미 화면에 있으므로
+    // 판정 전체를 '판단불가'로 떨어뜨리지 않는다 — 예전보다 오히려 견고하다.
+    const req = { cargo_name: cargoName, cas_no: cargoCasNo, adjacent_operations: adjacent };
+
+    // 서술이 먼저 도착할 수도 있다(네트워크 상황). 그때 늦게 온 판정이 서술을
+    // 덮어쓰면 체크리스트가 화면에서 사라지므로 플래그로 막는다.
+    let narrativeArrived = false;
+
+    assessSafetyVerdict(req)
       .then((res) => {
-        if (!cancelled) setState({ assessment: toPanelShape(res), loading: false });
+        if (!cancelled && res && !narrativeArrived) {
+          setState({ assessment: toPanelShape(res), loading: false, narrativeLoading: true });
+        }
+      })
+      .catch(() => { /* 판정 실패는 아래 assessSafetyGates의 catch가 처리한다 */ });
+
+    assessSafetyGates(req)
+      .then((res) => {
+        narrativeArrived = true;
+        if (!cancelled) setState({ assessment: toPanelShape(res), loading: false, narrativeLoading: false });
       })
       .catch(() => {
         // 실패해도 '안전'으로 떨어뜨리지 않는다 — fail-safe
@@ -86,6 +112,7 @@ export default function useVesselSafety(vessel) {
               }], checklist: [], is_local_fallback: true, source: 'ERROR',
             },
             loading: false,
+            narrativeLoading: false,
           });
         }
       });
@@ -95,8 +122,8 @@ export default function useVesselSafety(vessel) {
   }, [cargoName, cargoCasNo, berth, isLiquid, adjacentKey]);
 
   // 액체화물선이 아니거나 화물 정보가 없으면 판정 대상이 아니다
-  if (!isLiquid || !cargoName) return { assessment: EMPTY, loading: false };
+  if (!isLiquid || !cargoName) return { assessment: EMPTY, loading: false, narrativeLoading: false };
   return state.assessment
-    ? { assessment: state.assessment, loading: state.loading }
-    : { assessment: null, loading: true };
+    ? { assessment: state.assessment, loading: state.loading, narrativeLoading: state.narrativeLoading }
+    : { assessment: null, loading: true, narrativeLoading: false };
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import BerthAssignmentMap from '../components/dashboard/BerthAssignmentMap';
 import { fetchBerthAssignments } from '../api/backendAdapter';
 import { COLORS } from '../utils/constants';
+import useSensorStore from '../stores/useSensorStore';
 
 function formatKST(iso) {
   return new Date(iso).toLocaleString('ko-KR', { hour12: false, timeZone: 'Asia/Seoul' });
@@ -47,7 +48,7 @@ function periodLabel(row) {
 // 것과 같은 이유다. 이 목록도 지도와 같은 질문("지금 뭐가 배정돼 있나")에
 // 맞춰 GET /dashboard/berth-assignments 기준 점유 목록으로 바꿨다.
 
-function OccupiedList() {
+function OccupiedList({ scope }) {
   const [berths, setBerths] = useState([]);
   const [error, setError] = useState(null);
 
@@ -68,7 +69,13 @@ function OccupiedList() {
 
   // 선석×슬롯 구조를 평평한 행 목록으로 편다 — 이 표는 "지금 뭐가 어디 붙어
   // 있나"만 보면 되므로 빈 슬롯은 뺀다.
-  const rows = berths
+  const requestConsole = useSensorStore((st) => st.requestConsole);
+  // 지도와 목록이 같은 스코프를 본다 — 지도만 온산인데 목록은 전체면 숫자가 안 맞는다
+
+  const scopedBerths = scope === 'onsan'
+    ? berths.filter((b) => b.port_name === '온산항')
+    : berths;
+  const rows = scopedBerths
     .flatMap((b) => b.slots
       .filter((s) => s.status)
       .map((s) => ({ wharf_name: b.wharf_name, ...s })))
@@ -91,6 +98,7 @@ function OccupiedList() {
               <th style={{ padding: '6px 8px' }}>화물</th>
               <th style={{ padding: '6px 8px' }}>입출항</th>
               <th style={{ padding: '6px 8px' }}>승인자</th>
+              <th style={{ padding: '6px 8px' }}>상태</th>
             </tr>
           </thead>
           <tbody>
@@ -101,6 +109,30 @@ function OccupiedList() {
                 <td style={{ padding: '6px 8px', color: COLORS.textSecondary }}>{row.cargo_name || '-'}</td>
                 <td style={{ padding: '6px 8px', color: COLORS.textDim }}>{periodLabel(row)}</td>
                 <td style={{ padding: '6px 8px', color: COLORS.textDim }}>{row.approved_by || '-'}</td>
+                <td style={{ padding: '6px 8px' }}>
+                  {/* 승인 대기 행에서 바로 콘솔로 — 예전엔 이 화면이 "승인은 협상
+                      로그에서"라고 안내만 하고 이동 수단이 없어, 대시보드로 돌아가
+                      그 배를 다시 찾아야 했다(③↔④ 왕복). 클릭하면 콘솔이 이
+                      실선박을 대상으로 열린다 — 판정은 콘솔에서 새로 실행한다. */}
+                  {row.status === 'REQUESTED' ? (
+                    <button
+                      type="button"
+                      onClick={() => requestConsole(row.call_sign)}
+                      title={`${row.vessel_name || row.call_sign} 을(를) 협상 로그에서 승인/반려`}
+                      style={{
+                        border: `1px solid ${COLORS.yellow}`, background: 'transparent',
+                        color: COLORS.yellow, borderRadius: '6px', padding: '2px 8px',
+                        fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      승인 대기 — 협상 로그 →
+                    </button>
+                  ) : (
+                    <span style={{ color: COLORS.teal, fontSize: '12px', fontWeight: 700 }}>
+                      {row.status === 'APPROVED' ? '확정' : row.status}
+                    </span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -111,6 +143,8 @@ function OccupiedList() {
 }
 
 export default function BerthAssignmentPage() {
+  // 기본 스코프는 온산항 — 이 시스템의 관제 대상(2026-08-23 피드백)
+  const [scope, setScope] = useState('onsan');
   return (
     <div className="dashboard-page">
       <div className="glass-card dash-section">
@@ -118,12 +152,12 @@ export default function BerthAssignmentPage() {
           <h3 className="glass-card-title">선석 배정현황</h3>
         </div>
         <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
-          <BerthAssignmentMap />
+          <BerthAssignmentMap scope={scope} onScopeChange={setScope} />
         </div>
       </div>
 
       <div className="dash-section">
-        <OccupiedList />
+        <OccupiedList scope={scope} />
       </div>
     </div>
   );

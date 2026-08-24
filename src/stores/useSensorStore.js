@@ -83,6 +83,11 @@ const useSensorStore = create((set, get) => ({
   // 선박 상세 패널 (지도 마커/입항 목록 클릭 → 선박 여정 뷰)
   selectedVessel: null,
   setSelectedVessel: (v) => set({ selectedVessel: v }),
+  // 다른 화면(배정현황 등)에서 "이 배를 협상 콘솔에서 처리해 달라"는 요청.
+  // 콘솔이 소비하면 clear 한다 — 값이 남아 있으면 라우팅 때마다 다시 열린다.
+  consoleRequest: null,
+  requestConsole: (callsgn) => set({ consoleRequest: { callsgn, at: Date.now() } }),
+  clearConsoleRequest: () => set({ consoleRequest: null }),
 
   // 경고 → 안전 심사 연결. 경고 카드에서 선석을 고르면 그 경고의 내용이 여기 담기고,
   // 안전 심사 폼(SafetyGatesPanel)이 받아서 폼을 채운다.

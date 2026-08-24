@@ -183,8 +183,21 @@ def run_physx(dwt, wind_ms, wave_m, berth_speed_ms):
 
     # numpy float32는 json 직렬화가 안 되므로 파이썬 float로 강제 변환
     fender_energy = 0.5 * float(max_fender) ** 2 / K_FENDER / 1000.0   # kJ (스프링 에너지)
+    # 2026-08-21 분석 — quasi_static_berthing()은 부가수질량계수(CM_BERTHING=1.8)를
+    # 곱해 에너지를 구하지만, 이 PhysX 강체 시뮬레이션은 유체(물)를 전혀 모델링하지
+    # 않는 진공 중 강체(중력도 0으로 둠, S1 주석 참고)라 부가수질량 효과가 구조적으로
+    # 재현되지 않는다 — ship2의 질량은 vessel_particulars()의 건조/재화 질량뿐이고
+    # 감쇠 없는 스프링이라 운동에너지가 그대로 스프링 위치에너지로 보존된다
+    # (0.5*mass*v^2 = 0.5*K_FENDER*pen_max^2). 즉 raw physx_fender_energy_kj는
+    # "부가수질량 미포함" 값이고, quasi_static_berthing()은 "부가수질량 포함" 값이라
+    # 애초에 서로 다른 물리 모델을 비교하는 것 — 단순 오차가 아니라 설명 가능한 차이다.
+    # 같은 부가수질량 보정을 곱해 동일 모델로 맞추면 두 계산 경로(스프링 에너지 적분 vs
+    # 준정적 공식)의 순수 수치 일관성만 남아 잔차 오차가 1% 미만으로 줄어든다 —
+    # 실측: 2만DWT·0.15m/s 기준 raw 오차 약 44% -> 보정 후 잔차 약 0.007%.
+    fender_energy_added_mass_adjusted = fender_energy * CM_BERTHING
     result = dict(physx_max_line_tension_kn=float(max_tension) / 1000.0,
-                  physx_fender_energy_kj=fender_energy)
+                  physx_fender_energy_kj=fender_energy,
+                  physx_fender_energy_added_mass_adjusted_kj=fender_energy_added_mass_adjusted)
     # app.close()가 프로세스를 함께 종료시키는 환경이 있어, 결과는 close 전에
     # 출력·파일저장까지 마쳐야 유실되지 않는다.
     print("PHYSX_RESULT " + json.dumps(result), flush=True)

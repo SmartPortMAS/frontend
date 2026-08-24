@@ -25,7 +25,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SNAP = os.path.join(BASE, "public", "snapshot", "snapshot.json")
-BACKEND = "http://localhost:8001/api/v1"
+BACKEND = "http://127.0.0.1:8001/api/v1"
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 15
 
 
@@ -56,6 +56,26 @@ def main() -> None:
         if v.get("callsgn") in by_cs and v.get("draught")
         and (by_cs[v["callsgn"]].get("cas_no") or by_cs[v["callsgn"]].get("chem_id"))
     ]
+
+    # 승인 대기 중인 배를 앞으로 당긴다.
+    #
+    # 배포본에서 사용자가 실제로 판정을 여는 경로는 "배정현황 → 승인 대기 →
+    # 협상 로그 →" 다. 그런데 targets 는 AIS 목록 순서라, 상한(LIMIT)에 걸리면
+    # 정작 그 배들이 통째로 빠진다(2026-08-24 실측: 승인 대기 7척 중 녹화 0건 —
+    # 배포본에서 전부 "판단 보류"로 보였다).
+    #
+    # 상한을 없애는 대신 순서를 바꾼다. 판정 1건마다 LLM 호출이 있어 상한 자체는
+    # 필요하고, 화면이 지목하는 배가 먼저 담기면 상한이 남은 만큼만 잘린다.
+    try:
+        pending_cs = [p.get("call_sign") for p in get("/approvals/pending")]
+    except Exception as exc:  # 승인 대기 조회 실패는 녹화를 막을 일이 아니다
+        print(f"[경고] 승인 대기 조회 실패 - 기본 순서로 녹화합니다 ({exc})")
+        pending_cs = []
+    order = {cs: i for i, cs in enumerate(pending_cs) if cs}
+    targets.sort(key=lambda v: order.get(v.get("callsgn"), len(order) + 1))
+    if order:
+        covered = sum(1 for v in targets[:LIMIT] if v.get("callsgn") in order)
+        print(f"승인 대기 {len(order)}척 중 {covered}척을 우선 녹화합니다")
 
     now = datetime.datetime.now(datetime.timezone.utc)
     out, cands, seen = {}, {}, set()
@@ -98,9 +118,28 @@ def main() -> None:
     if not out:
         sys.exit("녹화된 판정이 없습니다 - 백엔드가 떠 있는지 확인하세요")
 
+
+    # 챗봇 추천 질문 4개 — 화면(AgentConsole.SUGGESTED)과 문구가 정확히 같아야
+    # 배포본에서 그 버튼이 답을 찾는다. 바꿀 때 양쪽을 같이 바꿀 것.
+    suggested = [
+        "벤젠 취급 시 착용해야 할 보호구는?",
+        "메탄올이 누출되면 어떻게 대처하나요?",
+        "황산은 어떤 물질과 함께 두면 안 되나요?",
+        "톨루엔 인화점이 몇 도인가요?",
+    ]
+    rag = {}
+    for q in suggested:
+        try:
+            rag[q] = post("/rag/query", {"question": q})
+            print(f"[OK] 챗봇: {q[:24]}...")
+        except Exception as e:  # noqa: BLE001
+            print(f"[챗봇 실패] {q[:20]}: {e}")
+
     with io.open(SNAP, encoding="utf-8") as f:
         snap = json.load(f)
     snap["/api/v1/orchestrator/assess"] = out
+    if rag:
+        snap["/api/v1/rag/query"] = rag
     # 브라우저 녹화분(record_agents.mjs)이 있으면 합치고, 없으면 새로 넣는다.
     if cands:
         merged = dict(snap.get("/api/v1/scheduling/candidates") or {})

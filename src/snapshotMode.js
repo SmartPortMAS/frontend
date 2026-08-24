@@ -44,6 +44,24 @@ if (ENABLED && typeof window !== 'undefined') {
       if (group && byGroup[group]) return jsonResponse(byGroup[group]);
     }
 
+    // 챗봇 질의 — 질문 문장으로 갈라 저장해 뒀다(추천 질문 4개는 문구가 고정이라
+    // 미리 녹화할 수 있다). cargo_hint 는 키에서 뺀다 — 같은 질문에 힌트 유무로
+    // 본문이 갈라져도 답은 같아야 하기 때문.
+    // 녹화에 없는 자유 질문은 503 이 아니라 '답변' 형태로 한계를 말한다 —
+    // 챗봇 말풍선에 그대로 떠서, 사용자가 왜 안 되는지 그 자리에서 알 수 있다.
+    if (path.endsWith('/rag/query')) {
+      const byQuestion = snap['/api/v1/rag/query'] || {};
+      let q = null;
+      try { q = (JSON.parse(init?.body ?? '{}').question || '').trim(); } catch { /* 아래 안내 */ }
+      if (q && byQuestion[q]) return jsonResponse(byQuestion[q]);
+      return jsonResponse({
+        answer: '이 공개 데모는 미리 저장된 추천 질문에만 답할 수 있습니다. '
+          + '아래 추천 질문 버튼을 눌러 보세요. 자유 질문은 실시간 관제 서버에서 지원됩니다.',
+        citations: [],
+        confidence: 'low',
+      });
+    }
+
     // 종합 판정은 호출부호로 갈라 저장해 뒀다.
     if (path.endsWith('/orchestrator/assess')) {
       const byCallSign = snap['/api/v1/orchestrator/assess'] || {};
@@ -59,9 +77,16 @@ if (ENABLED && typeof window !== 'undefined') {
 
     // 승인/반려는 상태를 바꾸는 동작이라 정적 배포본에서 할 수 없다.
     // 없는 성공을 지어내지 않고, 왜 안 되는지 그대로 말한다.
+    if (path.endsWith('/orchestrator/assess-and-commit') || path.endsWith('/orchestrator/reject')) {
+      return jsonResponse(
+        { detail: '이 공개 데모는 조회 전용입니다 — 승인·반려는 실시간 관제 서버에서 수행됩니다.', read_only: true },
+        503,
+      );
+    }
+
     if (path.includes('/approvals/') && path.endsWith('/decision')) {
       return jsonResponse(
-        { detail: '스냅샷 배포본은 읽기 전용입니다 - 승인/반려는 실시간 서버에서만 가능합니다' },
+        { detail: '이 공개 데모는 조회 전용입니다 — 승인·반려는 실시간 관제 서버에서 수행됩니다.', read_only: true },
         503,
       );
     }
