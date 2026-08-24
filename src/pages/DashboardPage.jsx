@@ -7,10 +7,31 @@ import PortCallTable from '../components/dashboard/PortCallTable';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import useSensorStore from '../stores/useSensorStore';
 import useDashboardData from '../hooks/useDashboardData';
-import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt } from 'react-icons/fa';
+import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt, FaCloudSun, FaStream, FaListUl } from 'react-icons/fa';
+import { useState, useEffect } from 'react';
+import { COLORS } from '../utils/constants';
+
+// 대시보드 하단 세 패널.
+//
+// 예전엔 셋을 세로로 이어 붙여, 지도 아래로 스크롤이 계속 이어졌다. 세 패널이
+// 나란히 놓이지 않으니 "왜 이게 다 여기 있나"라는 인상도 줬다(2026-08-25 피드백).
+// 한 자리에 탭으로 모아 세로 길이를 3분의 1로 줄인다.
+const LOWER_TABS = [
+  { key: 'berth', label: '선석 기상 점검', icon: FaCloudSun },
+  { key: 'gantt', label: '하역 작업 현황', icon: FaStream },
+  { key: 'calls', label: '입항 선박', icon: FaListUl },
+];
 
 export default function DashboardPage() {
   const gateAssessment = useSensorStore((s) => s.gateAssessment);
+  const [lowerTab, setLowerTab] = useState('berth');
+  const selectedBerthGroup = useSensorStore((s) => s.selectedBerthGroup);
+
+  // 지도에서 선석을 누르면 기상 점검 패널이 그 선석군으로 바뀐다. 탭에 가려
+  // 있으면 눌러도 아무 일도 없어 보이므로, 그 탭으로 데려온다.
+  useEffect(() => {
+    if (selectedBerthGroup) setLowerTab('berth');
+  }, [selectedBerthGroup]);
   const { data } = useDashboardData();
 
   // KPI는 실AIS(+실화물 조인) 기준으로 센다 — data.vessels는 데모 시나리오 선박이라
@@ -63,7 +84,10 @@ export default function DashboardPage() {
           뷰포트에 맞춰 늘리되(62vh) 작은 화면에서도 지도 구실을 하도록 하한을 둔다. */}
       <div className="glass-card dash-section">
         <div className="glass-card-header">
-          <h3 className="glass-card-title">온산항 관제 지도</h3>
+          {/* 제목에 주어를 밝힌다 — 배정현황 지도와 같은 지리를 쓰지만 얹은 변수가
+              다르다(이쪽은 선박 위치와 선석 기상, 저쪽은 선석 점유). 밝히지 않으면
+              같은 화면을 두 번 만든 것처럼 보인다(2026-08-25 피드백). */}
+          <h3 className="glass-card-title">온산항 관제 지도 — 선박 위치 · 선석 기상</h3>
         </div>
         <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
           <PortMap />
@@ -75,25 +99,32 @@ export default function DashboardPage() {
         <WeatherPanel />
       </div>
 
-      {/* 선석별 하역 판정 (온산 MVP, Full Width) */}
-      <div className="dash-section">
-        <BerthWeatherPanel />
+      {/* 하단 3패널 — 탭 하나로 (위 LOWER_TABS 주석 참고) */}
+      <div className="glass-card dash-section">
+        <div style={{ display: 'flex', borderBottom: `1px solid ${COLORS.glassBorder}` }}>
+          {LOWER_TABS.map((t) => {
+            const Icon = t.icon;
+            const on = lowerTab === t.key;
+            return (
+              <button key={t.key} type="button" onClick={() => setLowerTab(t.key)} style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                padding: '11px 0', cursor: 'pointer', background: 'none', border: 'none',
+                borderBottom: `2px solid ${on ? COLORS.teal : 'transparent'}`,
+                color: on ? COLORS.teal : COLORS.textDim,
+                fontWeight: on ? 800 : 600, fontSize: 13.5,
+              }}><Icon /> {t.label}</button>
+            );
+          })}
+        </div>
+        {lowerTab === 'berth' && <BerthWeatherPanel />}
+        {lowerTab === 'gantt' && <GanttChart />}
+        {lowerTab === 'calls' && <PortCallTable />}
       </div>
 
       {/* 선석 배정 시뮬레이션 패널은 내렸다(2026-08-21) — 협상 로그(우하단 콘솔)의
           스케줄링 발화가 같은 배정 경로(전용/대체/정박지)를 이미 보여준다. 같은
           판정을 두 곳에 그리면 어느 쪽이 정본인지 화면만 봐서는 알 수 없다.
           판정 실행과 결과 표시는 협상 로그 하나로 단일화. */}
-      {/* Gantt Chart (Full Width) */}
-      <div className="dash-section">
-        <GanttChart />
-      </div>
-
-      {/* 입항 선박 목록 (Full Width) */}
-      <div className="dash-section">
-        <PortCallTable />
-      </div>
-
       {/* 화면에서 내린 것들 —
           · 탱크 저장 현황: 센서 데이터 탭의 탱크 센서와 같은 값을 두 번 그리고 있었다.
           · 시간대별 처리량/안전지수 차트: chartData가 코드에 박힌 고정 배열이었다.
