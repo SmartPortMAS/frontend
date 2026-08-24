@@ -8,6 +8,7 @@
  *       기본 GULF BAYNUNAH — 표와 콘솔이 같은 화물을 보는 배만 쓴다.
  */
 import { chromium } from 'playwright';
+import { writeFile } from 'node:fs/promises';
 
 const VESSEL = process.argv[2] || 'GULF BAYNUNAH';
 const OUT = 'C:/Users/hwham/Documents/멀티 에이전트 기반 액체화물 하역 스케줄링 및 관제 시스템/울산항만_프로젝트_최종본/시연영상';
@@ -62,7 +63,14 @@ async function clickAt(loc) {
   await loc.click();
 }
 const beat = (ms) => page.waitForTimeout(ms);
-const mark = (s) => console.log(`  [${((Date.now() - T0) / 1000).toFixed(1).padStart(5)}s] ${s}`);
+// 화면 전환 시각을 기록해 둔다. 내레이션 타이밍을 손으로 맞추면 자막이
+// 화면보다 앞서 뜬다(2026-08-24 피드백: 1~2초 빠름). 실측에서 역산한다.
+const marks = [];
+const mark = (s) => {
+  const t = (Date.now() - T0) / 1000;
+  marks.push({ at: +t.toFixed(2), label: s });
+  console.log(`  [${t.toFixed(1).padStart(5)}s] ${s}`);
+};
 
 const T0 = Date.now();
 console.log(`촬영 시작 — 대상 ${VESSEL}`);
@@ -148,6 +156,9 @@ await beat(2500);
 console.log(`\n총 길이 약 ${((Date.now() - T0) / 1000).toFixed(0)}초 · 페이지 오류 ${errs.length}건`);
 errs.slice(0, 3).forEach((e) => console.log('  !', e));
 await ctx.close();          // 여기서 영상 파일이 저장된다
+// 내레이션 배치가 쓸 실측 타임라인
+await writeFile(`${OUT}/_marks.json`, JSON.stringify({ marks }, null, 2), 'utf-8');
+console.log(`실측 타임라인: _marks.json (${marks.length}개)`);
 await browser.close();
 const vp = await page.video()?.path().catch(() => null);
 console.log('영상:', vp || OUT);
