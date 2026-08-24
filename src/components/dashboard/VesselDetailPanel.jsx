@@ -139,6 +139,8 @@ export default function VesselDetailPanel() {
         </div>
         <button
           onClick={() => setSelectedVessel(null)}
+          aria-label="닫기"
+          title="닫기"
           style={{ background: 'none', border: 'none', color: COLORS.textSecondary, cursor: 'pointer', fontSize: '18px', padding: '4px' }}
         >
           <FaTimes />

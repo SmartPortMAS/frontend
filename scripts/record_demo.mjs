@@ -66,6 +66,16 @@ async function clickAt(loc, opts = {}) {
   await loc.click({ force: Boolean(opts.force), timeout: 15000 });
 }
 const beat = (ms) => page.waitForTimeout(ms);
+/** 화면을 내린다.
+ *
+ * page.mouse.wheel 을 쓰면 안 된다 — 커서가 지도 위에 있을 때 굴리면 Leaflet 이
+ * 확대·이동을 먹어, 부두가 사라지고 내륙만 비치는 화면이 영상에 남는다
+ * (2026-08-25 실측: 선석 배정현황이 학남리 산자락을 보여주고 있었다).
+ * 스크롤 컨테이너를 직접 움직이면 지도는 건드리지 않는다. */
+const scrollBy = (dy) => page.evaluate((d) => {
+  const el = document.querySelector('.page-content');
+  if (el) el.scrollTop += d; else window.scrollBy(0, d);
+}, dy);
 // 화면 전환 시각을 기록해 둔다. 내레이션 타이밍을 손으로 맞추면 자막이
 // 화면보다 앞서 뜬다(2026-08-24 피드백: 1~2초 빠름). 실측에서 역산한다.
 const marks = [];
@@ -93,38 +103,77 @@ await page.waitForFunction(() => {
 mark('데이터 로드');
 await beat(1200);
 mark('장면1 대시보드');
-await glide(1280, 75);                 // 헤더의 기상·수집 상태로 시선 유도
-await beat(1800);
-await glide(1700, 75);
-await beat(1500);
-await glide(960, 480, 34);             // 지도 중앙
-await beat(1100);
-await page.mouse.wheel(0, 300);        // 아주 천천히 훑는다
-await beat(1900);
-await page.mouse.wheel(0, 300);
-await beat(1900);
-await page.mouse.wheel(0, -600);
-await beat(1500);
+await glide(1280, 75);                 // 헤더의 기상·수집 상태
+await beat(1300);
+await glide(760, 250, 26);             // KPI 4장
+await beat(1400);
+await glide(960, 620, 30);             // 지도
+await beat(1200);
+
+// 선박 상세 — 지도의 배를 눌러 판정 근거를 펼치는 자리.
+//
+// 이 화면이 "배 한 척에 대해 무엇을 아는가"를 한눈에 보여준다(안전 심사 ·
+// 접안 가능 선석 · 관련 경고). 영상에 빠져 있어 넣는다(2026-08-25 요청).
+const pick = await page.evaluate(() => {
+  const map = document.querySelector('.leaflet-container')?.getBoundingClientRect();
+  if (!map) return false;
+  for (const el of document.querySelectorAll('.vessel-marker--danger')) {
+    const r = el.getBoundingClientRect();
+    if (r.top > map.top + 90 && r.bottom < map.bottom - 90
+        && r.left > map.left + 90 && r.right < map.right - 90) {
+      el.setAttribute('data-pick', '1');
+      return true;
+    }
+  }
+  return false;
+});
+if (pick) {
+  await clickAt(page.locator('[data-pick="1"]'), { force: true });
+  await page.waitForFunction(
+    () => /배정 가능 선석/.test(document.body.innerText), { timeout: 30000 },
+  ).catch(() => {});
+  await beat(700);
+  mark('선박 상세');
+  await beat(4200);
+  await glide(1700, 500, 24);          // 상세 패널을 훑는다
+  await page.evaluate(() => {
+    const el = [...document.querySelectorAll('div')].find(
+      (d) => d.scrollHeight > d.clientHeight + 40 && /배정 가능 선석/.test(d.innerText),
+    );
+    if (el) el.scrollTop += 260;
+  });
+  await beat(3200);
+  mark('선박 상세 · 경고');
+  await beat(3600);
+  const closeBtn = page.getByRole('button', { name: '닫기' }).first();
+  if (await closeBtn.count()) {
+    await closeBtn.click({ force: true }).catch(() => {});
+    await page.waitForFunction(
+      () => !/배정 가능 선석/.test(document.body.innerText), { timeout: 10000 },
+    ).catch(() => console.log('  [경고] 선박 상세가 닫히지 않았습니다'));
+  }
+  await beat(500);
+}
 
 // ── 장면 2 · 협상 로그 (0:25–1:05) ───────────────────────────────────
 mark('장면2 선석 배정현황');
 await clickAt(page.getByRole('link', { name: /선석|배정/ }).first());
-await beat(3200);
-await page.mouse.wheel(0, 420);        // 선석 점유 목록이 보이게
 await beat(2200);
+await scrollBy(420);                   // 선석 점유 목록이 보이게
+await beat(1600);
 
 const row = page.locator('tr', { hasText: VESSEL });
 await row.scrollIntoViewIfNeeded();
-await beat(1200);
+await beat(900);
 mark(`${VESSEL} 행 → 협상 로그`);
 await clickAt(row.locator('button', { hasText: '협상 로그' }));
-await beat(1800);
+await beat(1300);
 
 mark('종합 판정 실행');
 await clickAt(page.getByRole('button', { name: /종합 판정/ }).first());
 await page.waitForSelector('text=최종 판단', { timeout: 120000 });
 mark('판정 완료 — 3개 에이전트 로그');
-await beat(2000);
+await beat(1500);
 
 // 에이전트 발화를 하나씩 짚는다.
 //
@@ -145,7 +194,7 @@ for (const [label, needle] of [
     await el.scrollIntoViewIfNeeded().catch(() => {});
     await beat(600);
     mark(label);
-    await beat(5000);            // 그 발화를 설명할 시간
+    await beat(4200);            // 그 발화를 설명할 시간
   }
 }
 
@@ -154,12 +203,12 @@ mark('승인');
 const ok = page.getByRole('button', { name: /^승인$/ }).first();
 if (await ok.count()) {
   await clickAt(ok);
-  await beat(3600);
+  await beat(3000);
   mark('배정현황 반영 확인');
-  await glide(700, 700, 30);
-  await beat(2600);
-  await page.mouse.wheel(0, -300);
-  await beat(2000);
+  await glide(700, 700, 26);
+  await beat(2200);
+  await scrollBy(-300);
+  await beat(1600);
 } else {
   console.log('  [경고] 승인 버튼 없음 — 다른 배로 재촬영 필요');
 }
@@ -178,18 +227,25 @@ if (await qtab.count() || await qtabAlt.count()) {
       () => /출처|인화점|보호구|취급|누출/.test(document.body.innerText),
       { timeout: 90000 },
     ).catch(() => {});
-    await beat(800);
+    await beat(700);
     mark('질의응답 답변');
-    await beat(5200);
+    await beat(4200);
   }
 }
 
 // ── 안전/환경 관제 ───────────────────────────────────────────────────
-mark('장면4 안전/환경 관제');
 await clickAt(page.getByRole('link', { name: /안전|환경/ }).first());
-await beat(4000);
-await page.mouse.wheel(0, 300);
-await beat(2400);
+// 안전 지수 레이더는 늦게 그려진다. '불러오는 중…'이 사라지고 차트가 실제로
+// 나온 뒤에 지점을 찍어야, 잘라낸 영상에서 빈 카드를 보여주지 않는다.
+await page.waitForFunction(() => {
+  const t = document.body.innerText;
+  return !/불러오는 중/.test(t) && document.querySelectorAll('svg.recharts-surface, svg').length > 2;
+}, { timeout: 60000 }).catch(() => console.log('  [경고] 안전 지수 차트 대기 시간 초과'));
+await beat(1200);
+mark('장면4 안전/환경 관제');
+await beat(2600);
+await glide(1500, 400, 24);   // 오른쪽 위험 선석 패널
+await beat(3000);
 
 // ── 3D 관제 ──────────────────────────────────────────────────────────
 const twin = page.getByRole('link', { name: /3D|관제 화면/ }).first();
@@ -202,9 +258,13 @@ if (await twin.count()) {
     () => document.querySelector('canvas') && /선석 현황|온산 AIS/.test(document.body.innerText),
     { timeout: 120000 },
   ).catch(() => {});
-  await beat(1200);
+  // 캔버스와 HUD 가 붙었다고 장면이 그려진 것은 아니다. WebGL 이 첫 프레임을
+  // 그리기까지 실측 6.7초가 더 걸렸고, 그 사이 화면은 빈 남색이었다
+  // (2026-08-25: 지점을 준비 신호에 찍었더니 빈 화면이 영상에 남았다).
+  // 넉넉히 기다린 뒤 지점을 찍는다 — 이 대기는 어차피 trim_gaps 가 잘라낸다.
+  await beat(9000);
   mark('3D 관제 화면');
-  await beat(6000);
+  await beat(5200);
 }
 
 // ── 센서 데이터 ──────────────────────────────────────────────────────
@@ -217,16 +277,16 @@ if (await sensor.count()) {
     () => /저장탱크|이송배관|게이트/.test(document.body.innerText),
     { timeout: 60000 },
   ).catch(() => {});
-  await beat(900);
+  await beat(800);
   mark('센서 데이터');
-  await beat(4200);
-  await page.mouse.wheel(0, 260);
-  await beat(4000);
+  await beat(3600);
+  await scrollBy(260);
+  await beat(3400);
 }
 
 mark('대시보드로 복귀');
 await clickAt(page.getByRole('link', { name: /^대시보드$/ }).first(), { force: true });
-await beat(3000);
+await beat(2500);
 
 console.log(`\n총 길이 약 ${((Date.now() - T0) / 1000).toFixed(0)}초 · 페이지 오류 ${errs.length}건`);
 errs.slice(0, 3).forEach((e) => console.log('  !', e));

@@ -101,7 +101,7 @@ export default function BerthWeatherPanel() {
       }}
     >
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 className="glass-card-title"><FaAnchor style={{ marginRight: '8px', color: COLORS.teal }} />선석별 하역 판정 (온산 MVP)<AgentChip agent="weather" /></h3>
+        <h3 className="glass-card-title"><FaAnchor style={{ marginRight: '8px', color: COLORS.teal }} />선석별 하역 가능 판정<AgentChip agent="weather" /></h3>
         <span style={{ fontSize: '12px', color: COLORS.textDim }}>터미널 입항정보 9.8 실측 임계 · 정상→하역중단→이안→호스분리 4단계</span>
       </div>
 
@@ -212,8 +212,8 @@ export default function BerthWeatherPanel() {
             )}
             <div style={{ fontSize: '11px', color: COLORS.textDim }}>
               {verdict.is_local_fallback
-                ? '※ 백엔드 미응답 — 로컬 임계표로 계산한 결과입니다 (위 입력값 사용)'
-                : '※ 백엔드 기상 에이전트 판정 — 서버가 DB 실측 관측치로 직접 판단합니다 (위 입력값은 폴백 계산용)'}
+                ? '※ 관측값을 받지 못해 위 입력값으로 계산한 결과입니다'
+                : '※ 실측 관측값으로 판정했습니다 (위 입력칸은 참고용)'}
             </div>
             {verdict.forecast_warning && (
               <div style={{ fontSize: '13px', color: COLORS.yellow, display: 'flex', gap: '6px', alignItems: 'center' }}>

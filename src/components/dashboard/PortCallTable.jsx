@@ -104,7 +104,7 @@ export default function PortCallTable() {
   // 최근 수신 순 기본 정렬 — 이전 동작(입항 최신순 정렬)과 동일한 기본값 유지.
   const [sort, setSort] = useState({ key: 'received_at_utc', dir: 'desc' });
   const [page, setPage] = useState(1);
-  const [cargoFilter, setCargoFilter] = useState('ALL');
+  const [cargoFilter, setCargoFilter] = useState('LIQUID');
 
   const handleSort = (key) => {
     setSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));

@@ -260,7 +260,7 @@ export default function SafetyGatesPanel() {
         <h3 className="glass-card-title">
           <FaShieldAlt style={{ marginRight: '8px', color: COLORS.teal }} />신규 입항 안전 심사 — 혼재금지 · IMDG 격리 · 포장등급
         </h3>
-        <span style={{ fontSize: '12px', color: COLORS.textDim }}>규칙엔진이 하한 확정 · LLM은 상향과 설명만 (Neo4j 지식그래프)</span>
+        <span style={{ fontSize: '12px', color: COLORS.textDim }}>화물 조합의 혼재 위험을 봅니다</span>
       </div>
 
       {/* 경고에서 넘어왔을 때 무엇이 채워졌는지 밝힌다 — 조용히 바뀌면 뭘 심사하는지 모른다 */}

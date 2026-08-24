@@ -35,7 +35,15 @@ export default function ActiveRiskPanel() {
   const ackAlert = useSensorStore((s) => s.ackAlert);
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
 
-  const alerts = data?.alerts ?? [];
+  // 이 패널의 주어는 '선석'이다. 선석이 특정되지 않은 경고는 여기 두지 않는다.
+  //
+  // 자동배정 결과 경고(전 후보 부적합·적합 선석 없음)는 선석이 비어 있어 전부
+  // '(선석 미상)' 한 덩어리로 묶였고, 같은 문장이 열세 줄씩 반복돼 정작 봐야 할
+  // 혼재금지·흘수 경고를 덮었다(2026-08-25 실측: 110건 중 75건). 그 경고들은
+  // 선석 안전이 아니라 배정 결과라, 배정현황과 협상 로그에서 다룰 일이다.
+  // 헤더 경고 벨에는 전량 그대로 남는다 — 화면에서 지우는 게 아니라 자리를 가린다.
+  const allAlerts = data?.alerts ?? [];
+  const alerts = useMemo(() => allAlerts.filter((a) => a.berth_name), [allAlerts]);
   const vessels = data?.real_traffic ?? [];
   const berths = useMemo(() => groupAlertsByBerth(alerts), [alerts]);
 
@@ -74,7 +82,7 @@ export default function ActiveRiskPanel() {
       </div>
 
       <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginBottom: '10px', lineHeight: 1.5 }}>
-        경고 {alerts.length}건 · 미확인 {unackedTotal}건 — 혼재금지·IMDG 격리·흘수 (safety 규칙엔진)
+        혼재금지 · IMDG 격리 · 흘수 경고 {alerts.length}건 (미확인 {unackedTotal}건)
         <br />
         선석을 누르면 왼쪽 심사 폼이 그 선석의 재항 화물로 채워집니다.
       </div>
