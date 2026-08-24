@@ -18,3 +18,5 @@ uiverify.mjs
 mapverify.mjs
 *.mjs
 !scripts/*.mjs
+scripts/capture_*.mjs
+scripts/shot_*.mjs

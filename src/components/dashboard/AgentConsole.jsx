@@ -354,7 +354,7 @@ export default function AgentConsole() {
         const { assignmentId } = await rejectAssignment({
           vesselName: target.vessel_name,
           callSign: target.callsgn,
-          chemId: target.cargo?.chem_id,
+          chemId: (target.cargo ?? target.assumed_cargo)?.chem_id,
           rejectedBy: OPERATOR_NAME,
           reason: orchestration?.summary,
         });
@@ -363,10 +363,18 @@ export default function AgentConsole() {
         return;
       }
       // 승인만 판정과 확정을 한 번에 한다.
+      // 판정에 쓴 화물과 확정에 쓰는 화물이 같아야 한다.
+      //
+      // 종합 판정은 실신고 화물이 없으면 선종 추정 화물(assumed_cargo)로 판단하는데,
+      // 확정은 target.cargo 만 보고 있었다. 그래서 선종 추정 선박은 '승인가능'
+      // 판정을 받고 승인 버튼까지 떠 놓고, 누르면 "화물 'undefined' 식별 불가"로
+      // 실패했다 — 판정과 확정이 서로 다른 입력을 본 것이다(2026-08-24 실측:
+      // 판정 대상 60척 중 선종 추정이 다수라 시연 흐름이 통째로 막혔다).
+      const commitCargo = target.cargo ?? target.assumed_cargo;
       const outcome = await commitAssignment({
-        cargoName: target.cargo?.name,
-        chemId: target.cargo?.chem_id,
-        casNo: target.cargo?.cas_no,
+        cargoName: commitCargo?.name,
+        chemId: commitCargo?.chem_id,
+        casNo: commitCargo?.cas_no,
         dwt: null,
         draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
