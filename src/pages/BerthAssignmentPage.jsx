@@ -153,9 +153,7 @@ export default function BerthAssignmentPage() {
     <div className="dashboard-page">
       <div className="glass-card dash-section">
         <div className="glass-card-header">
-          {/* 대시보드 지도와 주어가 다르다 — 저쪽은 선박 위치와 선석 기상,
-              이쪽은 선석 점유와 배정이다. 제목에 밝혀 둔다. */}
-          <h3 className="glass-card-title">선석 배정현황 — 선석 점유 · 배정</h3>
+          <h3 className="glass-card-title">선석 배정현황</h3>
         </div>
         <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
           <BerthAssignmentMap scope={scope} onScopeChange={setScope} />

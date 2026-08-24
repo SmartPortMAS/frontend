@@ -101,7 +101,7 @@ export default function BerthWeatherPanel() {
       }}
     >
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 className="glass-card-title"><FaAnchor style={{ marginRight: '8px', color: COLORS.teal }} />선석 기상 점검 — 배 없이 선석만<AgentChip agent="weather" /></h3>
+        <h3 className="glass-card-title"><FaAnchor style={{ marginRight: '8px', color: COLORS.teal }} />선석별 하역 가능 판정<AgentChip agent="weather" /></h3>
         <span style={{ fontSize: '12px', color: COLORS.textDim }}>터미널 입항정보 9.8 실측 임계 · 정상→하역중단→이안→호스분리 4단계</span>
       </div>
 
