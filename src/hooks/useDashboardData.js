@@ -74,6 +74,8 @@ async function doRefresh() {
         anchorage_status: backend?.anchorages ?? [],
         draught_checks: backend?.draughtChecks ?? [],
         berth_cargo: backend?.berthCargo ?? [],
+        // 화면엔 안 그리지만 승인 대기 건 조회에 쓰는 판정 대상(어댑터 주석 참고)
+        offscreen_judgeable: backend?.offscreenJudgeable ?? [],
         // 선석별 재항 소요시간 실측 통계 — 점유 선석의 해제 시각 추정 근거
         berth_dwell: backend?.berthDwell ?? [],
         // GanttChart가 기다리는 "실제 접안 이력" — base의 데모 작업(is_real_record=false)은

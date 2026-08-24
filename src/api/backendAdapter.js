@@ -266,11 +266,11 @@ export async function fetchBackendDashboard() {
   }
 
   // 지도에 그릴 수 있는 선박(좌표 있음 + bbox 내 + 최근 신호). 상한을 걸기 전 전체.
-  const presentVessels = (vessels ?? [])
+  const inBbox = (vessels ?? [])
     .filter((r) => r.latitude != null && r.longitude != null)
     .filter(inUlsanBbox)
-    .filter(isRecentlyPresent)
     .sort((a, b) => new Date(b.received_at_utc) - new Date(a.received_at_utc));
+  const presentVessels = inBbox.filter(isRecentlyPresent);
 
   // 호출부호는 AIS 에서 선택 입력이라 '500'·'301'·'1263'·'ABCD' 같은 값이 실제로
   // 들어온다(실측 4쌍이 서로 다른 배끼리 겹쳤다). 화물·선종을 이 키로 붙이므로,
@@ -308,6 +308,21 @@ export async function fetchBackendDashboard() {
       return [...judgeable, ...rest.slice(0, Math.max(0, MAP_VESSEL_LIMIT - judgeable.length))];
     })(),
     realTrafficTotal: presentVessels.length,
+    // AIS 신호가 끊긴 액체화물선 — 화면(지도·목록)에는 넣지 않고 '조회용'으로만 싣는다.
+    //
+    // 배정과 화면이 "이 배가 지금 여기 있다"를 다른 기준으로 본다:
+    //   배정(arrival_watcher) = PORT-MIS 재항 기록(출항 신고 없음)
+    //   화면(real_traffic)    = AIS 신호 신선도
+    // 그래서 PORT-MIS 상 재항인데 AIS 가 끊긴 배가 추천·승인 대기에는 오르고
+    // 화면 판정 목록에는 없는 상태가 생긴다(2026-08-24 실측: 승인 대기 9건이
+    // 전부 NO_SIGNAL 이라 "협상 로그 →" 가 엉뚱한 배를 열었다).
+    //
+    // 이 배들을 지도·목록에 올리면 12일 전 위치를 현재처럼 보여주게 되므로 넣지
+    // 않는다. 대신 승인 대기 건에서 지목될 때만 콘솔이 여기서 찾아 쓴다.
+    offscreenJudgeable: inBbox
+      .filter((r) => !isRecentlyPresent(r))
+      .map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns))
+      .filter((v) => v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo)),
     // 선석별 재항 위험물 화물 원본 — 안전 심사 폼이 "재항 선박에서 불러오기"에 쓴다.
     // (화물을 수기로 고르는 대신 지금 실제로 붙어 있는 배를 선택하게 하기 위함)
     berthCargo: berthCargo ?? [],

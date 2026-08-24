@@ -229,8 +229,13 @@ export default function AgentConsole() {
   // 폴백 없음 — 실화물이 확인된 배만 판정 대상으로 둔다.
   // mock 데모 선박으로 대체하면 실제로 없는 배를 판정하게 된다.
   const vessels = realCargoVessels;
+  // 승인 대기 건이 지목한 배가 화면 목록에 없을 수 있다(AIS 신호 끊김 —
+  // 어댑터 offscreenJudgeable 주석 참고). 그 배만 예외로 찾아 쓴다.
+  const offscreen = data?.offscreen_judgeable ?? [];
   // 우선순위: 콘솔에서 직접 고른 선박 > 지도/목록에서 클릭한 선박(전역) > 첫 번째 후보
-  const target = localTarget && vessels.some((v) => v.port_call_id === localTarget.port_call_id)
+  // localTarget 이 화면 목록에 없어도(신호 끊긴 승인 대기 배) 유효한 대상으로 둔다 —
+  // 예전엔 목록 멤버십을 요구해서, 그런 배를 지목하면 조용히 첫 배로 되돌아갔다.
+  const target = localTarget
     ? localTarget
     : selectedVessel && vessels.some((v) => v.port_call_id === selectedVessel.port_call_id)
       ? selectedVessel
@@ -242,10 +247,10 @@ export default function AgentConsole() {
   // 가짜 항목을 만들어 채우지 않는다.
   useEffect(() => {
     if (!consoleRequest) return;
-    const hit = vessels.find(
-      (v) => v.callsgn && consoleRequest.callsgn
-        && v.callsgn.trim().toUpperCase() === consoleRequest.callsgn.trim().toUpperCase(),
-    );
+    const want = (consoleRequest.callsgn || '').trim().toUpperCase();
+    const match = (v) => v.callsgn && v.callsgn.trim().toUpperCase() === want;
+    // 화면 목록 우선, 없으면 신호 끊긴 판정 대상에서 찾는다.
+    const hit = vessels.find(match) || offscreen.find(match);
     if (hit) setLocalTarget(hit);
     setTab('negotiation');
     setOpen(true);
@@ -515,6 +520,13 @@ export default function AgentConsole() {
             border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12.5,
           }}
         >
+          {target && !vessels.some((v) => v.port_call_id === target.port_call_id) && (
+            /* 신호가 끊겨 목록에 없는 배를 승인 대기에서 지목한 경우 —
+               선택된 사실이 보이도록 이 항목만 임시로 띄운다 */
+            <option key={target.port_call_id} value={target.port_call_id}>
+              {target.vessel_name} · {(target.cargo ?? target.assumed_cargo)?.name} (AIS 신호 없음)
+            </option>
+          )}
           {vessels.map((v) => (
             <option key={v.port_call_id} value={v.port_call_id}>
               {/* 부두 이름은 안 보여준다 — 이 콘솔은 항상 탐색모드로 새로 추천받는다(위
