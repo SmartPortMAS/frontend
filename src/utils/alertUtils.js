@@ -31,6 +31,9 @@ export const TYPE_LABEL = {
   SEGREGATION: '혼재금지',
   DRAUGHT: '흘수/UKC',
   UNIDENTIFIED_CARGO: '화물 미확인',
+  // arrival_watcher 자동배정 결과 — 표기가 없으면 화면에 영문 코드가 그대로 나온다
+  ALL_CANDIDATES_UNSAFE: '전 후보 부적합',
+  NO_ELIGIBLE_BERTH: '적합 선석 없음',
 };
 
 export const typeLabel = (type) => TYPE_LABEL[type] || type;
@@ -81,4 +84,19 @@ export function splitAlertMessage(message) {
     head: msg.slice(0, cut),
     detail: msg.slice(cut + 2).replace(/\)\s*$/, ''),
   };
+}
+
+
+/**
+ * 경고 결론을 "대상"과 "판정"으로 한 번 더 가른다.
+ *
+ * 자동배정 경고의 결론은 "RYOUMEI MARU: 자동 배정 불가 — 전 후보 배정 불가(안전)"
+ * 처럼 '대상: 판정' 꼴이다. 3D 상단 배너처럼 폭이 좁은 자리에서는 대상과 판정을
+ * 따로 세워야 눈이 잡는다 — 한 줄로 이으면 결국 줄글이 된다.
+ */
+export function alertSubject(alert) {
+  const { head } = splitAlertMessage(alert?.message);
+  const cut = head.indexOf(': ');
+  if (cut === -1) return { subject: alert?.berth_name || '', verdict: head };
+  return { subject: head.slice(0, cut), verdict: head.slice(cut + 2) };
 }

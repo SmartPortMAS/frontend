@@ -10,6 +10,7 @@ import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
 import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
+import { alertSubject, levelStyle, typeLabel } from '../utils/alertUtils';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
 // 실행: D:\omniverse\start_twin_stream.bat (Isaac Sim 스트리밍 + 웹 뷰어 동시 기동)
@@ -19,6 +20,9 @@ import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle
 const OMNIVERSE_PORTS = [5173, 5174, 5175, 5176];
 const omniverseUrl = (port) => `http://localhost:${port}`;
 
+// 경고 한 건이 화면에 머무는 시간. 결론만 보여주므로 5초면 충분히 읽힌다.
+const TICKER_ROTATE_MS = 5000;
+
 export default function DigitalTwinPage() {
   // 트윈 선박을 실 AIS·재항 화물로 채운다 (예전엔 스토어에 6척이 하드코딩돼 있었다)
   useLiveTwinShips();
@@ -26,7 +30,19 @@ export default function DigitalTwinPage() {
   // 상단 띠에 흘릴 실경고 — 심각한 것부터 최대 6건. 화면 폭이 한정돼 있어
   // 전부 흘리면 한 바퀴가 너무 길어진다(현재 36건).
   const { data: dashForTicker } = useDashboardData();
-  const tickerItems = (dashForTicker?.alerts ?? []).slice(0, 6);
+  const allAlerts = dashForTicker?.alerts ?? [];
+  const tickerItems = allAlerts.slice(0, 6);
+  const dangerCount = allAlerts.filter((a) => a.level === 'DANGER').length;
+  // 한 건씩 세워서 보여주고 자동으로 넘긴다(아래 배너 주석 참고)
+  const [tickerIdx, setTickerIdx] = useState(0);
+  useEffect(() => {
+    if (tickerItems.length < 2) return undefined;
+    const id = setInterval(
+      () => setTickerIdx((i) => (i + 1) % tickerItems.length),
+      TICKER_ROTATE_MS,
+    );
+    return () => clearInterval(id);
+  }, [tickerItems.length]);
   const [showMap, setShowMap] = useState(false);
   const [showOmniverseStream, setShowOmniverseStream] = useState(false);
   // 'checking' | 'ok' | 'unreachable'
@@ -86,44 +102,59 @@ export default function DigitalTwinPage() {
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       <Scene />
       
-      {/* 관제 경고 전광판 — 실경고가 있을 때만 띄운다(빈 띠를 굴리지 않는다) */}
-      {tickerItems.length > 0 && (
-      <div style={{
-        position: 'absolute', top: 0, left: 0, width: '100%', height: '30px',
-        background: 'linear-gradient(90deg, rgba(15,23,42,1) 0%, rgba(220,38,38,0.8) 50%, rgba(15,23,42,1) 100%)',
-        zIndex: 2000, display: 'flex', alignItems: 'center', color: '#fff', fontSize: '14px', fontWeight: 'bold',
-        overflow: 'hidden', borderBottom: '2px solid #ef4444'
-      }}>
-        <div style={{
-          whiteSpace: 'nowrap',
-          // 읽을 시간을 준다. 20초는 경고 문구(선석·물질·격리코드가 다 들어간다)를
-          // 눈으로 따라가기에 너무 빨랐다. 항목 수에 비례해 늘려 항목이 많아도
-          // 한 건당 읽는 속도가 같게 한다.
-          animation: `marquee ${Math.max(45, tickerItems.length * 11)}s linear infinite`,
-          display: 'flex', gap: '50px'
-        }}>
-          {/* 실경고(safety 규칙엔진). 예전엔 "T005 탱크 수위 90%" 같은 문구가 박혀
-              있었는데, 탱크 수위는 우리가 수집하지 않는 센서값이라 화면에서 진짜처럼
-              보이는 가짜였다. 지금은 경고 API 가 준 것만 흘린다.
-              경고가 없으면 티커 자체를 띄우지 않는다(빈 띠를 굴리지 않는다). */}
-          {tickerItems.map((a, i) => (
-            <span key={`${a.type}-${i}`}>
-              {a.level === 'DANGER'
-                ? <FaExclamationTriangle color="#ef4444" />
-                : <FaExclamationTriangle color="#f59e0b" />}
-              {' '}[{a.level === 'DANGER' ? '위험' : '경고'}] {a.message}
+      {/* 관제 경고 배너 — 한 건씩 세워 놓고 자동으로 넘긴다.
+          예전엔 경고 전문을 가로로 흘렸는데(marquee), 메시지가 189~229자라
+          줄글이 지나가는 꼴이 되어 읽히지 않았다(2026-08-24 피드백).
+          결론만 남기고 대상·유형을 따로 세운다 — 상세는 안전/환경 관제에서 본다. */}
+      {tickerItems.length > 0 && (() => {
+        const a = tickerItems[Math.min(tickerIdx, tickerItems.length - 1)];
+        const { subject, verdict } = alertSubject(a);
+        const st = levelStyle(a.level);
+        return (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, width: '100%', height: 38,
+            background: 'rgba(11,18,32,0.94)', borderBottom: `2px solid ${st.color}`,
+            zIndex: 2000, display: 'flex', alignItems: 'center', gap: 10,
+            padding: '0 14px', color: '#e8eef7', fontSize: 13, boxSizing: 'border-box',
+          }}>
+            <FaExclamationTriangle color={st.color} style={{ flexShrink: 0 }} />
+            <span style={{
+              flexShrink: 0, background: st.color, color: '#0b1220', fontWeight: 800,
+              fontSize: 11, padding: '2px 7px', borderRadius: 4, letterSpacing: '0.02em',
+            }}>{st.label}</span>
+            <span style={{
+              flexShrink: 0, border: '1px solid rgba(232,238,247,0.28)', color: '#c3cede',
+              fontSize: 11, padding: '1px 7px', borderRadius: 4,
+            }}>{typeLabel(a.type)}</span>
+            {subject && (
+              <span style={{ flexShrink: 0, fontWeight: 700 }}>{subject}</span>
+            )}
+            {/* 결론만 — 넘치면 자르되, 잘렸다는 것이 보이게 말줄임으로 둔다 */}
+            <span style={{
+              flex: 1, minWidth: 0, color: '#b8c4d6',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>{verdict}</span>
+            <span style={{ flexShrink: 0, color: '#8b98ab', fontSize: 11 }}>
+              위험 {dangerCount} · 표시 {tickerIdx + 1}/{tickerItems.length}
             </span>
-          ))}
-        </div>
-      </div>
-      )}
-
-      <style>{`
-        @keyframes marquee {
-          0% { transform: translateX(100vw); }
-          100% { transform: translateX(-100%); }
-        }
-      `}</style>
+            {/* 어느 건을 보고 있는지 — 자동으로 넘어가므로 위치 표시가 필요하다 */}
+            <span style={{ flexShrink: 0, display: 'flex', gap: 4 }}>
+              {tickerItems.map((it, i) => (
+                <button
+                  key={`${it.type}-${i}`}
+                  onClick={() => setTickerIdx(i)}
+                  aria-label={`경고 ${i + 1}번 보기`}
+                  style={{
+                    width: 7, height: 7, padding: 0, borderRadius: '50%', border: 'none',
+                    cursor: 'pointer',
+                    background: i === tickerIdx ? st.color : 'rgba(232,238,247,0.3)',
+                  }}
+                />
+              ))}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* HUD Overlays — 2D 지도/스트리밍 중에는 숨김 */}
       {!showMap && !showOmniverseStream && (
