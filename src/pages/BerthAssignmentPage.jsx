@@ -117,7 +117,11 @@ function OccupiedList({ scope }) {
                   {row.status === 'REQUESTED' ? (
                     <button
                       type="button"
-                      onClick={() => requestConsole(row.call_sign)}
+                      onClick={() => requestConsole(row.call_sign, {
+                        // 이 배정이 실제로 쓴 화물 — 콘솔이 같은 것으로 판정하게 한다
+                        chem_id: row.cargo_chem_id,
+                        name: row.cargo_name,
+                      })}
                       title={`${row.vessel_name || row.call_sign} 을(를) 협상 로그에서 승인/반려`}
                       style={{
                         border: `1px solid ${COLORS.yellow}`, background: 'transparent',

@@ -86,7 +86,13 @@ const useSensorStore = create((set, get) => ({
   // 다른 화면(배정현황 등)에서 "이 배를 협상 콘솔에서 처리해 달라"는 요청.
   // 콘솔이 소비하면 clear 한다 — 값이 남아 있으면 라우팅 때마다 다시 열린다.
   consoleRequest: null,
-  requestConsole: (callsgn) => set({ consoleRequest: { callsgn, at: Date.now() } }),
+  // cargo: 배정현황 행이 들고 있는 '그 배정이 실제로 쓴 화물'({chem_id, name}).
+  // 없이 호출부호만 넘기면 콘솔이 제 나름대로 화물을 고르는데, 한 배가 후보 선석마다
+  // 다른 화물 행을 갖고 있어(mart.berth_current_cargo 는 선석별로 만들어진다)
+  // 화면에 보이는 화물과 판정에 들어간 화물이 어긋난다(2026-08-24 실측: 승인 대기
+  // 5건 중 4건). 판정 입력은 화면이 보여준 것과 같아야 한다.
+  requestConsole: (callsgn, cargo = null) =>
+    set({ consoleRequest: { callsgn, cargo, at: Date.now() } }),
   clearConsoleRequest: () => set({ consoleRequest: null }),
 
   // 경고 → 안전 심사 연결. 경고 카드에서 선석을 고르면 그 경고의 내용이 여기 담기고,
