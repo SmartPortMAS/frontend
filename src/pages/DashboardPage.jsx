@@ -25,15 +25,18 @@ export default function DashboardPage() {
   // "액체화물선 66척"의 나머지를 일반화물선으로 읽으면 안 된다 — 대부분은 PORT-MIS
   // 대조가 안 돼 선종을 모르는 배다. 그 수를 KPI 부제에 같이 적어 오해를 막는다.
   const unknownCount = data?.real_traffic_unknown_total ?? 0;
-  const mooredCount = vessels.filter((v) => v.nav_status_category === 'MOORED').length;
-  // 정박지 대기 = AIS 가 '정박(앵커링)'이라고 명시한 배만 센다.
-  // 항해상태 코드가 없는 배(대부분 Class B 소형 작업선)는 예전에 여기 섞여 있었다 —
-  // 예선·급유선은 선석을 기다리는 배가 아니라 대기 척수를 부풀린다(backendAdapter 주석 참고).
-  const anchorCount = vessels.filter((v) => v.nav_status_category === 'AT_ANCHOR').length;
+  // 접안 중·정박지 대기 = UPA 위치 판정(mart.vessel_presence). 온산 선석 점유 카드와
+  // 지도 범례가 쓰는 /berths·/anchorages 와 같은 기준이라 한 화면의 숫자가 어긋나지 않는다.
+  // 판정이 없을 때만(구버전 백엔드) 예전처럼 자기신고 항해상태로 센다 — 그때도
+  // 항해상태 코드가 없는 배(Class B 소형 작업선)는 대기로 세지 않는다(backendAdapter 주석).
+  const mooredCount = data?.real_traffic_berthed_total
+    ?? vessels.filter((v) => v.nav_status_category === 'MOORED').length;
+  const anchorCount = data?.real_traffic_anchored_total
+    ?? vessels.filter((v) => v.nav_status_category === 'AT_ANCHOR').length;
   const unknownNavCount = vessels.filter((v) => v.nav_status_category === 'UNKNOWN').length;
   const gateHits = gateAssessment?.risk_level_basis?.gate_hits?.length ?? 0;
 
-  // 온산 선석 점유 — 백엔드 /dashboard/berths(upa_port_call 실측 재항 기준).
+  // 온산 선석 점유 — 백엔드 /dashboard/berths(UPA 선박위치 판정, 2026-09-17 전엔 upa_port_call).
   // 예전 "가동 탱크"는 useSensorStore의 하드코딩 탱크 4기를 세던 값이라
   // 실데이터 화면에 mock 숫자가 섞여 있었다.
   const onsanBerths = (data?.berth_occupancy ?? []).filter((b) => b.port_name === '온산항');
