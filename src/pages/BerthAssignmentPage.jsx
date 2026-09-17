@@ -31,6 +31,21 @@ function periodLabel(row) {
   return '-';
 }
 
+// 계획 접안기간(planned_window)이 이미 지났는데도 아직 열려 있는 배정이 며칠째인지.
+// 실제 항만에서는 출항하면 그 자리가 바로 비고 다음 배가 들어온다 — 계획기간이
+// 끝났는데 여전히 "점유 중"이면 그건 현재 상태가 아니라 닫히지 않은 기록이다.
+// 자동 해제(release_completed_berths)는 출항 확인 이벤트가 있어야 닫는데, VTS·
+// PORT-MIS 어느 쪽에도 출항 신고가 안 잡힌 배는 그 이벤트가 영영 안 온다.
+// 화면이 그걸 "지금 접안 중"인 것처럼 보여주면 안 되므로 경과일을 같이 띄운다
+// (2026-09-08 실측 — APPROVED 7건 전부 8/25에 계획기간이 끝난 상태였다).
+function overdueDays(row) {
+  if (row.actual_departure_utc) return 0;   // 실제로 나갔으면 경과가 아니다
+  const end = row.window_end;
+  if (!end) return 0;
+  const days = Math.floor((Date.now() - new Date(end).getTime()) / 86400000);
+  return days > 0 ? days : 0;
+}
+
 // 08_스케줄링_전면재설계_자동배정_설계문서.md §7.2 — 선석 배정현황 페이지.
 // 지도는 "어디"를, 아래 목록은 "지금 뭐가 차 있는지"를 보여주는 읽기전용
 // 화면이다 — 승인/반려는 여기서 하지 않는다.
@@ -122,18 +137,32 @@ function OccupiedList({ scope }) {
                         chem_id: row.cargo_chem_id,
                         name: row.cargo_name,
                       })}
-                      title={`${row.vessel_name || row.call_sign} 을(를) 협상 로그에서 승인/반려`}
+                      title={`${row.vessel_name || row.call_sign} 을(를) 판단 과정 로그에서 승인/반려`}
                       style={{
                         border: `1px solid ${COLORS.yellow}`, background: 'transparent',
                         color: COLORS.yellow, borderRadius: '6px', padding: '2px 8px',
                         fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
                       }}
                     >
-                      승인 대기 — 협상 로그 →
+                      승인 대기 — 판단 과정 로그 →
                     </button>
                   ) : (
-                    <span style={{ color: COLORS.teal, fontSize: '12px', fontWeight: 700 }}>
-                      {row.status === 'APPROVED' ? '확정' : row.status}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ color: COLORS.teal, fontSize: '12px', fontWeight: 700 }}>
+                        {row.status === 'APPROVED' ? '확정' : row.status}
+                      </span>
+                      {overdueDays(row) > 0 && (
+                        <span
+                          title="계획 접안기간이 끝났는데 출항 신고가 잡히지 않아 자동 해제되지 않은 배정입니다 — 현재 점유가 아닐 수 있습니다"
+                          style={{
+                            color: COLORS.yellow, fontSize: '11px', fontWeight: 700,
+                            border: `1px solid ${COLORS.yellow}`, borderRadius: '4px', padding: '1px 5px',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          계획기간 {overdueDays(row)}일 경과
+                        </span>
+                      )}
                     </span>
                   )}
                 </td>
