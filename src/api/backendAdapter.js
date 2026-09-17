@@ -400,6 +400,14 @@ export async function fetchBerthCandidates({ draught_m, chem_id, cas_no, name_hi
  * 선석마다 slots 배열(슬롯 1..max_concurrent_vessels)이 있고, 빈 슬롯은
  * status:null이다.
  */
+// 입항 예정 액체화물선 — PORT-MIS 입항 신고(오늘~+3일) + 사전배정 계류시설 + 흘수.
+// 판정이 아니라 판정에 쓰일 사실이다(backend app/api/v1/arrivals.py, 2026-09-17).
+export async function fetchUpcomingArrivals({ aheadHours = 72, pastHours = 12 } = {}) {
+  const res = await fetch(`${BACKEND_BASE}/arrivals/upcoming?ahead_hours=${aheadHours}&past_hours=${pastHours}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function fetchBerthAssignments() {
   const res = await fetch(`${BACKEND_BASE}/dashboard/berth-assignments`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

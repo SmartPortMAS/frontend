@@ -19,7 +19,7 @@ export default function AgentChip({ agent }) {
   if (!a) return null;
   return (
     <span
-      title={`이 판정은 ${a.label}가 냅니다 — 협상 로그의 같은 색 단계와 동일한 판단`}
+      title={`이 판정은 ${a.label}가 냅니다 — 판단 과정 로그의 같은 색 단계와 동일한 판단`}
       style={{
         fontSize: '10.5px', fontWeight: 800, color: a.color,
         border: `1px solid ${a.color}`, borderRadius: '20px',
