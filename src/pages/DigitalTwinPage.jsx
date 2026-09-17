@@ -112,8 +112,13 @@ export default function DigitalTwinPage() {
 
   // 선박 상세의 계류 물리 검증에서 '정밀 검토'로 넘어온 경우 바로 켠다.
   // 사용자가 화면을 옮겨온 목적이 이미 분명한데 버튼을 한 번 더 누르게 할 이유가 없다.
+  // 서버 확인(checkStream)도 같이 시작해야 한다 — 창만 열면 '연결 확인 중'에서 영원히 멈춘다(9/17 실측).
   useEffect(() => {
-    if (wantOmniverse) setShowOmniverseStream(true);
+    if (wantOmniverse) {
+      setShowOmniverseStream(true);
+      checkStream();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantOmniverse]);
 
   const togglePlay = () => setIsPlaying(!isPlaying);
@@ -225,7 +230,7 @@ export default function DigitalTwinPage() {
               바로 위 3D 화면도 실시간이라, 예전 문구로는 두 화면이 무엇이 다른지
               알 수 없었다(2026-09-03 IA 정리). 목적(정밀 검토)과 대가(기동 시간)를
               문구에 함께 담아 사용자가 누를지 말지 판단할 수 있게 한다. */}
-          <FaPlay /> {showOmniverseStream ? '정밀 검토 닫기' : '정밀 검토 (Omniverse · 기동 2~10분)'}
+          <FaPlay /> {showOmniverseStream ? '정밀 검토 닫기' : '정밀 검토 (Omniverse · 기동 1~2분)'}
         </button>
 
         <button 
@@ -289,8 +294,8 @@ export default function DigitalTwinPage() {
               <h2 style={{ margin: 0 }}>Omniverse 스트리밍이 실행되고 있지 않습니다</h2>
               <p style={{ margin: 0, color: '#94a3b8', maxWidth: '560px', lineHeight: 1.6 }}>
                 웹 뷰어({OMNIVERSE_PORTS.map((p) => `:${p}`).join(', ')})에서 응답이 없습니다.<br />
-                탐색기에서 <strong style={{ color: '#e8f0f2' }}>D:\omniverse\start_twin_stream.bat</strong> 을 실행하면
-                Isaac Sim 스트리밍과 웹 뷰어가 함께 켜집니다. (최초 실행은 셰이더 컴파일로 수 분 소요)
+                탐색기에서 <strong style={{ color: '#e8f0f2' }}>D:\omniverse\start_twin_onsite.bat</strong> 을 실행하면
+                경량 트윈(관제 스택과 동시 구동용)과 웹 뷰어가 함께 켜집니다. 1~2분 뒤 [다시 연결 시도]를 누르세요.
               </p>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
