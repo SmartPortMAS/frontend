@@ -3,9 +3,11 @@ import { COLORS } from '../../utils/constants';
 import { FaDoorOpen, FaDoorClosed, FaLock } from 'react-icons/fa';
 
 const GATE_STATE = {
-  OPEN: { label: '승인 (통행 가능)', color: COLORS.teal, icon: <FaDoorOpen /> },
-  CLOSED: { label: '차단', color: COLORS.yellow, icon: <FaDoorClosed /> },
-  INTERLOCK: { label: '인터락 차단', color: COLORS.red, icon: <FaLock /> },
+  // 하역 개시 인터락(2026-09-17) — 게이트는 부두 진입이 아니라 하역 밸브 앞에 선다.
+  // 명령 값(APPROVE/BLOCK)은 장치와의 계약이라 그대로 두고 화면 문구만 바꿨다.
+  OPEN: { label: '열림 (하역 개시 가능)', color: COLORS.teal, icon: <FaDoorOpen /> },
+  CLOSED: { label: '닫힘', color: COLORS.yellow, icon: <FaDoorClosed /> },
+  INTERLOCK: { label: '인터락 — 개시 거부', color: COLORS.red, icon: <FaLock /> },
 };
 
 const BEACON_COLOR = {
@@ -60,7 +62,7 @@ function GateCard({ gate, onCommand }) {
           </div>
           {interlocked && (
             <div style={{ fontSize: '12px', color: COLORS.red, marginTop: '4px' }}>
-              혼재금지 위반 감지 — 현장 확인 전까지 원격 승인 불가
+              혼재금지 위반 감지 — 하역 개시 요청이 와도 장치가 열지 않음
             </div>
           )}
         </div>
@@ -77,7 +79,7 @@ function GateCard({ gate, onCommand }) {
             color: interlocked ? COLORS.textDim : '#FFFFFF',
           }}
         >
-          승인
+          하역 개시 요청
         </button>
         <button
           onClick={() => onCommand(gate.gate_id, 'BLOCK')}
@@ -86,7 +88,7 @@ function GateCard({ gate, onCommand }) {
             fontWeight: 'bold', cursor: 'pointer', background: 'transparent', color: COLORS.red,
           }}
         >
-          차단
+          닫기
         </button>
       </div>
     </div>
@@ -99,7 +101,7 @@ export default function HardwarePanel() {
   return (
     <>
       <h3 style={{ fontSize: '16px', margin: '24px 0 16px', color: 'var(--teal)' }}>
-        하드웨어 노드 — 사전 승인 게이트 (라즈베리파이 + 릴레이)
+        하드웨어 노드 — 하역 개시 인터락 (라즈베리파이 + 릴레이 + 상시닫힘 밸브)
       </h3>
       <div className="sensor-grid">
         {hardware.gates.map((gate) => (

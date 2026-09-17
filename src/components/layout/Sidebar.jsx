@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { FaCube, FaChartPie, FaShieldAlt, FaWaveSquare, FaChevronLeft, FaChevronRight, FaClipboardCheck } from 'react-icons/fa';
+import { FaCube, FaChartPie, FaShieldAlt, FaWaveSquare, FaChevronLeft, FaChevronRight, FaClipboardCheck, FaShip } from 'react-icons/fa';
 
 export default function Sidebar({ collapsed, setCollapsed }) {
   // top 은 PORT-MIS 연계 바 높이만큼 내린다 — 0 이면 사이드바가 그 바를 덮는다
@@ -19,6 +19,11 @@ export default function Sidebar({ collapsed, setCollapsed }) {
         <NavLink to="/" end className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
           <div className="nav-icon"><FaChartPie /></div>
           <div className="nav-label">대시보드</div>
+        </NavLink>
+
+        <NavLink to="/arrivals" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
+          <div className="nav-icon"><FaShip /></div>
+          <div className="nav-label">입항 예정 · 검증</div>
         </NavLink>
 
         <NavLink to="/berth-assignments" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>

@@ -486,7 +486,7 @@ export default function AgentConsole() {
           boxShadow: '0 6px 22px rgba(0,0,0,0.45)',
         }}
       >
-        <FaComments /> 에이전트 협상 로그
+        <FaComments /> 에이전트 판단 과정
         {orchestration && (
           <span style={{
             background: '#FFFFFF', color: COLORS.teal, borderRadius: 10,
@@ -515,17 +515,22 @@ export default function AgentConsole() {
         background: COLORS.cardHover,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: COLORS.textPrimary, fontWeight: 700 }}>
-          <FaComments color={COLORS.teal} /> 에이전트 협상 로그
+          <FaComments color={COLORS.teal} /> 에이전트 판단 과정
         </div>
-        <button onClick={() => setOpen(false)} style={{
-          background: 'none', border: 'none', color: COLORS.textDim, cursor: 'pointer', fontSize: 15,
-        }}><FaTimes /></button>
+        <button
+          onClick={() => setOpen(false)}
+          aria-label="판단 과정 로그 닫기"
+          title="판단 과정 로그 닫기"
+          style={{
+            background: 'none', border: 'none', color: COLORS.textDim, cursor: 'pointer', fontSize: 15,
+          }}
+        ><FaTimes /></button>
       </div>
 
       {/* 탭 — 협상 로그 / 질의응답 */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${COLORS.glassBorder}` }}>
         {[
-          { key: 'negotiation', label: '협상 로그', icon: FaRobot },
+          { key: 'negotiation', label: '판단 과정', icon: FaRobot },
           { key: 'qa', label: '질의응답', icon: FaSearch },
         ].map((t) => {
           const Icon = t.icon;

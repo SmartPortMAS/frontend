@@ -40,6 +40,10 @@ GETS = {
     "/api/v1/dashboard/berth-assignments": f"{BACKEND}/dashboard/berth-assignments",
     "/api/v1/dashboard/berth-dwell": f"{BACKEND}/dashboard/berth-dwell",
     "/api/v1/approvals/pending": f"{BACKEND}/approvals/pending",
+    # 2026-09-17 확장 — 입항 예정 · 검증 페이지. 화면은 ?ahead_hours=72&past_hours=12 를
+    # 붙여 부르지만 snapshotMode.js 가 쿼리를 떼고 경로로 찾으므로 키는 경로만.
+    # 재생 3장면(public/demo/replays.json)은 정적 파일이라 스냅샷과 무관하게 열린다.
+    "/api/v1/arrivals/upcoming": f"{BACKEND}/arrivals/upcoming?ahead_hours=72&past_hours=12",
 }
 
 # 선석 그룹 목록은 API 가 아니라 프론트 상수(geoUtils.ONSAN_WEATHER_GROUP)에서 온다.
