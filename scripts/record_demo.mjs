@@ -234,6 +234,8 @@ if (await qtab.count() || await qtabAlt.count()) {
 }
 
 // ── 안전/환경 관제 ───────────────────────────────────────────────────
+await page.evaluate(() => fetch('/api/v1/dashboard/safety-index').catch(() => {}));
+await beat(1500);
 await clickAt(page.getByRole('link', { name: /안전|환경/ }).first());
 // 안전 지수 레이더는 늦게 그려진다. '불러오는 중…'이 사라지고 차트가 실제로
 // 나온 뒤에 지점을 찍어야, 잘라낸 영상에서 빈 카드를 보여주지 않는다.
@@ -264,7 +266,29 @@ if (await twin.count()) {
   // 넉넉히 기다린 뒤 지점을 찍는다 — 이 대기는 어차피 trim_gaps 가 잘라낸다.
   await beat(9000);
   mark('3D 관제 화면');
-  await beat(5200);
+  await beat(4200);
+
+  // 좌측 AIS 목록에서 배 하나를 눌러 우측 선박 패널을 연다.
+  // 3D 를 '보기만 하는 화면'이 아니라 조회 수단으로 쓴다는 걸 보여주는 자리다.
+  const picked = await page.evaluate(() => {
+    const hud = [...document.querySelectorAll('div')]
+      .find((d) => /온산 AIS 선박/.test(d.innerText) && d.innerText.length < 900);
+    if (!hud) return false;
+    const rows = [...hud.querySelectorAll('div')]
+      .filter((d) => /\d+ kn/.test(d.innerText) && d.innerText.length < 80);
+    if (!rows.length) return false;
+    rows[0].setAttribute('data-twin-pick', '1');
+    return true;
+  });
+  if (picked) {
+    await clickAt(page.locator('[data-twin-pick="1"]'), { force: true });
+    await page.waitForFunction(
+      () => /적재량|속력 \/ 침로/.test(document.body.innerText), { timeout: 30000 },
+    ).catch(() => console.log('  [경고] 3D 선박 패널이 열리지 않았습니다'));
+    await beat(700);
+    mark('3D 선박 조회');
+    await beat(6000);
+  }
 }
 
 // ── 센서 데이터 ──────────────────────────────────────────────────────
@@ -284,9 +308,27 @@ if (await sensor.count()) {
   await beat(3400);
 }
 
-mark('대시보드로 복귀');
+// 마무리는 가려진 것 없는 대시보드로 끝낸다
+const consoleClose = page.getByRole('button', { name: '협상 로그 닫기' }).first();
+if (await consoleClose.count()) {
+  await consoleClose.click({ force: true }).catch(() => {});
+  await beat(600);
+}
+
 await clickAt(page.getByRole('link', { name: /^대시보드$/ }).first(), { force: true });
-await beat(2500);
+// 센서 탭과 같은 원칙 — 지점은 '눌렀을 때'가 아니라 '화면이 떴을 때' 남긴다.
+// 여기만 누르기 전에 남기고 있어서, 커서가 사이드바까지 가는 시간(glide)만큼
+// 마지막 인사가 아직 센서 화면 위에서 나왔다(2026-08-25 실측: 대시보드는
+// 영상 끝 0.5초 전에야 나타남).
+await page.waitForFunction(
+  () => /온산항 관제 지도/.test(document.body.innerText),
+  { timeout: 30000 },
+).catch(() => console.log('  [경고] 대시보드로 돌아오지 못했습니다'));
+await beat(700);
+mark('대시보드로 복귀');
+// 길게 잡는다 — Playwright 는 컨텍스트를 닫을 때 마지막 2~3초를 흘린다(실측).
+// 마무리 인사(1.8초)와 그 앞 여유(1.6초)가 대시보드 위에서 끝나야 한다.
+await beat(8000);
 
 console.log(`\n총 길이 약 ${((Date.now() - T0) / 1000).toFixed(0)}초 · 페이지 오류 ${errs.length}건`);
 errs.slice(0, 3).forEach((e) => console.log('  !', e));

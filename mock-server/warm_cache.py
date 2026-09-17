@@ -76,7 +76,18 @@ def _call(method, path, body=None, timeout=300):
         return time.time() - t0, str(e)[:80]
 
 
+# 안전 지수는 콜드 10초 걸린다(2026-08-25 실측). 시연 중 '불러오는 중…'이
+# 화면에 남지 않도록 여기서 미리 계산시킨다.
+EXTRA_GETS = ["/api/v1/dashboard/safety-index", "/api/v1/dashboard/alerts"]
+
+
 def main():
+    for p in EXTRA_GETS:
+        try:
+            t0 = time.time(); get(p); print(f"  {p} {time.time()-t0:.1f}s OK")
+        except Exception as e:
+            print(f"  {p} 실패: {e}")
+
     total_err = 0
     print("=" * 60)
     print("시연 캐시 워밍 시작 (백엔드 8001)")
