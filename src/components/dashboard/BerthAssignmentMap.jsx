@@ -358,9 +358,10 @@ export default function BerthAssignmentMap({ scope = 'onsan', onScopeChange }) {
         style={{ height: '100%', width: '100%', background: COLORS.bg }}
         attributionControl={false}
       >
+        {/* CARTO 는 API 키 없이 회색 안내 타일만 준다(2026-09-18, PortMap 주석) */}
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          attribution="&copy; OpenStreetMap &copy; CARTO"
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="&copy; OpenStreetMap contributors"
         />
         <Rectangle
           bounds={ULSAN_BBOX_BOUNDS}
