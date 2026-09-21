@@ -1,10 +1,12 @@
 import { Html } from '@react-three/drei';
 import {
-  FaTimes, FaShip, FaDatabase, FaWater, FaAnchor, FaFlask,
+  FaTimes, FaShip, FaDatabase, FaWater, FaAnchor, FaFlask, FaPlay,
 } from 'react-icons/fa';
+import useSensorStore from '../../stores/useSensorStore';
 import {
   ONSAN_BERTHS,
   ONSAN_WEATHER_GROUP,
+  OMNIVERSE_BERTH_IDS,
   onsanAdjacentBerthNames,
 } from '../../utils/geoUtils';
 
@@ -35,6 +37,7 @@ function MockNotice() {
 }
 
 export default function InfoPopup({ object, onClose }) {
+  const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
   if (!object) return null;
 
   // 저장된 type 필드 우선. (구버전 id 접두어 추정은 'HMM ...' 선박을 오판하므로 폴백만)
@@ -43,6 +46,20 @@ export default function InfoPopup({ object, onClose }) {
 
   const berthInfo = type === 'Berth' ? ONSAN_BERTHS[object.id] : null;
   const adjacents = berthInfo ? onsanAdjacentBerthNames(berthInfo.name) : [];
+
+  // 정밀 검토(Omniverse) 지목 — 선석에 붙은 배, 또는 선석 자체.
+  // Omniverse 장면에는 온산 액체화물 부두 11곳만 있어 그 밖의 선석은 보여줄 자리가 없다.
+  const omniBerthId = type === 'Ship' ? object.berth : type === 'Berth' ? object.id : null;
+  const omniReady = Boolean(omniBerthId) && OMNIVERSE_BERTH_IDS.has(omniBerthId);
+  const omniBerthName = type === 'Ship'
+    ? (object.berth_name || ONSAN_BERTHS[object.berth]?.name)
+    : berthInfo?.name;
+  let omniNote = '이 선석의 기상 예보 72시간을 판정 규칙대로 돌려, 하역이 언제 막히는지 3D로 보여줍니다.';
+  if (!omniReady) {
+    omniNote = type === 'Ship' && !object.berth
+      ? '선석에 붙은 배만 볼 수 있습니다 — 이 배는 항해 중이거나 정박지에서 대기 중입니다.'
+      : '이 선석은 Omniverse 장면에 없습니다 — 장면은 온산 액체화물 부두 11곳만 재현합니다.';
+  }
 
   return (
     <Html fullscreen zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
@@ -151,6 +168,34 @@ export default function InfoPopup({ object, onClose }) {
                 실제 판정은 두 곳에서 돈다:
                   · 선박 클릭 → 대시보드 지도/목록의 선박 상세 (useVesselSafety)
                   · 우하단 협상 콘솔 "종합 판정" (오케스트레이터 4에이전트) */}
+            {(type === 'Ship' || type === 'Berth') && (
+              <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <button
+                  type="button"
+                  disabled={!omniReady}
+                  onClick={() => requestOmniverse({
+                    berth: omniBerthName,
+                    call_sign: type === 'Ship' ? (object.callsgn || null) : null,
+                    // 선석 클릭은 선석만 지목한다 — mooredShip 은 '이름 (화물)' 표시용 문자열이라
+                    // 호출부호가 없어 흘수를 붙일 수 없다. 배를 보려면 배를 누르면 된다.
+                    vessel_name: type === 'Ship' ? object.id : null,
+                  })}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '8px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 800,
+                    fontFamily: 'inherit',
+                    cursor: omniReady ? 'pointer' : 'not-allowed',
+                    background: omniReady ? 'rgba(16, 185, 129, 0.18)' : 'rgba(148, 163, 184, 0.1)',
+                    color: omniReady ? '#10b981' : '#64748b',
+                    border: `1px solid ${omniReady ? 'rgba(16, 185, 129, 0.6)' : 'rgba(148, 163, 184, 0.3)'}`,
+                  }}
+                >
+                  <FaPlay /> Omniverse 정밀 검토 — 앞으로 72시간
+                </button>
+                <div style={{ marginTop: '6px', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.5 }}>{omniNote}</div>
+              </div>
+            )}
+
             {type === 'Ship' && object.is_real && (
               <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.6 }}>
                 안전 판정(혼재금지·IMDG 격리)은 <strong style={{ color: '#e8f0f2' }}>대시보드 → 선박 상세</strong> 또는
