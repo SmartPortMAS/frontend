@@ -338,7 +338,7 @@ export default function VesselDetailPanel() {
                   color: COLORS.info, fontSize: '11.5px', fontWeight: 700, fontFamily: 'inherit',
                 }}
               >
-                {summaryOpen ? '▲ 판단 근거 접기' : '▼ 판단 근거 펼치기 (LLM 설명)'}
+                {summaryOpen ? '▲ 판단 근거 접기' : '▼ 판단 근거 펼치기'}
               </button>
             </div>
           )}
