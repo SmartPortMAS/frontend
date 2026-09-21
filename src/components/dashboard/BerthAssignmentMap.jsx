@@ -28,9 +28,20 @@ const ONSAN_FIT = { padding: [48, 48], maxZoom: 15 };
 // 액션은 여전히 "에이전트 협상 로그"(AgentConsole)에서만 하고, 여기는 순수
 // 점유 여부 표시 화면이다.
 
-// 배정이 하나라도 있으면(REQUESTED~BERTHED 무엇이든) 점유로 본다.
+// [2026-09-22] 점유 판단을 status -> call_sign 으로 바꿨다.
+//
+//   예전에 slot.status 는 **배정 상태**(REQUESTED/APPROVED/...)라 "값이 있으면
+//   우리가 배정한 자리"라는 뜻이었다. 지금 status 는 **판정 등급**(적합/주의/
+//   부적합/판정불가)이고, 아직 판정 전이면 null 이다 — 우리는 배정하지 않는다.
+//
+//   그대로 두니 배가 붙어 있는데도 빈 자리로 그려졌다. 실측(2026-09-22):
+//       API 점유 8곳  vs  지도 표시 2곳
+//   판정이 붙은 2척만 점유로 세고 나머지 6척이 화면에서 사라진 것이다.
+//
+//   점유는 "배가 실제로 거기 있는가"이고 그 답은 call_sign 이다. 판정 유무는
+//   별개이며, 판정이 없다는 사실은 슬롯 상세가 따로 보여준다.
 function isOccupied(slots) {
-  return slots.some((s) => s.status);
+  return slots.some((s) => s.call_sign);
 }
 
 // 지도 마커에 쓰는 투명 아이콘 — 화면엔 안 보이고 클릭 대상 역할만 한다.
@@ -159,7 +170,8 @@ function ReasonOverlay({ slot, onClose }) {
 // 응답에 없어 "undefined"로 호출돼 늘 실패했었다. 같은 액션을 두 화면에 따로
 // 두면 관제사가 헷갈리므로 액션 자체를 한 곳으로 모았다).
 function SlotRow({ slot, onShowReason }) {
-  if (!slot.status) {
+  // '여유'는 판정이 없는 자리가 아니라 **배가 없는** 자리다(isOccupied 주석 참고).
+  if (!slot.call_sign) {
     return (
       <div style={{ padding: '6px 0', fontSize: '12px', color: COLORS.textDim }}>
         슬롯 {slot.slot_no} — 여유
@@ -315,7 +327,7 @@ export default function BerthAssignmentMap({ scope = 'onsan', onScopeChange }) {
   const withCoords = berths.filter((b) => b.latitude != null && b.longitude != null);
   const occupiedBerthCount = withCoords.filter((b) => isOccupied(b.slots)).length;
   const occupiedSlotCount = withCoords.reduce(
-    (sum, b) => sum + b.slots.filter((s) => s.status).length, 0
+    (sum, b) => sum + b.slots.filter((s) => s.call_sign).length, 0
   );
 
   useEffect(() => {
@@ -386,7 +398,7 @@ export default function BerthAssignmentMap({ scope = 'onsan', onScopeChange }) {
 
         {withCoords.map((b) => {
           const occupied = isOccupied(b.slots);
-          const filled = b.slots.filter((s) => s.status).length;
+          const filled = b.slots.filter((s) => s.call_sign).length;
           return (
             <Marker
               // occupied를 key에 포함시켜 점유 상태가 바뀌면 통째로 다시 그린다 —
