@@ -494,11 +494,25 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
   };
 }
 
+// 백엔드 OverallDecision 값 → 화면 상태.
+//
+// [2026-09-22] 부분 문자열 매칭(`d.includes('승인')`)을 정확 매칭으로 바꿨다.
+// 백엔드가 "승인가능" -> "적합" 으로 어휘를 바꾸면서(우리는 승인하지 않는다)
+// 부분 매칭이 위험해졌다 — '전 후보 부적합'.includes('적합') 도, '적합선석없음'
+// .includes('적합') 도 참이라, 부적합 판정이 전부 APPROVED 로 뒤집힌다.
+const DECISION_TO_STATUS = {
+  '적합': 'APPROVED',
+  '정박지대기': 'WAITING_ANCHORAGE',
+  '기상불가_중단권고': 'REJECTED',
+  '적합선석없음': 'REJECTED',
+  '전 후보 부적합': 'REJECTED',
+};
+
 function mapOrchestration(r) {
   const d = r.overall_decision || '';
-  const status = d.includes('승인') ? 'APPROVED'
-    : d.includes('정박지') ? 'WAITING_ANCHORAGE'
-      : 'REJECTED';
+  // 모르는 값은 REJECTED 로 떨어뜨린다 — 새 값이 생겼을 때 조용히 '적합'으로
+  // 보이는 것보다, 보수적으로 막히고 눈에 띄는 편이 낫다.
+  const status = DECISION_TO_STATUS[d] ?? 'REJECTED';
   const trace = r.assignment_trace || [];
   const path = r.anchorage_assignment ? '정박지대기'
     : trace.some((t) => t.includes('대체')) ? '대체' : '전용';

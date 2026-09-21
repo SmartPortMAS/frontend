@@ -34,7 +34,7 @@ const AGENTS = {
 const CONFIDENCE_LABEL = { high: '높음', medium: '보통', low: '낮음 (근거 부족)' };
 
 const RISK_COLOR = (lv) => ({
-  '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red, '배정불가': COLORS.red,
+  '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red, '하역불가': COLORS.red,
 }[lv] || COLORS.textDim);
 
 const VERDICT_COLOR = {

@@ -13,7 +13,7 @@ import { fetchBerthCandidates, estimateEta, estimateBerthRelease } from '../../a
 
 const RISK_COLORS = {
   '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red,
-  '배정불가': COLORS.red, '판단불가': COLORS.textDim,
+  '하역불가': COLORS.red, '판단불가': COLORS.textDim,
 };
 
 // AIS 로 실제 확인되는 항내 단계만 둔다.

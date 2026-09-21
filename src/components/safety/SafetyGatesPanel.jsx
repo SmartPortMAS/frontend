@@ -12,7 +12,7 @@ const RISK_STYLE = {
   '안전': { color: COLORS.teal },
   '주의': { color: COLORS.yellow },
   '위험': { color: '#D2601A' },
-  '배정불가': { color: COLORS.red },
+  '하역불가': { color: COLORS.red },
 };
 
 // 선석 목록은 ONSAN_BERTHS(지도·인접판정과 같은 정본) 하나만 쓴다.
