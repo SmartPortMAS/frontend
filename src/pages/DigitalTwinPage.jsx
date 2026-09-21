@@ -312,7 +312,7 @@ export default function DigitalTwinPage() {
             </span>
             <span style={{ color: '#94a3b8' }}>
               {omniFocus
-                ? '— 앞으로 72시간 (기상청 단기예보 · 판정 규칙 그대로)'
+                ? '— 앞으로 72시간 (기상청 단기예보 · 국립해양조사원 조석예보 · 판정 규칙 그대로)'
                 : '— 조감 → 과거 사례 · 3D 관제 화면에서 배나 선석을 누르면 그곳을 봅니다'}
             </span>
             {replayCases.map((r) => (
