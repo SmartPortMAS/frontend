@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS, WEATHER_STATUS_COLORS } from '../../utils/constants';
-import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
+import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP, OMNIVERSE_BERTH_IDS, findBerthIdByName } from '../../utils/geoUtils';
 import useVesselSafety from '../../hooks/useVesselSafety';
 import useDashboardData from '../../hooks/useDashboardData';
 import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs, FaMapMarkerAlt } from 'react-icons/fa';
@@ -93,6 +93,7 @@ export default function VesselDetailPanel() {
   const [candError, setCandError] = useState(null);
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const setSelectedBerthGroup = useSensorStore((s) => s.setSelectedBerthGroup);
+  const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const alertAcks = useSensorStore((s) => s.alertAcks);
   const ackAlert = useSensorStore((s) => s.ackAlert);
@@ -636,24 +637,47 @@ export default function VesselDetailPanel() {
           {moorSim?.error && (
             <div style={{ marginTop: '8px', fontSize: '12px', color: COLORS.yellow }}>{moorSim.error}</div>
           )}
-          {/* 근사식 결과를 PhysX 동역학으로 다시 볼 수 있게 연결한다.
-              여기 값은 OCIMF 계열 준정적 근사이고, 그 근거가 된 PhysX 교차검증은
-              Omniverse 쪽에 있다. 두 화면의 역할이 다르다는 것을 링크로 보여준다 —
-              3D 관제 화면은 '어디에 무엇이', Omniverse 는 '그 배치가 물리적으로
-              안전한가'. 기동에 시간이 걸리므로 문구에 함께 적는다. */}
-          <button
-            type="button"
-            onClick={() => navigate('/twin?omniverse=1')}
-            title="Isaac Sim PhysX 로 계류·접안을 동역학 계산합니다 (기동 2~10분)"
-            style={{
-              marginTop: '10px', width: '100%',
-              background: 'transparent', border: `1px solid ${COLORS.border}`,
-              color: COLORS.textSecondary, borderRadius: '8px', padding: '7px 10px',
-              fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            정밀 검토 (Omniverse PhysX · 기동 2~10분)
-          </button>
+          {/* 정밀 검토(Omniverse)로 넘긴다 — 이 배가 붙은 선석의 앞으로 72시간(기상 예보 ·
+              조위 예측)을 3D 로 재생한다. 2026-09-22 전에는 스트림만 켜고 어느 배인지는
+              넘기지 않아 Omniverse 가 자기 순환을 계속했다. 문구의 "PhysX"도 뺐다 —
+              지금 보여주는 건 예보 재생이지 물리 계산이 아니다(심사 질문에 답할 수 없는
+              말을 화면에 두지 않는다). Omniverse 장면은 온산 액체화물 부두 11곳뿐이라
+              그 밖의 선석에 있는 배는 누를 수 없고 이유를 적는다. */}
+          {(() => {
+            const omniBerthName = vessel.presence_berth_name || vessel.berth || null;
+            const omniBerthId = omniBerthName ? berthIdByName(omniBerthName) : null;
+            const omniReady = Boolean(omniBerthId) && OMNIVERSE_BERTH_IDS.has(omniBerthId);
+            const note = omniReady
+              ? `${omniBerthName}의 앞으로 72시간을 기상 예보·조위 예측으로 재생합니다`
+              : omniBerthName
+                ? '이 선석은 3D 정밀 검토 장면에 없습니다 (온산 액체화물 부두 11곳만)'
+                : '선석에 붙은 배만 정밀 검토할 수 있습니다';
+            return (
+              <>
+                <button
+                  type="button"
+                  disabled={!omniReady}
+                  onClick={() => {
+                    requestOmniverse({
+                      berth: omniBerthName, call_sign: vessel.callsgn || null, vessel_name: vessel.vessel_name,
+                    });
+                    navigate('/twin');
+                  }}
+                  title={note}
+                  style={{
+                    marginTop: '10px', width: '100%',
+                    background: 'transparent', border: `1px solid ${omniReady ? COLORS.teal : COLORS.border}`,
+                    color: omniReady ? COLORS.teal : COLORS.textDim, borderRadius: '8px', padding: '7px 10px',
+                    fontSize: '11.5px', fontWeight: 700, cursor: omniReady ? 'pointer' : 'not-allowed',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  정밀 검토 (Omniverse · 앞으로 72시간 · 기동 1~2분)
+                </button>
+                <div style={{ fontSize: '10.5px', color: COLORS.textDim, marginTop: '4px' }}>{note}</div>
+              </>
+            );
+          })()}
           </details>
         </>
       )}

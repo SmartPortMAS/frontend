@@ -127,6 +127,7 @@ export default function DigitalTwinPage() {
   // 스트림을 연다. Omniverse 앱이 몇 초마다 지목을 읽어 그 선석으로 내려간다.
   // 지목이 없으면 Omniverse 는 조감 → 과거 사례 재생을 순환한다.
   const omniverseRequest = useSensorStore((s) => s.omniverseRequest);
+  const clearOmniverseRequest = useSensorStore((s) => s.clearOmniverseRequest);
   const [omniFocus, setOmniFocus] = useState(null);       // 백엔드가 돌려준 현재 지목
   const [omniFocusError, setOmniFocusError] = useState(null);
   const [replayCases, setReplayCases] = useState([]);    // 과거 사례 — 실제로 있었던 날
@@ -148,6 +149,7 @@ export default function DigitalTwinPage() {
     setShowOmniverseStream(true);
     checkStream();
     sendFocus(focus);
+    clearOmniverseRequest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [omniverseRequest?.at]);
 
