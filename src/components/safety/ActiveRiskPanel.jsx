@@ -204,8 +204,23 @@ export default function ActiveRiskPanel() {
                           2026-08-21). 결론 한 줄 + 펼침. */}
                       {(() => {
                         const msg = (a.message || '').replace(`${g.berth}: `, '');
+                        /* [2026-09-22] D3 — 그래프가 만든 경로 문장.
+                           "왜 이 결론인가"를 관제사가 한 줄로 확인할 수 있게, 백엔드가
+                           준 문장을 그대로 보여준다. 화면이 근거를 다시 조립하면
+                           백엔드와 표현이 갈라진다(그래서 조립하지 않는다). */
+                        const path = a.graph_path ? (
+                          <div style={{
+                            marginTop: '3px', fontSize: '10.5px', color: COLORS.textDim,
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                            wordBreak: 'break-word',
+                          }}>
+                            {a.graph_path}
+                          </div>
+                        ) : null;
                         const cut = msg.indexOf(' (');
-                        if (cut === -1 || msg.length < 90) return <span>{msg}</span>;
+                        if (cut === -1 || msg.length < 90) {
+                          return <span style={{ minWidth: 0 }}>{msg}{path}</span>;
+                        }
                         const head = msg.slice(0, cut);
                         const rest = msg.slice(cut + 2).replace(/\)\s*$/, '');
                         return (
@@ -217,6 +232,7 @@ export default function ActiveRiskPanel() {
                               </summary>
                               <span style={{ color: COLORS.textDim }}>{rest}</span>
                             </details>
+                            {path}
                           </span>
                         );
                       })()}

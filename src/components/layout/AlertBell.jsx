@@ -193,6 +193,18 @@ export default function AlertBell() {
                           {a.risk_level}
                         </span>
                       )}
+                      {/* [2026-09-22] D3 — 그래프가 만든 경로 문장을 그대로 싣는다.
+                          어떤 간선을 타고 이 결론에 닿았는지는 그래프가 제일 정확히
+                          알고 있으므로 화면에서 다시 조립하지 않는다. */}
+                      {a.graph_path && (
+                        <div style={{
+                          marginTop: '4px', fontWeight: 400, fontSize: '11px',
+                          color: COLORS.textDim, wordBreak: 'break-word',
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                        }}>
+                          {a.graph_path}
+                        </div>
+                      )}
                     </div>
                     <div style={{ fontSize: '11px', color: COLORS.textDim, marginTop: '3px' }}>
                       {typeLabel(a.type)}
