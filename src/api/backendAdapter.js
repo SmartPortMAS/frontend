@@ -52,7 +52,21 @@ const NAV_TEXT_TO_CATEGORY = {
   '후방 예인': 'UNDER_WAY',
 };
 
+// 위치 판정(mart.vessel_presence — 백엔드 /vessels 의 presence_zone) → UI 카테고리.
+// 선석 점유(/berths)·정박지 대기(/anchorages)와 같은 기준이라, 판정이 있으면 AIS
+// 자기신고 항해상태보다 먼저 쓴다. 자기신고는 선석에 멈춰 있어도 바꾸지 않는 배가
+// 많다(2026-09-17 실측: 위치로 선석에 붙은 41척 중 '정박(계류)' 24척, '항해(동력)'
+// 10척, 빈 값 4척). STOPPED(조선소 의장안벽·물양장·예인선 대기 등)는 선석·정박지가
+// 아니므로 아래 자기신고 매핑으로 넘긴다 — 지도 아이콘용이고 KPI 는 따로 센다.
+const PRESENCE_TO_CATEGORY = {
+  BERTH: 'MOORED',
+  ANCHORAGE: 'AT_ANCHOR',
+  UNDERWAY: 'UNDER_WAY',
+};
+
 function navCategory(row) {
+  const byPresence = PRESENCE_TO_CATEGORY[row.presence_zone];
+  if (byPresence) return byPresence;
   const code = row.nav_status_code;
   const byText = NAV_TEXT_TO_CATEGORY[code];
   if (byText) return byText;
@@ -173,6 +187,11 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
     draught_m: row.draught ?? null, // dwt는 파이프라인 미수집 — null 유지(오케스트레이터가 "미상"으로 보수적 처리)
     vessel_heading: row.heading || row.cog || 0,
     nav_status_category: navCategory(row),
+    // 위치 판정 원본 — BERTH/ANCHORAGE/STOPPED/UNDERWAY, 최신 스냅샷에 없으면 null
+    presence_zone: row.presence_zone ?? null,
+    presence_berth_name: row.presence_berth_name ?? null,
+    presence_berth_basis: row.presence_berth_basis ?? null,
+    presence_anchorage_name: row.presence_anchorage_name ?? null,
     received_at_utc: row.received_at_utc,
     is_real_ais: true,
     presence_state: row.presence_state,
@@ -334,6 +353,15 @@ export async function fetchBackendDashboard() {
     realTrafficUnknownTotal: presentVessels.filter(
       (r) => shipType(r) === null && !hasCargo(r)
     ).length,
+    // 접안 중·정박지 대기 KPI — 선석 점유(/berths)·정박지 현황(/anchorages)과 같은
+    // 위치 판정으로 센다. 백엔드가 presence_zone 을 아직 안 주면(구버전) null 로 두고
+    // 화면이 예전 방식(자기신고 항해상태)으로 센다.
+    realTrafficBerthedTotal: presentVessels.some((r) => 'presence_zone' in r)
+      ? presentVessels.filter((r) => r.presence_zone === 'BERTH').length
+      : null,
+    realTrafficAnchoredTotal: presentVessels.some((r) => 'presence_zone' in r)
+      ? presentVessels.filter((r) => r.presence_zone === 'ANCHORAGE').length
+      : null,
     berthOccupancy: berths ?? [],
     anchorages: anchorages ?? [],
     // 선석별 재항 소요시간 실측 통계 (mart.berth_dwell_stats) — 점유 선석의
