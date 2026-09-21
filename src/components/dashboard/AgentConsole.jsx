@@ -7,7 +7,7 @@ import {
 import useOnsanApi, { namesAnyCargo } from '../../hooks/useOnsanApi';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
-import { fetchPendingApprovals, postApprovalDecision } from '../../api/backendAdapter';
+import { fetchPendingApprovals, postAcknowledgement } from '../../api/backendAdapter';
 import { COLORS, OPERATOR_NAME } from '../../utils/constants';
 import { ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 
@@ -183,6 +183,29 @@ function withRequestedCargo(vessel, wanted, berthCargo) {
   return { ...vessel, cargo: { ...row, name: row.cargo_name ?? wanted.name } };
 }
 
+/**
+ * 이 배의 확인 대기 판정 id. 없으면 null.
+ *
+ * 호출부호로만 찾는다 — /approvals/pending 은 이미 확인되지 않은 건만 주므로
+ * 추가 조건이 필요 없다. 같은 배의 판정이 여럿이면 가장 최근 것을 쓴다(응답이
+ * assessed_at_utc 내림차순이라 첫 건이 그것이다).
+ *
+ * 조회 실패를 throw 하지 않는다 — 확인할 건을 못 찾는 것은 판정 자체를 막을
+ * 이유가 아니다. 그때는 '판정 기록'만 보여주면 된다.
+ */
+async function findPendingAssessmentId(callsgn) {
+  if (!callsgn) return null;
+  try {
+    // includeFit — 배 한 척을 지목해 찾는 자리라 '적합'도 포함해야 한다.
+    // 기본값으로 부르면 적합 판정이 빠져서, 조건에 맞는 배는 확인 버튼이
+    // 영영 안 뜬다(실측: 적합 판정 DSPH2 가 대기 목록에 없었다).
+    const pending = await fetchPendingApprovals({ includeFit: true });
+    return pending.find((p) => p.call_sign === callsgn)?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default function AgentConsole() {
   // 3D 관제 화면에서는 띄우지 않는다 — 전체화면 연출과 HUD 를 가린다
   const { pathname } = useLocation();
@@ -193,28 +216,28 @@ export default function AgentConsole() {
   //
   // 예전엔 boolean 이라 "반려" 버튼이 setApproved(false) 였는데, 그 버튼이 보이는
   // 조건 자체가 approved === false 여서 눌러도 아무 변화가 없었다(이미 false).
-  // 결정은 세 상태다 — 아직 안 정함 / 승인 / 반려.
+  // [2026-09-22] 승인/반려를 없애고 **확인(피드백)** 하나로 바꿨다.
   //
-  // [2026-08-19] 이 값은 이제 실제 승인 API 호출 결과다. 예전엔 버튼을 누르면
-  // 로컬 상태만 바뀌고 berth_assignment는 그대로 REQUESTED로 남아, 관제사가
-  // 여기서 "승인"을 눌러도 /berth-assignments 화면에는 계속 승인 대기로 떠
-  // 있었다(실사용 중 발견). 세 경로가 있다 — approvalId(arrival_watcher가 이미
-  // 만들어 둔 REQUESTED 행)가 있으면 그 행을 승인/반려하고(/approvals/{id}/decision),
-  // 없으면 승인은 commitAssignment로 판정과 확정을 한 번에 하고(/assess-and-commit),
-  // 반려는 rejectAssignment로 그 자리에서 REJECTED 행만 남긴다(/orchestrator/reject).
+  // 우리는 선석을 배정하지 않는다. 배정하지 않으면 승인할 대상도 반려할 대상도
+  // 없다 — 우리가 내는 건 요청이 아니라 의견이기 때문이다. 옛 경로 셋
+  // (/approvals/{id}/decision · /orchestrator/assess-and-commit ·
+  //  /orchestrator/reject)은 백엔드에서 전부 없어졌다(실측 404).
   //
-  // [2026-08-20] 반려 버튼이 approvalId가 있을 때만 보였던 게 실사용 중 문제로
-  // 지적됐다 — "판정을 보고 승인할지 반려할지 정한다"는 이 콘솔의 목적상
-  // REQUESTED 행의 유무는 반려 가능 여부와 무관해야 한다. 이제 반려도 즉석
-  // 경로가 있어 항상 두 버튼을 같이 보여준다.
-  const [decision, setDecision] = useState(null);
-  const [approvalId, setApprovalId] = useState(null);
-  const [approvalChecked, setApprovalChecked] = useState(false);
+  // 남는 동작은 둘이다.
+  //   판정 기록  이 배가 지금 있는 자리가 조건에 맞는지 판정해 이력에 남긴다.
+  //   확인       관제사가 그 판정을 봤다는 사실을 남긴다. 동의하지 않으면 의견을
+  //              함께 적는다 — 그게 다음 판정 규칙을 고칠 근거가 된다.
+  // 어느 쪽도 자리를 잠그지 않는다.
+  const [ackState, setAckState] = useState(null);      // null | 'RECORDED' | 'ACKNOWLEDGED'
+  const [assessmentId, setAssessmentId] = useState(null);
+  const [assessmentChecked, setAssessmentChecked] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [decisionError, setDecisionError] = useState(null);
+  // 관제사 의견 — 판정에 동의하지 않을 때 적는다. 비어 있어도 확인은 된다.
+  const [ackNote, setAckNote] = useState('');
   // 조회 전용(공개 배포본) 때문에 막힌 것인지 — 문구 색을 가르는 근거
   const [decisionReadOnly, setDecisionReadOnly] = useState(false);
-  const { orchestrate, commitAssignment, rejectAssignment, assessBerthWeather, ragQuery } = useOnsanApi();
+  const { orchestrate, recordAssessment, assessBerthWeather, ragQuery } = useOnsanApi();
   const setOrchestration = useSensorStore((s) => s.setOrchestration);
   const setBerthWeather = useSensorStore((s) => s.setBerthWeather);
 
@@ -331,9 +354,10 @@ export default function AgentConsole() {
   const run = async () => {
     if (!target) return;
     setLoading(true);
-    setDecision(null);   // 새로 판정하면 이전 결정은 무효다
-    setApprovalId(null);
-    setApprovalChecked(false);
+    setAckState(null);   // 새로 판정하면 이전 확인은 무효다
+    setAssessmentId(null);
+    setAssessmentChecked(false);
+    setAckNote('');
     setDecisionError(null);
     // [2026-08-23] 이전 판정 로그도 함께 비운다.
     //
@@ -357,83 +381,84 @@ export default function AgentConsole() {
         // 이 배가 이미 받아 둔 추천을 자기 점유로 세지 않도록 호출부호를 넘긴다
         callSign: target.callsgn,
       });
-      // 이 콘솔의 orchestrate()는 매번 새로 계산하는 상태없는 판단이라 배정 id를
-      // 돌려주지 않는다 — arrival_watcher(10분 주기 배경 잡)가 같은 배로 이미
-      // REQUESTED 행을 만들어 뒀는지 먼저 찾는다. 있으면 그 행을 승인하고, 없으면
-      // decide()가 commitAssignment로 판정과 확정을 한 번에 한다(아직 그 잡이
-      // 이 배를 처리하기 전이라는 뜻이지, 승인이 불가능하다는 뜻이 아니다).
-      try {
-        const pending = await fetchPendingApprovals();
-        const match = pending.find((p) => p.kind === '선석배정' && p.call_sign === target.callsgn);
-        setApprovalId(match ? match.id : null);
-      } catch {
-        setApprovalId(null);
-      } finally {
-        setApprovalChecked(true);
-      }
+      // orchestrate()는 매번 새로 계산하는 상태없는 판단이라 아무것도 기록하지
+      // 않는다. arrival_watcher(10분 주기 배경 잡)가 같은 배를 이미 판정해 뒀으면
+      // 그 행을 확인하면 되고, 없으면 여기서 '판정 기록'을 눌러 만든다.
+      //
+      // [2026-09-22] kind 로 걸러 찾던 것을 호출부호만으로 바꿨다.
+      //   /approvals/pending 응답에 kind 필드가 없다(실측 — id · call_sign ·
+      //   vessel_name · stage · wharf_name · level · action · recipient ·
+      //   reasons · changed_from · assessed_at_utc). 없는 필드로 걸렀으니
+      //   match 가 늘 undefined 였고, 확인할 수 있는 건이 있어도 못 찾았다.
+      setAssessmentId(await findPendingAssessmentId(target.callsgn));
+      setAssessmentChecked(true);
     } finally {
       setLoading(false);
     }
   };
 
-  const decide = async (verdict) => {
+  // 이 배가 지금 붙어 있는 선석. 판정을 기록하려면 "어느 자리에 대한 판정인가"가
+  // 있어야 하는데(백엔드가 assigned_wharf_name 없으면 400), 그 답은 위치 판정이
+  // 준다 — /vessels 의 presence_berth_name. 화면이 스스로 추정하지 않는다.
+  const berthNow = target?.presence_berth_name ?? null;
+
+  // 판정을 이력에 남긴다. 아무 자리도 잠기지 않는다.
+  const record = async () => {
     if (decisionBusy || !target) return;
     setDecisionBusy(true);
     setDecisionError(null);
     setDecisionReadOnly(false);
     try {
-      if (approvalId) {
-        // arrival_watcher가 이미 만들어 둔 REQUESTED 행이 있다 — 그 행을 승인/반려한다.
-        await postApprovalDecision(approvalId, { verdict, approvedBy: OPERATOR_NAME });
-        setDecision(verdict === 'APPROVE' ? 'APPROVED' : 'REJECTED');
-        return;
-      }
-      if (verdict === 'REJECT') {
-        // REQUESTED 행이 없어도 반려는 그 자리에서 기록한다(§5.3) — REQUESTED
-        // 행의 유무는 "이 판정을 승인할지 반려할지"라는 관제사의 판단과
-        // 무관하다(2026-08-20). berth_id 없는 REJECTED 행만 남기므로 자원을
-        // 점유한 적 없는 반려이고, 다음 arrival_watcher 주기에 이 배는 다시
-        // 후보로 잡힌다(영구 배제 아님).
-        const { assignmentId } = await rejectAssignment({
-          vesselName: target.vessel_name,
-          callSign: target.callsgn,
-          chemId: (target.cargo ?? target.assumed_cargo)?.chem_id,
-          rejectedBy: OPERATOR_NAME,
-          reason: orchestration?.summary,
-        });
-        setApprovalId(assignmentId);
-        setDecision('REJECTED');
-        return;
-      }
-      // 승인만 판정과 확정을 한 번에 한다.
-      // 판정에 쓴 화물과 확정에 쓰는 화물이 같아야 한다.
+      // 판정에 쓴 화물과 기록에 쓰는 화물이 같아야 한다.
       //
       // 종합 판정은 실신고 화물이 없으면 선종 추정 화물(assumed_cargo)로 판단하는데,
-      // 확정은 target.cargo 만 보고 있었다. 그래서 선종 추정 선박은 '승인가능'
-      // 판정을 받고 승인 버튼까지 떠 놓고, 누르면 "화물 'undefined' 식별 불가"로
-      // 실패했다 — 판정과 확정이 서로 다른 입력을 본 것이다(2026-08-24 실측:
-      // 판정 대상 60척 중 선종 추정이 다수라 시연 흐름이 통째로 막혔다).
-      const commitCargo = target.cargo ?? target.assumed_cargo;
-      const outcome = await commitAssignment({
-        cargoName: commitCargo?.name,
-        chemId: commitCargo?.chem_id,
-        casNo: commitCargo?.cas_no,
+      // 기록은 target.cargo 만 보고 있었다. 그래서 선종 추정 선박은 판정을 받고
+      // 버튼까지 떠 놓고, 누르면 "화물 'undefined' 식별 불가"로 실패했다 — 판정과
+      // 기록이 서로 다른 입력을 본 것이다(2026-08-24 실측: 판정 대상 60척 중
+      // 선종 추정이 다수라 시연 흐름이 통째로 막혔다).
+      const cargo = target.cargo ?? target.assumed_cargo;
+      const outcome = await recordAssessment({
+        cargoName: cargo?.name,
+        chemId: cargo?.chem_id,
+        casNo: cargo?.cas_no,
         dwt: null,
         draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
         callSign: target.callsgn,
-        approvedBy: OPERATOR_NAME,
+        assignedWharfName: berthNow,
       });
-      // 판정과 확정 사이에 상황이 바뀌었을 수 있다(다른 배가 먼저 그 슬롯을
-      // 가져감 등) — 콘솔에 보이던 판단을 재검증 결과로 갱신해 화면과 실제
-      // 확정 내용이 어긋나지 않게 한다.
+      // 판정을 다시 돌린 결과다 — 콘솔에 보이던 판단을 그걸로 갱신해 화면과
+      // 기록된 내용이 어긋나지 않게 한다.
       setOrchestration(outcome.orchestration);
-      if (outcome.committed) {
-        setApprovalId(outcome.assignmentId);
-        setDecision('APPROVED');
-      } else {
-        setDecisionError(outcome.notCommittedReason || '확정할 수 없는 판정입니다.');
+      setAckState('RECORDED');
+      // 방금 남긴 행의 id 는 응답에 없다(응답은 recorded/level/stage 만 준다).
+      // 확인 버튼을 띄우려면 id 가 필요하니 대기 목록에서 다시 찾는다.
+      setAssessmentId(await findPendingAssessmentId(target.callsgn));
+      if (!outcome.recorded) {
+        // 실패가 아니라 "직전 판정과 시점·등급·조치안이 모두 같다"는 뜻이다.
+        setDecisionReadOnly(true);
+        setDecisionError('직전 판정과 같아 새 이력을 남기지 않았습니다 — 변화만 기록합니다.');
       }
+    } catch (e) {
+      setDecisionError(e.message);
+      setDecisionReadOnly(Boolean(e.readOnly));
+    } finally {
+      setDecisionBusy(false);
+    }
+  };
+
+  // 관제사가 이 판정을 봤다는 사실을 남긴다. 의견이 있으면 함께 적는다.
+  const acknowledge = async () => {
+    if (decisionBusy || !assessmentId) return;
+    setDecisionBusy(true);
+    setDecisionError(null);
+    setDecisionReadOnly(false);
+    try {
+      await postAcknowledgement(assessmentId, {
+        acknowledgedBy: OPERATOR_NAME,
+        note: ackNote.trim() || null,
+      });
+      setAckState('ACKNOWLEDGED');
     } catch (e) {
       setDecisionError(e.message);
       setDecisionReadOnly(Boolean(e.readOnly));
@@ -657,55 +682,73 @@ export default function AgentConsole() {
         })}
       </div>
 
-      {/* 관제사 승인 (Human-in-the-loop) — 실제 배정을 만드는 유일한 지점(§5.3).
-          /berth-assignments 페이지는 읽기전용으로 뺐다 — 승인 액션은 여기 하나뿐이다.
-          판정이 '승인가능'일 때만 보여준다 — 정박지대기/배정불가는 승인할 대상이
-          없다(위 협상 로그에 이미 그 사유가 나와 있다). */}
-      {orchestration && orchestration.status === 'APPROVED' && (
+      {/* 관제사 확인 (Human-in-the-loop).
+          [2026-09-22] '승인'이 아니라 '확인'이다 — 우리는 자리를 주지 않는다.
+          판정 등급과 무관하게 보여준다. 예전엔 '승인가능'일 때만 띄웠는데, 그건
+          승인할 대상이 있을 때만 버튼이 필요했기 때문이다. 지금은 부적합·주의
+          판정일수록 관제사가 봤다는 기록과 의견이 더 필요하다. */}
+      {orchestration && (
         <div style={{
           padding: '10px 14px', borderTop: `1px solid ${COLORS.glassBorder}`,
           display: 'flex', flexDirection: 'column', gap: 6,
         }}>
+          {/* 확인 전에는 의견을 적을 수 있다. 비워 두고 확인만 눌러도 된다 —
+              동의하지 않을 때 적으라는 칸이지 필수 입력이 아니다. */}
+          {ackState !== 'ACKNOWLEDGED' && assessmentId && (
+            <input
+              value={ackNote}
+              onChange={(e) => setAckNote(e.target.value)}
+              placeholder="판정에 동의하지 않으면 의견을 적어주세요 (선택)"
+              style={{
+                width: '100%', boxSizing: 'border-box', background: 'transparent',
+                color: COLORS.textPrimary, border: `1px solid ${COLORS.border}`,
+                borderRadius: 8, padding: '6px 10px', fontSize: 12,
+              }}
+            />
+          )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {decision ? (
+            {ackState === 'ACKNOWLEDGED' ? (
               <>
-                <span style={{
-                  flex: 1, fontSize: 12.5, fontWeight: 700,
-                  color: decision === 'APPROVED' ? COLORS.teal : COLORS.red,
-                }}>
-                  {decision === 'APPROVED'
-                    ? `✓ ${OPERATOR_NAME} 승인 — 하역 개시`
-                    : `✕ ${OPERATOR_NAME} 반려 — 배정 취소`}
+                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: COLORS.teal }}>
+                  ✓ {OPERATOR_NAME} 확인 — 판정 이력에 기록
                 </span>
                 {/* "닫기"는 배너가 아니라 콘솔 전체를 닫는다(2026-08-20 — 배너만 닫히고
-                    콘솔은 열려 있는 게 오히려 헷갈린다는 지적). 백엔드 결정을 되돌리는
-                    게 아니다 — 되돌리려면(반려 취소 등) 새 배로 다시 판정을 돌려야 한다. */}
+                    콘솔은 열려 있는 게 오히려 헷갈린다는 지적). */}
                 <button onClick={() => setOpen(false)} style={{
                   background: 'transparent', color: COLORS.textDim, border: `1px solid ${COLORS.border}`,
                   borderRadius: 8, padding: '5px 10px', fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
                 }}>닫기</button>
               </>
-            ) : !approvalChecked ? (
+            ) : !assessmentChecked ? (
               <span style={{ flex: 1, fontSize: 11.5, color: COLORS.textDim }}>
-                승인 대상 확인 중…
+                판정 이력 확인 중…
               </span>
-            ) : (
+            ) : assessmentId ? (
               <>
                 <span style={{ flex: 1, fontSize: 11.5, color: COLORS.textDim }}>
-                  {approvalId
-                    ? '자동추천 대기열에 있는 건입니다 — 최종 결정은 관제사가 합니다'
-                    : '승인 시 선석이 배정 됩니다.'}
+                  확인해도 자리가 잡히지 않습니다 — 이 판정을 봤다는 기록만 남습니다.
                 </span>
-                <button onClick={() => decide('APPROVE')} disabled={decisionBusy} style={{
+                <button onClick={acknowledge} disabled={decisionBusy} style={{
                   background: COLORS.teal, color: '#FFFFFF', border: 'none', borderRadius: 8,
                   padding: '7px 14px', fontWeight: 800, fontSize: 12.5,
                   cursor: decisionBusy ? 'wait' : 'pointer', opacity: decisionBusy ? 0.6 : 1,
-                }}>승인</button>
-                <button onClick={() => decide('REJECT')} disabled={decisionBusy} style={{
-                  background: 'transparent', color: COLORS.red, border: `1px solid ${COLORS.red}`,
-                  borderRadius: 8, padding: '7px 12px', fontWeight: 700, fontSize: 12.5,
-                  cursor: decisionBusy ? 'wait' : 'pointer', opacity: decisionBusy ? 0.6 : 1,
-                }}>반려</button>
+                }}>확인</button>
+              </>
+            ) : (
+              <>
+                <span style={{ flex: 1, fontSize: 11.5, color: COLORS.textDim }}>
+                  {berthNow
+                    ? `아직 남긴 판정이 없습니다 — ${berthNow} 기준으로 기록합니다.`
+                    : '이 배가 어느 선석에 있는지 확인되지 않아 기록할 수 없습니다.'}
+                </span>
+                <button onClick={record} disabled={decisionBusy || !berthNow} style={{
+                  background: berthNow ? COLORS.teal : 'transparent',
+                  color: berthNow ? '#FFFFFF' : COLORS.textDim,
+                  border: berthNow ? 'none' : `1px solid ${COLORS.border}`,
+                  borderRadius: 8, padding: '7px 14px', fontWeight: 800, fontSize: 12.5,
+                  cursor: !berthNow ? 'not-allowed' : decisionBusy ? 'wait' : 'pointer',
+                  opacity: decisionBusy ? 0.6 : 1,
+                }}>판정 기록</button>
               </>
             )}
           </div>

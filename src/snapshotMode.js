@@ -75,18 +75,22 @@ if (ENABLED && typeof window !== 'undefined') {
       );
     }
 
-    // 승인/반려는 상태를 바꾸는 동작이라 정적 배포본에서 할 수 없다.
+    // 판정 기록·확인은 상태를 바꾸는 동작이라 정적 배포본에서 할 수 없다.
     // 없는 성공을 지어내지 않고, 왜 안 되는지 그대로 말한다.
-    if (path.endsWith('/orchestrator/assess-and-commit') || path.endsWith('/orchestrator/reject')) {
+    //
+    // [2026-09-22] 가로채는 경로를 바꿨다. 옛 이름(/assess-and-commit ·
+    // /orchestrator/reject · /approvals/{id}/decision)은 백엔드에서 없어졌다 —
+    // 우리가 선석을 배정하지 않기로 하면서 승인·반려라는 동작 자체가 사라졌다.
+    if (path.endsWith('/orchestrator/assess-and-record')) {
       return jsonResponse(
-        { detail: '이 공개 데모는 조회 전용입니다 — 승인·반려는 실시간 관제 서버에서 수행됩니다.', read_only: true },
+        { detail: '이 공개 데모는 조회 전용입니다 — 판정 기록은 실시간 관제 서버에서 남깁니다.', read_only: true },
         503,
       );
     }
 
-    if (path.includes('/approvals/') && path.endsWith('/decision')) {
+    if (path.includes('/approvals/') && path.endsWith('/acknowledge')) {
       return jsonResponse(
-        { detail: '이 공개 데모는 조회 전용입니다 — 승인·반려는 실시간 관제 서버에서 수행됩니다.', read_only: true },
+        { detail: '이 공개 데모는 조회 전용입니다 — 판정 확인은 실시간 관제 서버에서 기록됩니다.', read_only: true },
         503,
       );
     }
