@@ -73,6 +73,8 @@ const ASSUMED_DWT = 20000; // 케미컬 탱커 가정값 (하드코딩 유지 �
 const DRAUGHT_VERDICT_STYLE = {
   NOT_ALLOWED: { label: '접안 불가', color: COLORS.red },
   MARGINAL: { label: '여유 부족', color: COLORS.yellow },
+  // 선석별 수심이 다른 부두(SK5 7~11m 등)라 어느 선석인지 확인해야 판정이 끝나는 경우
+  CHECK: { label: '선석 확인 요청', color: COLORS.info },
   UNKNOWN: { label: '판정 불가', color: COLORS.textDim },
   OK: { label: '정상', color: COLORS.teal },
 };
