@@ -327,10 +327,26 @@ export default function AgentConsole() {
     if (shownTargetId.current !== null && shownTargetId.current !== id) {
       setOrchestration(null);
       setBerthWeather(null);
-      setDecision(null);
-      setApprovalId(null);
-      setApprovalChecked(false);
+      // [2026-09-22] setDecision · setApprovalId · setApprovalChecked 를 지금
+      // 이름으로 바꿨다. 셋 다 23871ff("승인/반려를 없애고 판정 확인으로")에서
+      // 상태를 갈아끼울 때 이 이펙트만 빠뜨린 자리라, **선언된 적 없는 함수**를
+      // 부르고 있었다 — ReferenceError: setDecision is not defined.
+      //
+      // 이 조건은 첫 마운트에는 안 탄다(shownTargetId.current === null). 대상이
+      // 한 번 정해진 뒤 **바뀔 때** 처음 터진다. 그 순간이 곧:
+      //   · 드롭다운에서 다른 배를 고를 때
+      //   · 배정현황 목록의 "판단 과정 로그 →" 가 다른 배를 지목할 때
+      //   · 종합 판정이 도는 5~10초 사이 대시보드 폴링이 갱신돼 vessels[0]
+      //     (기본 대상)이 바뀔 때 — 사용자가 아무것도 안 눌러도 바뀐다
+      // 이고, 이펙트 안에서 던진 예외라 아무도 잡지 않는다. AgentConsole 은
+      // Routes 밖(App.jsx)에 있어서 React 가 트리 **전체**를 언마운트한다 —
+      // 주소는 그대로인데 화면만 백지가 되는 게 이것이다(실측 재현).
+      setAckState(null);
+      setAssessmentId(null);
+      setAssessmentChecked(false);
+      setAckNote('');
       setDecisionError(null);
+      setDecisionReadOnly(false);
     }
     shownTargetId.current = id;
     // eslint-disable-next-line react-hooks/exhaustive-deps
