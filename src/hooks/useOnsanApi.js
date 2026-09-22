@@ -494,11 +494,25 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
   };
 }
 
+// 백엔드 OverallDecision 값 → 화면 상태.
+//
+// [2026-09-22] 부분 문자열 매칭(`d.includes('승인')`)을 정확 매칭으로 바꿨다.
+// 백엔드가 "승인가능" -> "적합" 으로 어휘를 바꾸면서(우리는 승인하지 않는다)
+// 부분 매칭이 위험해졌다 — '전 후보 부적합'.includes('적합') 도, '적합선석없음'
+// .includes('적합') 도 참이라, 부적합 판정이 전부 APPROVED 로 뒤집힌다.
+const DECISION_TO_STATUS = {
+  '적합': 'APPROVED',
+  '정박지대기': 'WAITING_ANCHORAGE',
+  '기상불가_중단권고': 'REJECTED',
+  '적합선석없음': 'REJECTED',
+  '전 후보 부적합': 'REJECTED',
+};
+
 function mapOrchestration(r) {
   const d = r.overall_decision || '';
-  const status = d.includes('승인') ? 'APPROVED'
-    : d.includes('정박지') ? 'WAITING_ANCHORAGE'
-      : 'REJECTED';
+  // 모르는 값은 REJECTED 로 떨어뜨린다 — 새 값이 생겼을 때 조용히 '적합'으로
+  // 보이는 것보다, 보수적으로 막히고 눈에 띄는 편이 낫다.
+  const status = DECISION_TO_STATUS[d] ?? 'REJECTED';
   const trace = r.assignment_trace || [];
   const path = r.anchorage_assignment ? '정박지대기'
     : trace.some((t) => t.includes('대체')) ? '대체' : '전용';
@@ -737,67 +751,58 @@ export default function useOnsanApi() {
     [postJson, setOrchestration]
   );
 
-  // 판정 + 즉석 확정 — POST /orchestrator/assess-and-commit (§5.3).
+  // 판정 + 판정 이력 기록 — POST /orchestrator/assess-and-record.
   //
-  // orchestrate()는 판단만 하고 아무것도 안 쓴다. 실제 배정은 원래
-  // arrival_watcher(10분 주기 배경 잡)가 만든 REQUESTED 행을 승인해야만
-  // 생기는데, 관제사가 이 콘솔에서 그 잡이 아직 안 건드린 배를 직접 골라
-  // 판정하면 승인할 행 자체가 없다(2026-08-19 실사용 중 발견 — "승인을
-  // 눌렀는데 선석배정현황엔 계속 대기로 뜬다"). 이 함수는 그 경우를 위한
-  // 것으로, chem_id를 orchestrate()보다 하나 더 챙긴다 — 실화물 조인 결과는
-  // chem_id를 이미 알고 있으므로(cas_no 경유 없이) 그대로 써야 배정 행의
-  // cargo_chem_id가 정확하다.
-  const commitAssignment = useCallback(
+  // [2026-09-22] 옛 commitAssignment(/assess-and-commit) 와 rejectAssignment
+  // (/orchestrator/reject) 를 이걸로 합쳤다. 두 경로 모두 버튼이 곧 배정이던
+  // 시절의 것이고, 지금 백엔드에는 아예 없다(둘 다 404).
+  //
+  // 우리는 선석을 배정하지 않는다. 그러니 확정할 것도 반려할 것도 없다 —
+  // 남는 일은 "이 배가 지금 있는 자리가 조건에 맞는가"를 판정해 기록하는 것뿐이다.
+  //
+  // assigned_wharf_name 이 필수다(없으면 백엔드가 400). 탐색모드(새 자리를
+  // 추천받는 호출)로는 기록할 수 없다는 뜻인데, 그게 맞다 — 기록하려면 "어느
+  // 자리에 대한 판정인가"가 있어야 한다. 그 자리는 위치 판정이 알려준다
+  // (/vessels 의 presence_berth_name).
+  //
+  // chem_id 를 orchestrate() 보다 하나 더 챙긴다 — 실화물 조인 결과는 chem_id 를
+  // 이미 알고 있으므로(cas_no 경유 없이) 그대로 써야 판정 행의 물질이 정확하다.
+  const recordAssessment = useCallback(
     async ({
-      cargoName, chemId, casNo, dwt, draught, vesselName, callSign, imoNo, approvedBy,
+      cargoName, chemId, casNo, dwt, draught, vesselName, callSign, imoNo, assignedWharfName,
     }) => {
       const cargo = resolveCargoRef({ chem_id: chemId, cas_no: casNo, cargo_name: cargoName });
       if (!cargo) throw new Error(`화물 '${cargoName}' 식별 불가 — chem_id/CAS 매핑이 없습니다.`);
+      if (!assignedWharfName) {
+        throw new Error('이 배가 지금 어느 선석에 있는지 확인되지 않아 판정을 기록할 수 없습니다.');
+      }
       const now = Date.now();
-      const data = await postJsonStrict('/orchestrator/assess-and-commit', {
+      const data = await postJsonStrict('/orchestrator/assess-and-record', {
         vessel: {
           draught_m: Number(draught) || 7.5,
           dwt_t: dwt ? Number(dwt) : null,
           name_hint: vesselName,
+          call_sign: callSign ?? null,
         },
         cargo,
         window_start: new Date(now).toISOString(),
         window_end: new Date(now + 8 * 3600 * 1000).toISOString(),
+        assigned_wharf_name: assignedWharfName,
         call_sign: callSign,
         vessel_name: vesselName,
         imo_no: imoNo ?? null,
-        approved_by: approvedBy,
       });
       // 실패는 postJsonStrict 가 사유와 함께 throw 한다
       return {
-        committed: data.committed,
-        assignmentId: data.assignment_id ?? null,
-        notCommittedReason: data.not_committed_reason ?? null,
+        // 직전 판정과 시점·등급·조치안이 모두 같으면 기록하지 않는다(변화만 남긴다).
+        // 그건 실패가 아니라 "바뀐 게 없다"는 뜻이라 화면이 구분해서 말해야 한다.
+        recorded: data.recorded,
+        level: data.level,
+        stage: data.stage ?? null,
         orchestration: mapOrchestration({ ...data.result, _vessel_name: vesselName, _cargo_name: cargoName }),
       };
     },
     [postJsonStrict]
-  );
-
-  // 즉석 반려 — POST /orchestrator/reject (§5.3, commitAssignment의 반려판).
-  //
-  // REQUESTED 행이 없어도(=arrival_watcher가 아직 이 배를 안 건드렸어도) 관제사가
-  // 콘솔에서 본 판정을 그 자리에서 반려할 수 있어야 한다 — REQUESTED 행의 유무는
-  // "승인할지 반려할지"라는 관제사의 판단과 무관하다(2026-08-20).
-  const rejectAssignment = useCallback(
-    async ({ vesselName, callSign, imoNo, chemId, rejectedBy, reason }) => {
-      const data = await postJsonStrict('/orchestrator/reject', {
-        call_sign: callSign,
-        vessel_name: vesselName,
-        imo_no: imoNo ?? null,
-        cargo_chem_id: chemId ?? null,
-        rejected_by: rejectedBy,
-        reason: reason ?? null,
-      });
-      if (!data) throw new Error('백엔드 응답이 없습니다.');
-      return { assignmentId: data.assignment_id };
-    },
-    [postJson]
   );
 
   // ─── 관제사 질의응답 (RAG) ───
@@ -844,6 +849,6 @@ export default function useOnsanApi() {
 
   return {
     fetchBerthGroups, assessBerthWeather, assessSafetyVerdict, assessSafetyGates,
-    orchestrate, commitAssignment, rejectAssignment, ragQuery,
+    orchestrate, recordAssessment, ragQuery,
   };
 }

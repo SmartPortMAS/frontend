@@ -29,11 +29,19 @@ export const levelStyle = (level) => LEVEL_STYLE[level] || LEVEL_STYLE.INFO;
 /** 경고 유형 코드 → 화면 표기 */
 export const TYPE_LABEL = {
   SEGREGATION: '혼재금지',
+  // [2026-09-22] D3 — 같은 선석이 아니라 **옆 부두** 재항 화물과의 충돌.
+  // 같은 '혼재금지'로 적으면 관제사가 어디를 봐야 하는지 알 수 없다.
+  ADJACENT_SEGREGATION: '인접 선석 혼재',
   DRAUGHT: '흘수/UKC',
   UNIDENTIFIED_CARGO: '화물 미확인',
   // arrival_watcher 자동배정 결과 — 표기가 없으면 화면에 영문 코드가 그대로 나온다
   ALL_CANDIDATES_UNSAFE: '전 후보 부적합',
   NO_ELIGIBLE_BERTH: '적합 선석 없음',
+  // 판정 이력 경고(berth_alerts._assessment_alerts)는 `ASSESSMENT_{등급}` 으로 온다.
+  // 표기가 없어 화면에 'ASSESSMENT_부적합' 이 그대로 찍히고 있었다.
+  ASSESSMENT_부적합: '판정 부적합',
+  ASSESSMENT_주의: '판정 주의',
+  ASSESSMENT_판정불가: '판정불가',
 };
 
 export const typeLabel = (type) => TYPE_LABEL[type] || type;
