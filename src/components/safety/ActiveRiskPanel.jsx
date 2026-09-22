@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
 import { alertId, levelStyle, typeLabel, groupAlertsByBerth } from '../../utils/alertUtils';
-import { FaCheck, FaCheckCircle, FaExclamationTriangle, FaShieldAlt, FaShip } from 'react-icons/fa';
+import { FaCheck, FaCheckCircle, FaExclamationTriangle, FaShieldAlt, FaShip, FaCube } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 현재 위험 선석 — 안전/환경 관제 화면의 오른쪽 열
@@ -43,6 +44,7 @@ export default function ActiveRiskPanel() {
   // 선석 안전이 아니라 배정 결과라, 배정현황과 협상 로그에서 다룰 일이다.
   // 헤더 경고 벨에는 전량 그대로 남는다 — 화면에서 지우는 게 아니라 자리를 가린다.
   const allAlerts = data?.alerts ?? [];
+  const navigate = useNavigate();
   const alerts = useMemo(() => allAlerts.filter((a) => a.berth_name), [allAlerts]);
   const vessels = data?.real_traffic ?? [];
   const berths = useMemo(() => groupAlertsByBerth(alerts), [alerts]);
@@ -82,7 +84,7 @@ export default function ActiveRiskPanel() {
       </div>
 
       <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginBottom: '10px', lineHeight: 1.5 }}>
-        혼재금지 · IMDG 격리 · 흘수 경고 {alerts.length}건 (미확인 {unackedTotal}건)
+        혼재금지 · 화물 미확인 · 흘수 여유(UKC) 경고 {alerts.length}건 (미확인 {unackedTotal}건)
         <br />
         선석을 누르면 왼쪽 심사 폼이 그 선석의 재항 화물로 채워집니다.
       </div>
@@ -143,6 +145,23 @@ export default function ActiveRiskPanel() {
                         <FaShip size={9} /> {vessel.vessel_name}
                       </button>
                     )}
+                    {/* 이 경고가 '현장에서 어떤 배치인지'를 3D 로 넘긴다.
+                        혼재금지 판정의 근거는 '인접 선석 화물'인데, 그 인접이 공간적으로
+                        어떤 뜻인지는 목록만 봐서는 알 수 없다. 3D 관제 화면이 답하는
+                        질문이 바로 그것이라 두 화면의 역할이 겹치지 않고 이어진다. */}
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/twin?berth=${encodeURIComponent(g.berth)}`)}
+                      title={`${g.berth} 와 인접 선석의 현장 배치를 3D 로 봅니다`}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                        background: 'transparent', border: `1px solid ${COLORS.border}`,
+                        color: COLORS.textDim, borderRadius: '6px', padding: '3px 8px',
+                        fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      <FaCube size={9} /> 현장 배치
+                    </button>
                     {!allAcked && (
                       <button
                         type="button"
@@ -185,8 +204,23 @@ export default function ActiveRiskPanel() {
                           2026-08-21). 결론 한 줄 + 펼침. */}
                       {(() => {
                         const msg = (a.message || '').replace(`${g.berth}: `, '');
+                        /* [2026-09-22] D3 — 그래프가 만든 경로 문장.
+                           "왜 이 결론인가"를 관제사가 한 줄로 확인할 수 있게, 백엔드가
+                           준 문장을 그대로 보여준다. 화면이 근거를 다시 조립하면
+                           백엔드와 표현이 갈라진다(그래서 조립하지 않는다). */
+                        const path = a.graph_path ? (
+                          <div style={{
+                            marginTop: '3px', fontSize: '10.5px', color: COLORS.textDim,
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                            wordBreak: 'break-word',
+                          }}>
+                            {a.graph_path}
+                          </div>
+                        ) : null;
                         const cut = msg.indexOf(' (');
-                        if (cut === -1 || msg.length < 90) return <span>{msg}</span>;
+                        if (cut === -1 || msg.length < 90) {
+                          return <span style={{ minWidth: 0 }}>{msg}{path}</span>;
+                        }
                         const head = msg.slice(0, cut);
                         const rest = msg.slice(cut + 2).replace(/\)\s*$/, '');
                         return (
@@ -198,6 +232,7 @@ export default function ActiveRiskPanel() {
                               </summary>
                               <span style={{ color: COLORS.textDim }}>{rest}</span>
                             </details>
+                            {path}
                           </span>
                         );
                       })()}

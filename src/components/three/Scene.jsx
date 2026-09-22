@@ -1,5 +1,6 @@
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Sky } from '@react-three/drei';
+import BerthFocus from './BerthFocus';
 import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing';
 import { BlendFunction } from 'postprocessing';
 import { Suspense } from 'react';
@@ -12,7 +13,7 @@ import useSensorStore from '../../stores/useSensorStore';
 // 실제 계약(wind_speed_ms·visibility_m)과 달라 연결해도 동작하지 않았다.
 // 파티클만 만들어 놓고 한 번도 렌더하지 않는 순수 비용이었다.
 
-function SimulationEnvironment() {
+function SimulationEnvironment({ focusBerth }) {
   const predictionOffset = useSensorStore((s) => s.predictionOffset);
 
   // 기준 시각은 현재 시각이다.
@@ -79,6 +80,7 @@ function SimulationEnvironment() {
 
       <Water />
       <Port />
+      <BerthFocus berthName={focusBerth} />
 
       <EffectComposer disableNormalPass>
         <Bloom luminanceThreshold={0.55} mipmapBlur intensity={0.8} />
@@ -100,7 +102,7 @@ function SimulationEnvironment() {
   );
 }
 
-export default function Scene() {
+export default function Scene({ focusBerth }) {
   return (
     <Canvas
       camera={{ position: [330, 230, -250], fov: 50 }}
@@ -117,7 +119,7 @@ export default function Scene() {
       }}
     >
       <Suspense fallback={null}>
-        <SimulationEnvironment />
+        <SimulationEnvironment focusBerth={focusBerth} />
       </Suspense>
     </Canvas>
   );

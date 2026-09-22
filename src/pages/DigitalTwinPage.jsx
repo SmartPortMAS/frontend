@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Scene from '../components/three/Scene';
+import { findBerthIdByName } from '../utils/geoUtils';
 import PortMap from '../components/dashboard/PortMap';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import RadarMap from '../components/three/hud/RadarMap';
@@ -26,6 +28,18 @@ const TICKER_ROTATE_MS = 5000;
 export default function DigitalTwinPage() {
   // 트윈 선박을 실 AIS·재항 화물로 채운다 (예전엔 스토어에 6척이 하드코딩돼 있었다)
   useLiveTwinShips();
+
+  // 다른 화면에서 넘어온 요청을 읽는다.
+  //   ?berth=S-Oil 2부두  → 그 선석으로 카메라 이동 + 인접 선석 강조 (안전/환경 관제에서)
+  //   ?omniverse=1        → 정밀 검토 스트림을 바로 켠다 (선박 상세 계류 검증에서)
+  // 화면끼리 역할이 나뉘어 있어도 흐름이 끊기면 사용자는 매번 처음부터 찾아야 한다.
+  const [searchParams] = useSearchParams();
+  const focusBerth = searchParams.get('berth') || null;
+  // 3D 장면에는 온산 11개 선석만 있다. 안전/환경 관제는 울산 전역(SK·가스부두 등)을
+  // 다루므로, 장면 밖 선석으로 넘어오는 경우가 실제로 생긴다(2026-09-03 실측: SK3부두).
+  // 그때 "빨간 링이 대상 선석"이라고 안내하면 있지도 않은 링을 찾게 만든다.
+  const focusInScene = focusBerth ? Boolean(findBerthIdByName(focusBerth)) : false;
+  const wantOmniverse = searchParams.get('omniverse') === '1';
 
   // 상단 띠에 흘릴 실경고 — 심각한 것부터 최대 6건. 화면 폭이 한정돼 있어
   // 전부 흘리면 한 바퀴가 너무 길어진다(현재 36건).
@@ -96,11 +110,43 @@ export default function DigitalTwinPage() {
     };
   }, [isPlaying, playSpeed, setPredictionOffset]);
 
+  // 선박 상세의 계류 물리 검증에서 '정밀 검토'로 넘어온 경우 바로 켠다.
+  // 사용자가 화면을 옮겨온 목적이 이미 분명한데 버튼을 한 번 더 누르게 할 이유가 없다.
+  // 서버 확인(checkStream)도 같이 시작해야 한다 — 창만 열면 '연결 확인 중'에서 영원히 멈춘다(9/17 실측).
+  useEffect(() => {
+    if (wantOmniverse) {
+      setShowOmniverseStream(true);
+      checkStream();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantOmniverse]);
+
   const togglePlay = () => setIsPlaying(!isPlaying);
 
   return (
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-      <Scene />
+      <Scene focusBerth={focusBerth} />
+
+      {/* 어느 선석을 보러 왔는지 알려준다.
+          카메라만 옮기면 사용자는 '왜 여기가 비춰지는지' 모른다. */}
+      {focusBerth && !showOmniverseStream && (
+        <div style={{
+          position: 'absolute', top: 46, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 840, display: 'flex', alignItems: 'center', gap: '10px',
+          background: 'rgba(15, 23, 42, 0.88)', backdropFilter: 'blur(10px)',
+          border: `1px solid ${focusInScene ? 'rgba(255, 75, 110, 0.55)' : 'rgba(245, 158, 11, 0.55)'}`,
+          borderRadius: '10px', padding: '8px 14px', color: '#fff',
+          fontSize: '12.5px', fontWeight: 700, maxWidth: '78%',
+        }}>
+          <span style={{ color: focusInScene ? '#ff4b6e' : '#f59e0b' }}>●</span>
+          {focusBerth}
+          <span style={{ color: '#94a3b8', fontWeight: 500 }}>
+            {focusInScene
+              ? '빨간 링이 대상 선석, 주황 링이 혼재 판정에 쓰인 인접 선석입니다'
+              : '이 선석은 3차원 장면에 없습니다 — 장면은 온산 부두 11개 선석만 재현합니다'}
+          </span>
+        </div>
+      )}
       
       {/* 관제 경고 배너 — 한 건씩 세워 놓고 자동으로 넘긴다.
           예전엔 경고 전문을 가로로 흘렸는데(marquee), 메시지가 189~229자라
@@ -180,7 +226,11 @@ export default function DigitalTwinPage() {
             borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold'
           }}
         >
-          <FaPlay /> {showOmniverseStream ? 'Omniverse 스트리밍 끄기' : 'Omniverse 실시간 스트리밍 켜기'}
+          {/* 문구를 '실시간 스트리밍'에서 '정밀 검토'로 바꿨다.
+              바로 위 3D 화면도 실시간이라, 예전 문구로는 두 화면이 무엇이 다른지
+              알 수 없었다(2026-09-03 IA 정리). 목적(정밀 검토)과 대가(기동 시간)를
+              문구에 함께 담아 사용자가 누를지 말지 판단할 수 있게 한다. */}
+          <FaPlay /> {showOmniverseStream ? '정밀 검토 닫기' : '정밀 검토 (Omniverse · 기동 1~2분)'}
         </button>
 
         <button 
@@ -244,8 +294,8 @@ export default function DigitalTwinPage() {
               <h2 style={{ margin: 0 }}>Omniverse 스트리밍이 실행되고 있지 않습니다</h2>
               <p style={{ margin: 0, color: '#94a3b8', maxWidth: '560px', lineHeight: 1.6 }}>
                 웹 뷰어({OMNIVERSE_PORTS.map((p) => `:${p}`).join(', ')})에서 응답이 없습니다.<br />
-                탐색기에서 <strong style={{ color: '#e8f0f2' }}>D:\omniverse\start_twin_stream.bat</strong> 을 실행하면
-                Isaac Sim 스트리밍과 웹 뷰어가 함께 켜집니다. (최초 실행은 셰이더 컴파일로 수 분 소요)
+                탐색기에서 <strong style={{ color: '#e8f0f2' }}>D:\omniverse\start_twin_onsite.bat</strong> 을 실행하면
+                경량 트윈(관제 스택과 동시 구동용)과 웹 뷰어가 함께 켜집니다. 1~2분 뒤 [다시 연결 시도]를 누르세요.
               </p>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS, WEATHER_STATUS_COLORS } from '../../utils/constants';
 import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
@@ -72,12 +73,15 @@ const ASSUMED_DWT = 20000; // 케미컬 탱커 가정값 (하드코딩 유지 �
 const DRAUGHT_VERDICT_STYLE = {
   NOT_ALLOWED: { label: '접안 불가', color: COLORS.red },
   MARGINAL: { label: '여유 부족', color: COLORS.yellow },
+  // 선석별 수심이 다른 부두(SK5 7~11m 등)라 어느 선석인지 확인해야 판정이 끝나는 경우
+  CHECK: { label: '선석 확인 요청', color: COLORS.info },
   UNKNOWN: { label: '판정 불가', color: COLORS.textDim },
   OK: { label: '정상', color: COLORS.teal },
 };
 
 export default function VesselDetailPanel() {
   const vessel = useSensorStore((s) => s.selectedVessel);
+  const navigate = useNavigate();
   const [moorSim, setMoorSim] = useState(null);
   const [simLoading, setSimLoading] = useState(false);
   const [moorDwt, setMoorDwt] = useState(ASSUMED_DWT);
@@ -632,6 +636,24 @@ export default function VesselDetailPanel() {
           {moorSim?.error && (
             <div style={{ marginTop: '8px', fontSize: '12px', color: COLORS.yellow }}>{moorSim.error}</div>
           )}
+          {/* 근사식 결과를 PhysX 동역학으로 다시 볼 수 있게 연결한다.
+              여기 값은 OCIMF 계열 준정적 근사이고, 그 근거가 된 PhysX 교차검증은
+              Omniverse 쪽에 있다. 두 화면의 역할이 다르다는 것을 링크로 보여준다 —
+              3D 관제 화면은 '어디에 무엇이', Omniverse 는 '그 배치가 물리적으로
+              안전한가'. 기동에 시간이 걸리므로 문구에 함께 적는다. */}
+          <button
+            type="button"
+            onClick={() => navigate('/twin?omniverse=1')}
+            title="Isaac Sim PhysX 로 계류·접안을 동역학 계산합니다 (기동 2~10분)"
+            style={{
+              marginTop: '10px', width: '100%',
+              background: 'transparent', border: `1px solid ${COLORS.border}`,
+              color: COLORS.textSecondary, borderRadius: '8px', padding: '7px 10px',
+              fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            정밀 검토 (Omniverse PhysX · 기동 2~10분)
+          </button>
           </details>
         </>
       )}

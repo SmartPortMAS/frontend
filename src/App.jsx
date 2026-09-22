@@ -5,6 +5,7 @@ import DashboardPage from './pages/DashboardPage';
 import SafetyPage from './pages/SafetyPage';
 import SensorPage from './pages/SensorPage';
 import BerthAssignmentPage from './pages/BerthAssignmentPage';
+import ArrivalVerificationPage from './pages/ArrivalVerificationPage';
 import AgentConsole from './components/dashboard/AgentConsole';
 
 // 첫 화면은 대시보드다.
@@ -17,6 +18,7 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/arrivals" element={<ArrivalVerificationPage />} />
         <Route path="/berth-assignments" element={<BerthAssignmentPage />} />
         <Route path="/twin" element={<DigitalTwinPage />} />
         <Route path="/safety" element={<SafetyPage />} />

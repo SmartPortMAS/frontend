@@ -291,10 +291,13 @@ export default function PortMap() {
         }}
       >
         {/* PORT-MIS 톤(라이트)에 맞춘 베이스맵. 예전 dark_all 은 화면 전체가 밝아진 뒤에도
-            지도만 검게 남아 따로 놀았다. voyager 는 수심·해안선 표기가 있어 해도에 가깝다. */}
+            지도만 검게 남아 따로 놀았다.
+            2026-09-18 — CARTO voyager 는 이제 API 키 없이는 "API KEY REQUIRED" 회색 타일만
+            돌려준다(실측: 타일 응답 200이지만 내용이 안내문). OpenStreetMap 표준 타일은
+            키가 없고 해안선·부두 윤곽이 있어 관제 지도로 충분하다. */}
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          attribution="&copy; OpenStreetMap &copy; CARTO"
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="&copy; OpenStreetMap contributors"
         />
 
         {/* 울산항 관제 구역 bbox */}

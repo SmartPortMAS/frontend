@@ -70,6 +70,9 @@ async function doRefresh() {
         real_traffic_liquid_total: backend?.realTrafficLiquidTotal ?? 0,
         // 선종 대조가 안 돼 "모르는" 배 — 액체화물선의 나머지가 아니다
         real_traffic_unknown_total: backend?.realTrafficUnknownTotal ?? 0,
+        // 위치 판정 기준 접안·정박지 대기 척수 (null 이면 화면이 자기신고로 센다)
+        real_traffic_berthed_total: backend?.realTrafficBerthedTotal ?? null,
+        real_traffic_anchored_total: backend?.realTrafficAnchoredTotal ?? null,
         berth_occupancy: backend?.berthOccupancy ?? [],
         anchorage_status: backend?.anchorages ?? [],
         draught_checks: backend?.draughtChecks ?? [],
