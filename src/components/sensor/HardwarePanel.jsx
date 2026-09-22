@@ -58,6 +58,21 @@ function GateCard({ gate, onCommand }) {
           {gate.thresholds.stop_wave_m != null ? ` · 파고 ${gate.thresholds.stop_wave_m} m` : ' · 파고 기준 없음'}
         </div>
       )}
+      {/* 지금 이 선석에 붙어 있는 배와 그 배의 하역중 판정. 부적합·판정불가면 게이트가 잠긴다. */}
+      {Array.isArray(gate.vessels) && (
+        <div style={{ fontSize: '11.5px', marginTop: '3px', color: COLORS.textSecondary }}>
+          {gate.vessels.length === 0 ? (
+            <span style={{ color: COLORS.textDim }}>접안 선박 없음 — 기상 기준만 적용</span>
+          ) : (
+            gate.vessels.map((v) => (
+              <div key={v.call_sign} style={{ color: v.blocking ? COLORS.red : COLORS.textSecondary }}>
+                접안 선박 {v.vessel_name || v.call_sign} · 하역중 판정 <strong>{v.level || '아직 없음'}</strong>
+                {v.blocking && v.reasons?.[0] && <span> — {v.reasons[0]}</span>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {gate.offline ? (
         <div style={{ margin: '12px 0', padding: '10px 12px', borderRadius: '8px', background: COLORS.card, color: COLORS.textSecondary, fontSize: '12.5px', display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -90,7 +105,7 @@ function GateCard({ gate, onCommand }) {
 
       {st.denied && !gate.offline && (
         <div style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: '8px', background: 'rgba(196, 50, 46, 0.10)', border: `1px solid ${COLORS.red}`, color: COLORS.red, fontSize: '12.5px', fontWeight: 700, display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <FaExclamationTriangle /> 요청 거부 — 판정 부적합. 장치가 열지 않았습니다.
+          <FaExclamationTriangle /> 요청 거부 — 인터락이 잠긴 상태라 장치가 열지 않았습니다.
         </div>
       )}
       {pending && !st.denied && (
