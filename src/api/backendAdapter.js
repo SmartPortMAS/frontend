@@ -442,25 +442,43 @@ export async function fetchBerthAssignments() {
   return res.json();
 }
 
-/** 승인 대기 목록 — GET /approvals/pending (§5.3). */
-export async function fetchPendingApprovals() {
-  const res = await fetch(`${BACKEND_BASE}/approvals/pending`);
+/**
+ * 확인 대기 판정 목록 — GET /approvals/pending.
+ *
+ * **작업 대기열이 아니다.** 여기 있는 항목을 확인하지 않아도 아무 자원도 잠기지
+ * 않고 아무 배도 기다리지 않는다 — 관제사가 자기 판단에 확신을 더하려고 보는
+ * 목록이다.
+ *
+ * includeFit: 기본값(false)은 백엔드 기본과 같아 '적합'을 뺀다 — 목록으로 훑을
+ * 때는 볼 필요가 있는 것만 나오는 게 맞다. 반대로 **배 한 척을 지목해 그 배의
+ * 판정을 찾을 때**는 true 여야 한다. 적합이어도 관제사가 봤다는 기록은 남길 수
+ * 있어야 하는데, 빼 버리면 그 배는 영원히 '판정 기록' 버튼만 보인다.
+ */
+export async function fetchPendingApprovals({ includeFit = false } = {}) {
+  const qs = includeFit ? '?only_actionable=false' : '';
+  const res = await fetch(`${BACKEND_BASE}/approvals/pending${qs}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 /**
- * 선석배정 추천 승인/반려 — POST /approvals/{id}/decision (§5.3).
- * 이 호출이 실제로 선석을 확정(APPROVED)하거나 슬롯을 풀어주는(REJECTED) 유일한 지점이다.
+ * 판정 확인 — POST /approvals/{assessmentId}/acknowledge.
+ *
+ * [2026-09-22] 옛 POST /approvals/{id}/decision(승인/반려) 자리다. 그 경로는
+ * 백엔드에서 없어졌다(실측 404). 우리가 선석을 배정하지 않기로 하면서 승인할
+ * 대상도 반려할 대상도 없어졌기 때문이다.
+ *
+ * **이 호출은 아무것도 확정하지 않는다.** 관제사가 이 판정을 봤다는 사실만 남는다.
+ * 판정에 동의하지 않으면 note 에 적는다 — 그게 다음 판정 규칙을 고칠 근거가 된다.
  */
-export async function postApprovalDecision(assignmentId, { verdict, approvedBy, reason }) {
-  const res = await fetch(`${BACKEND_BASE}/approvals/${assignmentId}/decision`, {
+export async function postAcknowledgement(assessmentId, { acknowledgedBy, note }) {
+  const res = await fetch(`${BACKEND_BASE}/approvals/${assessmentId}/acknowledge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ verdict, approved_by: approvedBy, reason: reason ?? null }),
+    body: JSON.stringify({ acknowledged_by: acknowledgedBy, note: note ?? null }),
   });
   if (!res.ok) {
-    // 409(이미 처리됨/동시승인 경합)는 실제로 발생할 수 있다 — 그대로 드러낸다.
+    // 409(이미 확인됨)는 실제로 발생할 수 있다 — 그대로 드러낸다.
     const body = await res.json().catch(() => ({}));
     const err = new Error(body.detail || `HTTP ${res.status}`);
     // 조회 전용 배포본이 막은 것과 진짜 실패를 화면이 다른 색으로 그린다.

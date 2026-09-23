@@ -11,10 +11,14 @@ const ONSAN_FIT = { padding: [48, 48], maxZoom: 15 };
 
 // 08_스케줄링_전면재설계_자동배정_설계문서.md §7.2 — 선석 배정현황 전용 지도.
 //
-// PortMap.jsx(온산 선석, VTS 관측 점유)와는 다른 질문에 답한다: "우리 시스템이
-// 이 선석에 무엇을 배정했는가". 그래서 PortMap.jsx를 확장하지 않고 새
-// 페이지·새 컴포넌트로 분리했다(§7.1) — 데이터 출처가 다르면 화면도 분리해야
-// "이게 실제 상황인지 우리 시스템 결정인지"가 헷갈리지 않는다.
+// PortMap.jsx 와는 다른 질문에 답한다.
+//   PortMap          지금 어디에 무엇이 있나
+//   이 화면          그 배가 그 자리에 맞나 (관측 + 판정을 겹쳐 본다)
+//
+// [2026-09-22] 예전엔 "우리 시스템이 이 선석에 무엇을 배정했는가"였다. 우리는
+// 배정하지 않으므로 보여줄 배정이 없다 — 대신 실측 접안(mart.vessel_presence)
+// 위에 판정 이력(assessment_history)을 얹는다. 두 화면의 점유 근거는 이제 같고,
+// 다른 것은 질문뿐이다.
 //
 // [2026-08-21] 표시 범위를 온산항(달포부두 포함 15개 선석)으로 좁혔다 —
 // 예전엔 울산항 전체 69개를 보여줬는데, 스케줄링 에이전트가 이제 온산항
@@ -23,14 +27,24 @@ const ONSAN_FIT = { padding: [48, 48], maxZoom: 15 };
 // 범위를 일치시켰다. 범위 자체는 백엔드 GET /dashboard/berth-assignments가
 // port_name='온산항'으로 이미 걸러서 내려준다(dashboard.py 참고).
 //
-// (2026-08-19) 이 화면에서는 승인 대기/확정을 구분하지 않는다 — REQUESTED든
-// APPROVED든 우리 시스템이 이미 배정한 슬롯이면 그냥 "점유"다. 승인/반려
-// 액션은 여전히 "에이전트 협상 로그"(AgentConsole)에서만 하고, 여기는 순수
-// 점유 여부 표시 화면이다.
+// 이 화면은 읽기 전용이다. 판정을 남기고 확인하는 액션은 "에이전트 판단
+// 과정"(AgentConsole) 한 곳에만 둔다 — 같은 액션을 두 화면에 따로 두면
+// 관제사가 헷갈린다.
 
-// 배정이 하나라도 있으면(REQUESTED~BERTHED 무엇이든) 점유로 본다.
+// [2026-09-22] 점유 판단을 status -> call_sign 으로 바꿨다.
+//
+//   예전에 slot.status 는 **배정 상태**(REQUESTED/APPROVED/...)라 "값이 있으면
+//   우리가 배정한 자리"라는 뜻이었다. 지금 status 는 **판정 등급**(적합/주의/
+//   부적합/판정불가)이고, 아직 판정 전이면 null 이다 — 우리는 배정하지 않는다.
+//
+//   그대로 두니 배가 붙어 있는데도 빈 자리로 그려졌다. 실측(2026-09-22):
+//       API 점유 8곳  vs  지도 표시 2곳
+//   판정이 붙은 2척만 점유로 세고 나머지 6척이 화면에서 사라진 것이다.
+//
+//   점유는 "배가 실제로 거기 있는가"이고 그 답은 call_sign 이다. 판정 유무는
+//   별개이며, 판정이 없다는 사실은 슬롯 상세가 따로 보여준다.
 function isOccupied(slots) {
-  return slots.some((s) => s.status);
+  return slots.some((s) => s.call_sign);
 }
 
 // 지도 마커에 쓰는 투명 아이콘 — 화면엔 안 보이고 클릭 대상 역할만 한다.
@@ -45,6 +59,16 @@ const INVISIBLE_ICON = L.divIcon({
   html: '', className: 'invisible-marker', iconSize: [90, 24], iconAnchor: [45, 12],
 });
 
+// 판정 등급 → 배지 색. assessment_history.level 의 네 값이 전부다.
+// '판정불가'를 회색이 아니라 노랑으로 두는 것이 핵심이다 — 근거가 없다는 사실
+// 자체를 관제사가 봐야 한다. 회색으로 두면 '해당 없음'처럼 읽힌다.
+const VERDICT_BG = {
+  '적합': COLORS.teal,
+  '주의': COLORS.yellow,
+  '부적합': COLORS.red,
+  '판정불가': COLORS.yellow,
+};
+
 function formatKST(iso) {
   if (!iso) return '-';
   return new Date(iso).toLocaleString('ko-KR', {
@@ -53,79 +77,18 @@ function formatKST(iso) {
   });
 }
 
-// 배정 근거 상세 — 선석 스펙과 선박이 어떻게 매칭됐는지만 다룬다(수심·흘수
-// 여유·전용/대체 경로·기상). 화학물질 위험성·혼재 같은 안전판정 내용은
-// 일부러 안 담는다 — 그건 안전관제 에이전트의 몫이라 다른 화면(선박 상세)에
-// 이미 있다(2026-08-19 지적 — "화학물질 내용같은건 안전관제잖아").
-//
-// narrative는 백엔드가 summary와 같은 LLM 호출에서 함께 받는 한 문장 요약이다
-// (OrchestratorResult.berth_match_summary) — "근거를 LLM으로 좀 깔끔하게
-// 포장해줬으면" 요청에 따라 추가했다. 구조화 값(매칭/기상/경로)은 그 문장이
-// 놓칠 수 있는 정확한 숫자·전체 탈락 목록을 보여주는 보조 역할로 아래에 남긴다.
-// narrative가 없는(2026-08-19 이 기능 이전에 만들어진) 배정은 구조화 값만 보인다.
-function DecisionDetail({ detail }) {
-  if (!detail) return null;
-  const { narrative, trace, berth, weather, rejected_candidates: rejected } = detail;
-  const margin = berth?.draught_margin_m;
-  const depth = berth?.depth_m;
-  // 흘수 = 수심 - 여유. 근거 값 그대로 역산이라 어림값(≈)으로 표시한다.
-  const draught = depth != null && margin != null ? (depth - margin).toFixed(1) : null;
-  // "전용 선석 'X' 사용 가능" 한 줄짜리 경로는 지금 보고 있는 이 선석 얘기를
-  // 그대로 반복할 뿐이라 정보가 없다(2026-08-19 지적) — 대체/정박지 탐색처럼
-  // 실제로 몇 단계를 거쳤을 때만(2줄 이상) 보여준다.
-  const showTrace = trace?.length > 1;
 
-  const rows = [];
-  if (berth && (draught != null || margin != null)) {
-    rows.push(['매칭', depth != null && draught != null
-      ? `수심 ${depth}m ≥ 흘수 ≈${draught}m (여유 ${margin.toFixed(1)}m) · ${berth.rank}순위${berth.berth_group ? ` · ${berth.berth_group}` : ''}`
-      : `흘수 여유 ${margin.toFixed(1)}m · ${berth.rank}순위`]);
-  }
-  if (weather) {
-    rows.push(['기상', `${weather.status}${weather.reasons?.length > 0 ? ` — ${weather.reasons.join('; ')}` : ''}`]);
-  }
-  if (showTrace) rows.push(['경로', trace.join(' → ')]);
-  if (rejected?.length > 0) {
-    rows.push(['탈락', rejected.map((r) => `${r.rank}위 ${r.berth_id}(${r.reason})`).join(', ')]);
-  }
-  if (!narrative && rows.length === 0) return null;
-
-  return (
-    <div>
-      {narrative && (
-        <p style={{
-          margin: '0 0 8px', fontSize: '12px', color: COLORS.textPrimary, lineHeight: 1.6,
-        }}>
-          {narrative}
-        </p>
-      )}
-      {rows.length > 0 && (
-        <div style={{ fontSize: '11.5px', color: COLORS.textSecondary, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {rows.map(([label, value]) => (
-            <div key={label} style={{ display: 'flex', gap: '8px', alignItems: 'baseline' }}>
-              <span style={{
-                flexShrink: 0, width: '34px', color: COLORS.teal, fontWeight: 800, fontSize: '10px',
-                textTransform: 'uppercase', letterSpacing: '0.02em',
-              }}>{label}</span>
-              <span style={{ flex: 1, lineHeight: 1.5 }}>{value}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// 슬롯 하나의 배정근거를 팝업 위에 덮어 보여주는 오버레이(드롭다운이 아니라
+// 슬롯 하나의 판정근거를 팝업 위에 덮어 보여주는 오버레이(드롭다운이 아니라
 // 진짜 팝업으로 띄워달라는 요청, 2026-08-19) — AgentConsole의 근거 원문
 // 오버레이(QaPanel::CitationList)와 같은 패턴이다.
 //
-// slot.assignment_reason(LLM이 쓴 자유문 "종합 의견")은 일부러 안 보여준다
-// (2026-08-19 재수정) — "배정근거를 말해야지 종합판단이 아니다"라는 지적대로,
-// 그 문장은 orchestrator/service.py::_llm_summary()가 안전판정까지 포함해서
-// 쓰는 관제사용 종합 의견이라 화학물질 얘기가 다시 섞여 들어온다. DecisionDetail
-// (구조화 값)만 보여줘야 "선석 스펙 vs 선박 매칭"이라는 이 화면의 질문에 맞다.
-// 종합 의견 자체는 "에이전트 협상 로그"(AgentConsole)의 몫으로 남겨둔다.
+// [2026-09-22] 보여주는 내용이 배정 근거에서 판정 근거로 바뀌었다.
+//   예전엔 decision_detail(선석 스펙 vs 선박 매칭·전용/대체 경로·탈락 후보)을
+//   폈다. 그건 우리가 자리를 고르던 시절의 근거다. 지금 백엔드가 주는 것은
+//   "왜 이 등급인가"(reasons)와 "그래서 누가 무엇을 해야 하나"(action·recipient)다.
+//
+//   조치안에 받을 곳을 함께 적는 이유: 우리가 실행하지 않는다는 뜻이 문장에
+//   남아야 한다. '대체선석 검토 필요(선석회의)'는 우리가 옮긴다는 말이 아니다.
 function ReasonOverlay({ slot, onClose }) {
   return (
     <div style={{
@@ -137,29 +100,42 @@ function ReasonOverlay({ slot, onClose }) {
         padding: '8px 10px', borderBottom: `1px solid ${COLORS.border}`,
       }}>
         <strong style={{ fontSize: '12.5px', color: COLORS.textPrimary }}>
-          슬롯 {slot.slot_no} 배정근거
+          슬롯 {slot.slot_no} 판정근거
+          {slot.stage && <span style={{ color: COLORS.textDim, fontWeight: 400 }}> · {slot.stage}</span>}
         </strong>
         <button type="button" onClick={onClose} style={{
           background: 'none', border: 'none', color: COLORS.textDim, cursor: 'pointer', fontSize: '15px',
         }}>✕</button>
       </div>
       <div style={{ padding: '10px', overflowY: 'auto' }}>
-        <DecisionDetail detail={slot.decision_detail} />
-        {slot.approved_by && (
-          <p style={{ margin: '6px 0 0', color: COLORS.textDim, fontSize: '11.5px' }}>승인자: {slot.approved_by}</p>
+        <ul style={{
+          margin: 0, paddingLeft: '16px', fontSize: '12px',
+          color: COLORS.textPrimary, lineHeight: 1.6,
+        }}>
+          {slot.reasons.map((r, i) => <li key={i}>{r}</li>)}
+        </ul>
+        {slot.action && (
+          <p style={{ margin: '8px 0 0', fontSize: '11.5px', color: COLORS.teal, fontWeight: 700 }}>
+            조치안: {slot.action}{slot.recipient && ` (${slot.recipient})`}
+          </p>
+        )}
+        {slot.assessed_at_utc && (
+          <p style={{ margin: '6px 0 0', color: COLORS.textDim, fontSize: '11.5px' }}>
+            판정 {formatKST(slot.assessed_at_utc)}
+            {slot.acknowledged_by && ` · 확인 ${slot.acknowledged_by}`}
+          </p>
         )}
       </div>
     </div>
   );
 }
 
-// 이 화면은 점유 여부만 보여준다 — REQUESTED/APPROVED 구분 없이 배정이 있으면
-// 전부 "점유 중"이다. 승인/반려 액션은 우하단 "에이전트 협상 로그"(AgentConsole)
-// 하나뿐이다(2026-08-19 — 이 컴포넌트에 있던 승인 버튼은 slot.assignment_id가
-// 응답에 없어 "undefined"로 호출돼 늘 실패했었다. 같은 액션을 두 화면에 따로
-// 두면 관제사가 헷갈리므로 액션 자체를 한 곳으로 모았다).
+// 슬롯 한 줄 — 누가 붙어 있고(관측), 그게 조건에 맞는지(판정)를 함께 적는다.
+// 판정이 아직 없으면 그 사실도 숨기지 않는다 — 배는 있는데 아무도 보지 않았다는
+// 뜻이고, 그것도 관제사가 알아야 한다.
 function SlotRow({ slot, onShowReason }) {
-  if (!slot.status) {
+  // '여유'는 판정이 없는 자리가 아니라 **배가 없는** 자리다(isOccupied 주석 참고).
+  if (!slot.call_sign) {
     return (
       <div style={{ padding: '6px 0', fontSize: '12px', color: COLORS.textDim }}>
         슬롯 {slot.slot_no} — 여유
@@ -167,9 +143,10 @@ function SlotRow({ slot, onShowReason }) {
     );
   }
 
-  // ReasonOverlay는 decision_detail(구조화 값)만 보여준다 — assignment_reason은
-  // 더 이상 안 쓰므로 버튼 노출 여부도 decision_detail 유무로만 판단한다.
-  const hasReason = Boolean(slot.decision_detail);
+  // [2026-09-22] 근거의 출처가 바뀌었다. decision_detail(배정 근거 구조화 값)은
+  // 배정을 만들던 시절의 것이고 백엔드가 더는 주지 않는다. 지금 자리에 오는 것은
+  // 판정 근거(reasons)다 — 왜 적합/주의/부적합인지를 문장으로 담고 있다.
+  const hasReason = Boolean(slot.reasons?.length);
 
   return (
     <div style={{
@@ -178,11 +155,15 @@ function SlotRow({ slot, onShowReason }) {
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <strong>슬롯 {slot.slot_no}</strong>
+        {/* 배지는 배정 상태가 아니라 **판정 등급**이다. 아직 판정 전이면 그렇게
+            적는다 — '점유 중'으로 뭉뚱그리면 "봤는데 괜찮다"처럼 읽힌다. */}
         <span style={{
           fontSize: '11px', fontWeight: 700, padding: '1px 6px', borderRadius: '4px',
-          color: '#fff', background: COLORS.teal,
+          color: slot.status ? '#fff' : COLORS.textDim,
+          background: slot.status ? (VERDICT_BG[slot.status] ?? COLORS.teal) : 'transparent',
+          border: slot.status ? 'none' : `1px solid ${COLORS.border}`,
         }}>
-          점유 중
+          {slot.status ?? '판정 전'}
         </span>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px', marginTop: '4px' }}>
@@ -200,7 +181,7 @@ function SlotRow({ slot, onShowReason }) {
               fontSize: '10.5px', fontWeight: 700, cursor: 'pointer',
             }}
           >
-            배정근거
+            판정근거
           </button>
         )}
       </div>
@@ -214,7 +195,16 @@ function SlotRow({ slot, onShowReason }) {
                 : '(재항 중)'}
           </>
         ) : (
-          <>{formatKST(slot.window_start)} ~ {formatKST(slot.window_end)} (예정)</>
+          // 계획 구간(window_start/end)은 예약이 있던 시절의 값이라 더는 오지
+          // 않는다. 대신 이 배를 언제 어디서 봤는지를 적는다 — 그게 지금 이
+          // 슬롯이 채워져 있다고 보는 근거다.
+          <>
+            {slot.berth_basis ? `위치 판정 ${slot.berth_basis}` : '위치 판정'}
+            {slot.distance_m != null && ` · ${Math.round(slot.distance_m)}m`}
+            {slot.position_at_utc && ` · ${formatKST(slot.position_at_utc)} 관측`}
+            {slot.quality_flag && slot.quality_flag !== 'OK'
+              && ` · ${slot.quality_flag} ${slot.position_age_min}분 전`}
+          </>
         )}
       </p>
     </div>
@@ -315,7 +305,7 @@ export default function BerthAssignmentMap({ scope = 'onsan', onScopeChange }) {
   const withCoords = berths.filter((b) => b.latitude != null && b.longitude != null);
   const occupiedBerthCount = withCoords.filter((b) => isOccupied(b.slots)).length;
   const occupiedSlotCount = withCoords.reduce(
-    (sum, b) => sum + b.slots.filter((s) => s.status).length, 0
+    (sum, b) => sum + b.slots.filter((s) => s.call_sign).length, 0
   );
 
   useEffect(() => {
@@ -386,7 +376,7 @@ export default function BerthAssignmentMap({ scope = 'onsan', onScopeChange }) {
 
         {withCoords.map((b) => {
           const occupied = isOccupied(b.slots);
-          const filled = b.slots.filter((s) => s.status).length;
+          const filled = b.slots.filter((s) => s.call_sign).length;
           return (
             <Marker
               // occupied를 key에 포함시켜 점유 상태가 바뀌면 통째로 다시 그린다 —
