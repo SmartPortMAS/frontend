@@ -102,7 +102,7 @@ function VesselPopup({ vessel }) {
         <p style={{ margin: '4px 0 0', fontSize: '11px', color: COLORS.textDim }}>
           {vessel.cargo_source === 'REAL'
             ? '선박·위치·화물 모두 실측 (AIS + 재항 신고 위험물)'
-            : '선박·위치는 실측 AIS · 화물은 시나리오 가정 (화물목록 API 미확보)'}
+            : '선박 위치는 실측 · 화물은 시나리오 가정 (화물 신고 자료 미확보)'}
         </p>
       )}
       <p style={{ margin: '4px 0 0', color: COLORS.textDim, fontSize: '11px' }}>{vessel.port_call_id}</p>
