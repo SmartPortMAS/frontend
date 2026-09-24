@@ -202,7 +202,7 @@ export default function HardwarePanel() {
         하역 개시 인터락 — 선석 A·B 게이트 (실물)
       </h3>
       <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginBottom: '14px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-        <span>화면 ↔ 관제 서버: <strong style={{ color: wsState === 'open' ? COLORS.teal : COLORS.yellow }}>{wsState === 'open' ? '연결됨' : wsState === 'connecting' ? '연결 중' : '끊김 — 다시 연결 중'}</strong></span>
+        <span>화면 ↔ 관제 서버: <strong style={{ color: (wsState === 'open' || wsState === 'polling') ? COLORS.teal : COLORS.yellow }}>{wsState === 'open' ? '연결됨' : wsState === 'polling' ? '연결됨 (1초 조회)' : wsState === 'connecting' ? '연결 중' : '끊김 — 다시 연결 중'}</strong></span>
         {broker && (
           <span>관제 서버 ↔ 장치 중계: <strong style={{ color: broker.connected ? COLORS.teal : COLORS.red }}>{broker.connected ? '연결됨' : '끊김'}</strong>
             {!broker.connected && <span style={{ color: COLORS.textDim }}> (노트북에서 mosquitto 를 켜야 합니다)</span>}
