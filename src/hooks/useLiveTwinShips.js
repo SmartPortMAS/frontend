@@ -68,17 +68,23 @@ export default function useLiveTwinShips() {
     // 수집이 끊긴 화면이 "배가 있다"고 말하게 된다.
     if (!traffic.length) { setShips([]); return; }
 
+    // 선석은 위치 판정(presence_berth_name — 멈춰서 선석에 붙은 배)을 먼저 쓴다.
+    // v.berth 는 재항 화물 신고에서 온 값이라 화물이 안 붙은 배는 선석에 붙어 있어도
+    // 비어 있었다(2026-09-21: 장면 선석 11곳에 붙은 10척 중 화물 없는 배는 바다에 떴다).
+    const berthOf = (v) => v.presence_berth_name || v.berth || null;
+
     // 온산 선석이 확인된 배를 먼저 세운다 — 트윈은 온산 부두를 그린 화면이라
     // 선석을 모르는 배만 잔뜩 띄우면 부두가 비어 보인다.
     const ranked = [...traffic].sort((a, b) => {
-      const aB = a.berth ? 0 : 1;
-      const bB = b.berth ? 0 : 1;
+      const aB = berthOf(a) ? 0 : 1;
+      const bB = berthOf(b) ? 0 : 1;
       if (aB !== bB) return aB - bB;
       return (b.cargo ? 1 : 0) - (a.cargo ? 1 : 0);
     });
 
     const ships = ranked.slice(0, TWIN_SHIP_LIMIT).map((v) => {
-      const berthId = v.berth ? findBerthIdByName(v.berth) : null;
+      const berthName = berthOf(v);
+      const berthId = berthName ? findBerthIdByName(berthName) : null;
       return {
         id: v.vessel_name || v.callsgn || `MMSI ${v.mmsi}`,
         type: 'Ship',
@@ -102,6 +108,8 @@ export default function useLiveTwinShips() {
         mmsi: v.mmsi,
         is_liquid_cargo_vessel: v.is_liquid_cargo_vessel,
         is_real: true,
+        // 정밀 검토(Omniverse) 지목에 쓰는 마스터 표기 선석명 — 3D 선석 id 와 별도로 둔다
+        berth_name: berthName,
       };
     });
 

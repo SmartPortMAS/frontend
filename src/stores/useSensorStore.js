@@ -95,6 +95,14 @@ const useSensorStore = create((set, get) => ({
     set({ consoleRequest: { callsgn, cargo, at: Date.now() } }),
   clearConsoleRequest: () => set({ consoleRequest: null }),
 
+  // 3D 관제 화면 → 정밀 검토(Omniverse) 지목. 3D 정보창(캔버스 안)에서 누르고,
+  // 스트림을 여닫는 건 DigitalTwinPage 라 여기를 거친다. at 이 바뀌면 새 요청이다.
+  // { berth: 마스터 표기 선석명, call_sign, vessel_name } — 셋 다 없으면 지목 해제.
+  omniverseRequest: null,
+  requestOmniverse: (focus) => set({ omniverseRequest: { ...(focus || {}), at: Date.now() } }),
+  // 트윈 화면이 요청을 처리하면 비운다 — 남겨 두면 다음에 화면을 열 때마다 같은 지목을 다시 보낸다
+  clearOmniverseRequest: () => set({ omniverseRequest: null }),
+
   // 경고 → 안전 심사 연결. 경고 카드에서 선석을 고르면 그 경고의 내용이 여기 담기고,
   // 안전 심사 폼(SafetyGatesPanel)이 받아서 폼을 채운다.
   //

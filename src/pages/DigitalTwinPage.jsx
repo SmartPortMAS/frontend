@@ -11,6 +11,7 @@ import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
+import { BACKEND_BASE, postTwinFocus } from '../api/backendAdapter';
 import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
 import { alertSubject, levelStyle, typeLabel } from '../utils/alertUtils';
 
@@ -120,6 +121,53 @@ export default function DigitalTwinPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantOmniverse]);
+
+  // ── 정밀 검토 지목 ─────────────────────────────────────────────────────────
+  // 3D 정보창의 [Omniverse 정밀 검토] → 스토어 요청 → 여기서 백엔드에 지목을 적고
+  // 스트림을 연다. Omniverse 앱이 몇 초마다 지목을 읽어 그 선석으로 내려간다.
+  // 지목이 없으면 Omniverse 는 조감 → 과거 사례 재생을 순환한다.
+  const omniverseRequest = useSensorStore((s) => s.omniverseRequest);
+  const clearOmniverseRequest = useSensorStore((s) => s.clearOmniverseRequest);
+  const [omniFocus, setOmniFocus] = useState(null);       // 백엔드가 돌려준 현재 지목
+  const [omniFocusError, setOmniFocusError] = useState(null);
+  const [replayCases, setReplayCases] = useState([]);    // 과거 사례 — 실제로 있었던 날
+
+  const sendFocus = async (focus) => {
+    try {
+      const res = await postTwinFocus(focus);
+      setOmniFocus(res.berth ? res : null);
+      setOmniFocusError(null);
+    } catch (e) {
+      // 지목이 안 적혀도 스트림은 그대로 본다 — Omniverse 는 순환 재생을 계속한다
+      setOmniFocusError(e.message);
+    }
+  };
+
+  useEffect(() => {
+    if (!omniverseRequest) return;
+    const { at, ...focus } = omniverseRequest;   // eslint-disable-line no-unused-vars
+    setShowOmniverseStream(true);
+    checkStream();
+    sendFocus(focus);
+    clearOmniverseRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [omniverseRequest?.at]);
+
+  // 스트림을 열 때 지금 지목과 과거 사례 목록을 맞춰 둔다
+  useEffect(() => {
+    if (!showOmniverseStream) return;
+    fetch(`${BACKEND_BASE}/twin/focus`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((f) => { if (f) setOmniFocus(f.berth ? f : null); })
+      .catch(() => {});
+    if (!replayCases.length) {
+      fetch('/demo/replays.json')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setReplayCases((d?.replays || []).filter((r) => r.kind === 'vessel')))
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showOmniverseStream]);
 
   const togglePlay = () => setIsPlaying(!isPlaying);
 
@@ -249,6 +297,61 @@ export default function DigitalTwinPage() {
       {/* Omniverse WebRTC Streaming Player — 티커 아래에서 시작 */}
       {showOmniverseStream && (
         <div style={{ position: 'absolute', top: 30, left: 0, width: '100%', height: 'calc(100% - 30px)', zIndex: 850, background: '#000' }}>
+          {/* 지금 Omniverse 가 무엇을 보여주려 하는지 — 영상만 보면 알 수 없다.
+              지목은 3D 관제 화면에서 배·선석을 눌러 하고, 여기서는 과거 사례로 바꾸거나 풀 수 있다. */}
+          <div style={{
+            position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 870,
+            display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'center',
+            maxWidth: 'calc(100% - 260px)', padding: '7px 12px', borderRadius: '10px',
+            background: 'rgba(15, 23, 42, 0.88)', border: '1px solid rgba(148, 163, 184, 0.35)',
+            color: '#e8f0f2', fontSize: '12.5px',
+          }}>
+            <span style={{ color: omniFocus ? '#10b981' : '#94a3b8' }}>●</span>
+            <span style={{ fontWeight: 800 }}>
+              {omniFocus
+                ? `${omniFocus.vessel_name ? `${omniFocus.vessel_name} · ` : ''}${omniFocus.berth}`
+                : '순환 재생'}
+            </span>
+            <span style={{ color: '#94a3b8' }}>
+              {omniFocus
+                ? '— 앞으로 72시간 (기상청 단기예보 · 국립해양조사원 조석예보 · 판정 규칙 그대로)'
+                : '— 조감 → 과거 사례 · 3D 관제 화면에서 배나 선석을 누르면 그곳을 봅니다'}
+            </span>
+            {replayCases.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => sendFocus({
+                  berth: r.berth?.name, call_sign: r.vessel?.call_sign, vessel_name: r.vessel?.name,
+                })}
+                title={r.headline}
+                style={{
+                  padding: '3px 9px', borderRadius: '6px', cursor: 'pointer', fontSize: '11.5px',
+                  fontWeight: 700, background: 'transparent', color: '#38bdf8',
+                  border: '1px solid rgba(56, 189, 248, 0.5)',
+                }}
+              >
+                과거 사례 {r.vessel?.name}
+              </button>
+            ))}
+            {omniFocus && (
+              <button
+                onClick={() => sendFocus({})}
+                style={{
+                  padding: '3px 9px', borderRadius: '6px', cursor: 'pointer', fontSize: '11.5px',
+                  fontWeight: 700, background: 'transparent', color: '#e8f0f2',
+                  border: '1px solid rgba(232, 240, 242, 0.4)',
+                }}
+              >
+                조감으로
+              </button>
+            )}
+            {omniFocusError && (
+              <span style={{ color: '#f59e0b', width: '100%', textAlign: 'center' }}>
+                지목을 전하지 못했습니다({omniFocusError}) — Omniverse 는 순환 재생을 계속합니다
+              </span>
+            )}
+          </div>
+
           {streamStatus === 'ok' && (
             <>
               {/* Isaac Sim 기동 직후에는 인코더가 준비되기 전 첫 프레임이 드롭돼

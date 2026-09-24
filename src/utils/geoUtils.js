@@ -187,6 +187,14 @@ export function onsanAdjacencyDistanceM(berthNameA, berthNameB) {
   return edge ? edge.distanceM : null;
 }
 
+// 정밀 검토(Omniverse) 장면에 있는 선석 — D:\omniverse\open_scene.py 의 BERTH_MAP 11곳.
+// 3D 관제 화면(ONSAN_BERTHS)에는 달포부두·석유공사 부이가 더 있지만 Omniverse 장면에는
+// 없다. 이 목록 밖 선석을 지목하면 Omniverse 가 보여줄 자리가 없으므로 버튼을 막는다.
+export const OMNIVERSE_BERTH_IDS = new Set([
+  'CY-UTK', 'CY-OTK1', 'CY-OTK2', 'CY-DHY', 'SA-HS', 'SA-JI1', 'SA-JI2',
+  'SA-SO1', 'SA-SO2', 'WS-SO3', 'WS-SO4',
+]);
+
 // 선석 → 기상 임계 선석군 (berth_weather_thresholds.csv 의 berth_group)
 // 지도에서 선석 클릭 시 선석별 하역 판정 패널과 연동하는 데 쓴다.
 export const ONSAN_WEATHER_GROUP = {

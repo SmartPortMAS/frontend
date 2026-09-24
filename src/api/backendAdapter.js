@@ -566,3 +566,24 @@ export function estimateBerthRelease(wharfName, conflicts, dwellStats) {
     overdue: elapsedH > median,
   };
 }
+
+
+/**
+ * 정밀 검토(Omniverse) 지목 — POST /twin/focus.
+ *
+ * 브라우저와 Omniverse 앱이 직접 이야기할 길이 없어(WebRTC 는 화면만 보낸다) 백엔드에
+ * 적어 두면 Omniverse 가 몇 초마다 읽어 그 선석으로 내려간다(backend app/api/v1/twin.py).
+ * berth·call_sign 을 다 비우면 지목을 풀고 Omniverse 는 조감·과거 사례 순환으로 돌아간다.
+ */
+export async function postTwinFocus({ berth = null, call_sign = null, vessel_name = null } = {}) {
+  const res = await fetch(`${BACKEND_BASE}/twin/focus`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ berth, call_sign, vessel_name }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
