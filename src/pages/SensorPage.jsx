@@ -27,9 +27,9 @@ export default function SensorPage() {
     <div className="page-content" style={{ padding: '0' }}>
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
         <div>
-          <h2 style={{ fontSize: '20px', marginBottom: '8px' }}>센서 데이터 — 현장 설비 계측</h2>
+          <h2 style={{ fontSize: '20px', marginBottom: '8px' }}>현장 설비 — 하역 개시 게이트 · 탱크 · 배관</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: 0 }}>
-            저장탱크·이송배관·승인 게이트의 설비 모형입니다.
+            하역 개시 인터락 게이트는 실물(라즈베리파이·밸브)과 연결됩니다. 탱크·배관 계측값은 아직 계측기가 없어 모형입니다.
           </p>
         </div>
         {/* '시뮬레이션 모드' 배지도 내렸다(2026-08-23) — 시연 UI 는 도입 후 제품

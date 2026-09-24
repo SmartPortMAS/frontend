@@ -129,7 +129,7 @@ function UpcomingSection() {
       )}
       {!error && data && data.has_assessment_history === false && (
         <p style={{ color: COLORS.textDim, fontSize: 12, margin: '0 0 8px' }}>
-          판정 이력(D1)이 아직 연결되지 않아 판정 열은 비어 있습니다. 표 수심 여유는 조위를 더하지 않은 참고값입니다.
+          판정 이력 저장이 아직 연결되지 않아 판정 열은 비어 있습니다. 표 수심 여유는 조위를 더하지 않은 참고값입니다.
         </p>
       )}
 
