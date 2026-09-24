@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, LineChart, Line, ComposedChart, Bar, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, ReferenceDot,
 } from 'recharts';
-import { fetchUpcomingArrivals } from '../api/backendAdapter';
+import { fetchUpcomingArrivals, postAssessAndRecord } from '../api/backendAdapter';
 import { COLORS } from '../utils/constants';
 
 // ─────────────────────────────────────────────
@@ -67,6 +67,9 @@ function UpcomingSection() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [scope, setScope] = useState('berth');
+  // 화면에서 바로 요청한 판정의 진행 상태 — { [call_sign]: 'busy' | { error } }
+  const [judging, setJudging] = useState({});
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -76,7 +79,32 @@ function UpcomingSection() {
     load();
     const id = setInterval(load, 10 * 60 * 1000);
     return () => { alive = false; clearInterval(id); };
-  }, []);
+  }, [reloadKey]);
+
+  // 판정 감시 작업은 10분마다 "지금 항내에 있는 배"만 훑는다. 아직 오지 않은 배는 관제사가
+  // 여기서 직접 판정을 요청한다 — 결과는 판정 이력에 남고 표가 다시 읽는다.
+  const judge = async (r) => {
+    const key = r.call_sign;
+    setJudging((m) => ({ ...m, [key]: 'busy' }));
+    try {
+      await postAssessAndRecord({
+        callSign: r.call_sign, vesselName: r.vessel_name, draughtM: r.draught_m,
+        chemId: r.chem_id, casNo: r.cas_no, cargoName: r.cargo_name,
+        wharfName: r.wharf_name || r.facility_name,
+      });
+      setJudging((m) => { const n = { ...m }; delete n[key]; return n; });
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setJudging((m) => ({ ...m, [key]: { error: e.message } }));
+    }
+  };
+  // 판정을 요청할 수 없는 이유 — 지어내지 않고 무엇이 없는지 말한다
+  const cannotJudge = (r) => {
+    if (!(r.wharf_name || r.facility_name)) return '계류시설 없음';
+    if (!(Number(r.draught_m) > 0)) return '흘수 없음';
+    if (!(r.chem_id || r.cas_no)) return '화물 미확인';
+    return null;
+  };
 
   const items = data?.items || [];
   const shown = useMemo(() => items.filter((r) => (
@@ -173,7 +201,35 @@ function UpcomingSection() {
                 </td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{STAGE_LABEL[r.stage]}</td>
                 <td style={td}>
-                  {r.assessment ? <LevelPill level={r.assessment.level} /> : <span style={{ color: COLORS.textDim, fontSize: 12 }}>판정 대기</span>}
+                  {r.assessment ? (
+                    <div>
+                      <LevelPill level={r.assessment.level} />
+                      {r.assessment.reasons?.[0] && (
+                        <div style={{ fontSize: 11, color: COLORS.textDim, marginTop: 3, maxWidth: 260 }}>
+                          {String(r.assessment.reasons[0]).slice(0, 80)}
+                        </div>
+                      )}
+                    </div>
+                  ) : judging[r.call_sign] === 'busy' ? (
+                    <span style={{ color: COLORS.info, fontSize: 12 }}>판정 중… (10~20초)</span>
+                  ) : cannotJudge(r) ? (
+                    <span style={{ color: COLORS.textDim, fontSize: 12 }} title="판정에 필요한 값이 없습니다 — 판정불가">
+                      판정불가 · {cannotJudge(r)}
+                    </span>
+                  ) : (
+                    <div>
+                      <button
+                        type="button" onClick={() => judge(r)}
+                        style={{ border: `1px solid ${COLORS.navy}`, background: COLORS.card, color: COLORS.navy, borderRadius: 4, padding: '3px 9px', fontSize: 12, cursor: 'pointer' }}
+                        title="지금 이 배를 판정합니다 — 결과는 판정 이력에 남습니다"
+                      >
+                        판정 요청
+                      </button>
+                      {judging[r.call_sign]?.error && (
+                        <div style={{ fontSize: 11, color: COLORS.red, marginTop: 3, maxWidth: 260 }}>{judging[r.call_sign].error}</div>
+                      )}
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}

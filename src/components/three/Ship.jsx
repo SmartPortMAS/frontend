@@ -18,8 +18,8 @@ const DEFAULT_HOLDING = bayShift([0, 0], 170);
 
 const STATUS_META = {
   operating: { label: '하역 중', color: '#00d4aa' },
-  mooring: { label: '계류 중', color: '#ffd166' },
-  docked: { label: '계류 중', color: '#ffd166' },
+  mooring: { label: '접안 중', color: '#ffd166' },
+  docked: { label: '접안 중', color: '#ffd166' },
   arriving: { label: '입항 중', color: '#3a86ff' },
   approaching: { label: '입항 중', color: '#3a86ff' },
   departing: { label: '출항 중', color: '#8338ec' },
