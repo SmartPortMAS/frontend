@@ -39,8 +39,10 @@ function inOnsan(v) {
 function twinStatus(vessel, berthId) {
   const cat = vessel.nav_status_category;
   if (cat === 'MOORED') {
-    // 화물을 싣고 접안해 있으면 하역 중으로 본다. 화물을 모르면 계류까지만.
-    return vessel.cargo ? 'operating' : 'mooring';
+    // 접안까지만 안다. '하역 중'은 유량계·작업 개시 기록이 없어 알 수 없으므로
+    // 지어내지 않는다(2026-09-24 — 예전엔 화물 신고만 있으면 전부 '하역 중'으로 떠
+    // 14척이 모두 하역 중으로 보였다). 하역 여부는 게이트(센서 데이터)가 말한다.
+    return 'mooring';
   }
   if (cat === 'AT_ANCHOR') return 'anchored';
   // 항해상태 필드가 없는 배(Class B 소형 작업선)는 묘박으로 세지 않는다 —
