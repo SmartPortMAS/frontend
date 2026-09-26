@@ -16,6 +16,7 @@ const VERDICT_COLOR = {
   '주의': COLORS.yellow,
   '부적합': COLORS.red,
   '판정불가': COLORS.yellow,
+  '확인요청': COLORS.purple,
 };
 
 // 실제 입출항(portmis_vessel 우선, 없으면 upa_port_call, call_sign 대조)을 쓴다.
