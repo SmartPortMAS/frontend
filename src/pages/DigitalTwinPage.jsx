@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Scene from '../components/three/Scene';
-import { findBerthIdByName, ONSAN_BERTHS, OMNIVERSE_BERTH_IDS } from '../utils/geoUtils';
+import { findBerthIdByName, ONSAN_BERTHS, ONSAN_BERTHS_3D, OMNIVERSE_BERTH_IDS } from '../utils/geoUtils';
 import HelpTip from '../components/common/HelpTip';
 import PortMap from '../components/dashboard/PortMap';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
@@ -9,6 +9,7 @@ import RadarMap from '../components/three/hud/RadarMap';
 import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import BerthStatusBar from '../components/three/hud/BerthStatusBar';
+import OutlookTimeline from '../components/three/hud/OutlookTimeline';
 import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
@@ -42,6 +43,8 @@ export default function DigitalTwinPage() {
   // 그때 "빨간 링이 대상 선석"이라고 안내하면 있지도 않은 링을 찾게 만든다.
   const focusInScene = focusBerth ? Boolean(findBerthIdByName(focusBerth)) : false;
   const wantOmniverse = searchParams.get('omniverse') === '1';
+  //   ?outlook=OTK 1부두   → 그 선석의 "앞으로 72시간" 판정 흐름을 바로 연다 (시연 영상·캡처용)
+  const wantOutlook = searchParams.get('outlook') || null;
 
   // 상단 띠에 흘릴 실경고 — 심각한 것부터 최대 6건. 화면 폭이 한정돼 있어
   // 전부 흘리면 한 바퀴가 너무 길어진다(현재 36건).
@@ -93,13 +96,17 @@ export default function DigitalTwinPage() {
     if (!obj) return null;
     const type = obj.type;
     const berthId = type === 'Ship' ? obj.berth : type === 'Berth' ? obj.id : null;
-    if (!berthId || !OMNIVERSE_BERTH_IDS.has(berthId)) return null;
+    // 이 3D 장면에 있는 선석만 — 장면 밖(가스부두·SK 등)은 색을 바꿀 자리가 없다.
+    if (!berthId || !ONSAN_BERTHS_3D[berthId]) return null;
     const berthName = type === 'Ship' ? (obj.berth_name || ONSAN_BERTHS[obj.berth]?.name) : ONSAN_BERTHS[obj.id]?.name;
     if (!berthName) return null;
     return {
       berth: berthName,
+      berthId,
       call_sign: type === 'Ship' ? (obj.callsgn || null) : null,
       vessel_name: type === 'Ship' ? obj.id : null,
+      // Omniverse 장면(11곳)에도 있는 선석이면 보조로 Omniverse 도 볼 수 있다
+      omniOk: OMNIVERSE_BERTH_IDS.has(berthId),
     };
   };
   const selectionFocus = focusFromSelection(selectedObject);
@@ -107,6 +114,30 @@ export default function DigitalTwinPage() {
     ? (selectedObject.type === 'Ship' ? selectedObject.id : ONSAN_BERTHS[selectedObject.id]?.name || selectedObject.id)
     : null;
   const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
+
+  // ── 앞으로 72시간 — 이 화면 안의 판정 흐름 (2026-09-27) ────────────────────
+  // 정보창·연결 바·?outlook= 에서 요청한다. 열리면 카메라가 그 선석으로 가고(BerthFocus, 링은 끔),
+  // 시간축 커서에 따라 Port 가 선석 색·라벨을 바꾼다. Omniverse 는 보조("Omniverse 로 보기").
+  const [outlookFocus, setOutlookFocus] = useState(null);
+  const outlookRequest = useSensorStore((s) => s.outlookRequest);
+  const clearOutlookRequest = useSensorStore((s) => s.clearOutlookRequest);
+  useEffect(() => {
+    if (!outlookRequest) return;
+    const { at, ...focus } = outlookRequest;   // eslint-disable-line no-unused-vars
+    setShowOmniverseStream(false);
+    setShowMap(false);
+    setOutlookFocus(focus);
+    clearOutlookRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outlookRequest?.at]);
+  useEffect(() => {
+    if (!wantOutlook) return;
+    const id = findBerthIdByName(wantOutlook);
+    if (id && ONSAN_BERTHS_3D[id]) {
+      setOutlookFocus({ berth: ONSAN_BERTHS[id].name, berthId: id, call_sign: null, vessel_name: null, omniOk: OMNIVERSE_BERTH_IDS.has(id) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantOutlook]);
 
   
 
@@ -171,11 +202,11 @@ export default function DigitalTwinPage() {
 
   return (
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-      <Scene focusBerth={focusBerth} />
+      <Scene focusBerth={outlookFocus ? outlookFocus.berth : focusBerth} focusRings={!outlookFocus} />
 
       {/* 어느 선석을 보러 왔는지 알려준다.
           카메라만 옮기면 사용자는 '왜 여기가 비춰지는지' 모른다. */}
-      {focusBerth && !showOmniverseStream && (
+      {focusBerth && !showOmniverseStream && !outlookFocus && (
         <div style={{
           position: 'absolute', top: 46, left: '50%', transform: 'translateX(-50%)',
           zIndex: 840, display: 'flex', alignItems: 'center', gap: '10px',
@@ -263,13 +294,13 @@ export default function DigitalTwinPage() {
           className="action-btn"
           onClick={() => {
             const next = !showOmniverseStream;
-            if (next && selectionFocus) { requestOmniverse(selectionFocus); return; }
+            if (next && selectionFocus?.omniOk) { requestOmniverse(selectionFocus); return; }
             setShowOmniverseStream(next);
             if (next) checkStream();
           }}
           style={{ 
             padding: '10px 16px', background: showOmniverseStream ? 'rgba(16, 185, 129, 0.8)' : 'rgba(15, 23, 42, 0.8)', 
-            backdropFilter: 'blur(10px)', color: showOmniverseStream ? '#fff' : '#10b981', border: '1px solid rgba(16, 185, 129, 0.5)',
+            backdropFilter: 'blur(10px)', color: showOmniverseStream ? '#fff' : '#94a3b8', border: '1px solid rgba(148, 163, 184, 0.45)',
             borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold'
           }}
         >
@@ -277,7 +308,9 @@ export default function DigitalTwinPage() {
               바로 위 3D 화면도 실시간이라, 예전 문구로는 두 화면이 무엇이 다른지
               알 수 없었다(2026-09-03 IA 정리). 목적(정밀 검토)과 대가(기동 시간)를
               문구에 함께 담아 사용자가 누를지 말지 판단할 수 있게 한다. */}
-          <FaPlay /> {showOmniverseStream ? '정밀 검토 닫기' : '정밀 검토 (Omniverse · 기동 1~2분)'}
+          {/* [2026-09-27] 보조 버튼으로 내렸다 — 72시간 판정 흐름은 이 화면 안(OutlookTimeline)이 기본이고,
+              Omniverse 는 장면이 달라 이어지지 않는 데다 시연 PC 를 발열로 끈다. 고사양 PC 에서만 켠다. */}
+          <FaPlay /> {showOmniverseStream ? 'Omniverse 닫기' : 'Omniverse (고사양 PC · 기동 1~2분)'}
         </button>
 
         <button 
@@ -316,7 +349,7 @@ export default function DigitalTwinPage() {
             </span>
             <HelpTip title="정밀 검토">
               <div>지목한 선석의 <strong>앞으로 72시간</strong>을 기상청 단기예보 · 국립해양조사원 조석예보로 한 시각씩 판정합니다. 판정 규칙은 관제 화면과 같습니다.</div>
-              <div style={{ marginTop: 4 }}>지목이 없으면 조감 → 과거 사례를 순환합니다. 3D 관제 화면에서 배나 선석을 누르고 [정밀 검토]를 누르면 그곳을 봅니다.</div>
+              <div style={{ marginTop: 4 }}>지목이 없으면 조감 → 과거 사례를 순환합니다. 3D 관제 화면에서 배나 선석을 누르고 [Omniverse 로 보기]를 누르면 그곳을 봅니다. 시연 PC 에서는 발열 때문에 이 화면 안의 [앞으로 72시간 판정 흐름]을 씁니다.</div>
               <div style={{ marginTop: 4 }}>선박 이동·하역 진행은 예측 근거(유량계·소요시간 모델)가 없어 재현하지 않습니다.</div>
             </HelpTip>
             {replayCases.map((r) => (
@@ -437,11 +470,20 @@ export default function DigitalTwinPage() {
       {/* 선박 상세 패널 (2D 지도 마커 클릭 시) */}
       <VesselDetailPanel />
 
-      {/* 시간축 — 지금(이 화면, 실측) ↔ 앞으로 72시간(정밀 검토, 예보). 스트리밍 중에는 숨김.
+      {/* 앞으로 72시간 — 이 화면 안의 판정 흐름. 2D 지도·Omniverse 위에는 띄우지 않는다 */}
+      {outlookFocus && !showOmniverseStream && !showMap && (
+        <OutlookTimeline
+          focus={outlookFocus}
+          onClose={() => setOutlookFocus(null)}
+          onOmniverse={outlookFocus.omniOk ? () => requestOmniverse(outlookFocus) : null}
+        />
+      )}
+
+      {/* 시간축 — 지금(이 화면, 실측) ↔ 앞으로 72시간(예보). 스트리밍·판정 흐름 중에는 숨김.
           [2026-09-24] 예전 재생 슬라이더는 미래 이동을 지어내 재생해 껐다(실측이 아닌 것을 실측처럼 보이지 않게).
-          [2026-09-27] 빈 슬라이더 대신 두 화면을 잇는 한 줄로 — 현재는 Three.js, 앞으로는 Omniverse.
+          [2026-09-27] 빈 슬라이더 대신 두 화면을 잇는 한 줄로. 밤에 다시: 앞으로 72시간도 이 화면 안에서(OutlookTimeline) — Omniverse 는 보조.
           위치 이력 되감기는 이력 연결 뒤 이 자리에 붙인다. */}
-      {!showOmniverseStream && (
+      {!showOmniverseStream && !outlookFocus && (
       <div className="time-slider-container" style={{
         position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)',
         width: '640px', maxWidth: 'calc(100% - 40px)', background: 'rgba(15, 23, 42, 0.82)', backdropFilter: 'blur(10px)',
@@ -459,20 +501,20 @@ export default function DigitalTwinPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0, alignItems: 'flex-end' }}>
           <button
             type="button"
-            onClick={() => {
-              if (selectionFocus) requestOmniverse(selectionFocus);
-              else { setShowOmniverseStream(true); checkStream(); }
-            }}
-            title={selectionFocus ? `${selectionLabel} 의 앞으로 72시간을 정밀 검토(Omniverse)에서 봅니다` : '배나 선석을 고른 뒤 누르면 그곳의 앞으로 72시간을 봅니다'}
+            disabled={!selectionFocus}
+            onClick={() => { if (selectionFocus) setOutlookFocus(selectionFocus); }}
+            title={selectionFocus ? `${selectionLabel} 의 앞으로 72시간 판정을 이 화면에서 봅니다` : '배나 선석을 고른 뒤 누르면 그곳의 앞으로 72시간을 봅니다'}
             style={{
               background: 'rgba(56, 189, 248, 0.16)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.55)',
-              borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 800, fontSize: '13px', whiteSpace: 'nowrap',
+              borderRadius: '6px', padding: '6px 12px', cursor: selectionFocus ? 'pointer' : 'not-allowed', opacity: selectionFocus ? 1 : 0.6,
+              fontWeight: 800, fontSize: '13px', whiteSpace: 'nowrap',
             }}
           >
-            앞으로 72시간 → 정밀 검토{selectionFocus ? ` (${selectionLabel})` : ''}
+            앞으로 72시간 판정 흐름{selectionFocus ? ` (${selectionLabel})` : ''}
           </button>
           <span style={{ color: '#64748b', fontSize: '10.5px' }}>
-            {selectedObject && !selectionFocus ? '이 대상은 장면 밖 — 온산 부두의 배·선석을 고르세요' : '위치 이력 되감기 — 예정'}
+            {selectedObject && !selectionFocus ? '이 대상은 장면 밖 — 온산 부두의 배·선석을 고르세요'
+              : selectionFocus ? '이 화면 안에서 · 선석 색이 시각마다 바뀝니다' : '배나 선석을 먼저 고르세요 · 위치 이력 되감기는 예정'}
           </span>
         </div>
       </div>

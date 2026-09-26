@@ -274,6 +274,10 @@ html, body, #root {
 .dashboard-page > .dash-section {
   margin-bottom: 24px;
 }
+/* 우하단 "에이전트 판단 과정" 단추(전역 고정)가 표의 마지막 줄을 덮지 않게 바닥 여백을 둔다(2026-09-27) */
+.dashboard-page {
+  padding-bottom: 84px;
+}
 
 /* ── Sidebar ── */
 .sidebar {

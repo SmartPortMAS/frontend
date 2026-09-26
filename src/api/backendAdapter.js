@@ -631,3 +631,20 @@ export async function postTwinFocus({ berth = null, call_sign = null, vessel_nam
   }
   return res.json();
 }
+
+/**
+ * 선석의 지금 판정과 앞으로 72시간 예보 판정 — GET /twin/outlook (backend twin.py).
+ * Omniverse 정보판이 읽던 응답을 3D 관제 화면이 직접 그린다(2026-09-27, OutlookTimeline).
+ * 판정은 백엔드가 이미 내렸다(기상 에이전트 규칙 + 조위 반영 흘수 여유) — 화면은 그리기만 한다.
+ */
+export async function fetchTwinOutlook({ berth, call_sign = null, hours = 72 }) {
+  const q = new URLSearchParams({ berth, hours: String(hours) });
+  if (call_sign) q.set('call_sign', call_sign);
+  const res = await fetch(`${BACKEND_BASE}/twin/outlook?${q}`);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { detail = (await res.json()).detail || detail; } catch { /* 본문 없음 */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
