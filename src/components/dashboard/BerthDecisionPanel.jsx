@@ -5,7 +5,7 @@ import { FaRoute, FaAnchor, FaShip, FaCheck, FaHourglassHalf } from 'react-icons
 
 // 전용 → 대체 → 정박지대기 판단 경로 시각화 (오케스트레이터 berth_decision.trace)
 const STATUS_STYLE = {
-  APPROVED: { color: COLORS.teal, label: '배정 승인' },
+  APPROVED: { color: COLORS.teal, label: '적합 — 배정 선석 유지' },
   WAITING_ANCHORAGE: { color: COLORS.yellow, label: '정박지 대기' },
   REJECTED: { color: COLORS.red, label: '반려' },
   PENDING: { color: COLORS.info, label: '대기' },

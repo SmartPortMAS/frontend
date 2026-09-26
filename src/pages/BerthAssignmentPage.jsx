@@ -226,7 +226,7 @@ export default function BerthAssignmentPage() {
     <div className="dashboard-page">
       <div className="glass-card dash-section">
         <div className="glass-card-header">
-          <h3 className="glass-card-title">선석 배정현황</h3>
+          <h3 className="glass-card-title">선석 현황</h3>
         </div>
         <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
           <BerthAssignmentMap scope={scope} onScopeChange={setScope} />
