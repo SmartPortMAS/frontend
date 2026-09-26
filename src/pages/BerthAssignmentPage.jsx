@@ -179,14 +179,14 @@ function OccupiedList({ scope }) {
                         chem_id: row.cargo_chem_id,
                         name: row.cargo_name,
                       })}
-                      title={`${row.vessel_name || row.call_sign} 을(를) 판단 과정 로그에서 판정`}
+                      title={`${row.vessel_name || row.call_sign} 을(를) 에이전트 판단 과정에서 판정`}
                       style={{
                         border: `1px solid ${COLORS.yellow}`, background: 'transparent',
                         color: COLORS.yellow, borderRadius: '6px', padding: '2px 8px',
                         fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
                       }}
                     >
-                      판정 전 — 판단 과정 로그 →
+                      판정 요청 →
                     </button>
                   ) : (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>

@@ -152,7 +152,7 @@ function UpcomingSection() {
 
       {error && (
         <p style={{ color: COLORS.red, fontSize: 13 }}>
-          입항 예정 목록을 불러오지 못했습니다 ({error}). 백엔드(8001)가 켜져 있는지 확인하세요. 아래 사례 재생은 백엔드 없이 동작합니다.
+          입항 예정 목록을 불러오지 못했습니다 — 관제 서버에 연결할 수 없습니다. 아래 사례 재생은 서버 없이 동작합니다.
         </p>
       )}
       {!error && data && data.has_assessment_history === false && (
@@ -197,7 +197,9 @@ function UpcomingSection() {
                   <div style={{ fontSize: 11, color: COLORS.textDim }}>{r.draught_basis || '판정불가 사유'}</div>
                 </td>
                 <td style={{ ...td, fontFamily: 'ui-monospace, Consolas, monospace', color: COLORS.textSecondary }}>
-                  {r.chart_margin_m != null ? `${r.chart_margin_m >= 0 ? '+' : ''}${r.chart_margin_m.toFixed(2)} m` : '-'}
+                  {/부이/.test(r.wharf_name || r.facility_name || '')
+                    ? <span style={{ fontFamily: 'inherit', color: COLORS.textDim }}>해당 없음(부이)</span>
+                    : r.chart_margin_m != null ? `${r.chart_margin_m >= 0 ? '+' : ''}${r.chart_margin_m.toFixed(2)} m` : '-'}
                 </td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{STAGE_LABEL[r.stage]}</td>
                 <td style={td}>
@@ -434,7 +436,7 @@ function ReplaySection() {
       )}
       {replays && (
         <p style={{ fontSize: 11, color: COLORS.textDim, margin: '10px 0 0' }}>
-          재생 데이터 생성 {kst(replays.generated_at)} · 판정 규칙: 조위 반영 흘수 여유 1.0 m, 체류 중 최저 여유 기준
+          재생 자료 기준일 {new Date(replays.generated_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric' })} · 판정 기준: 조위 반영 흘수 여유 1.0 m(체류 중 최저 여유)
         </p>
       )}
     </div>
