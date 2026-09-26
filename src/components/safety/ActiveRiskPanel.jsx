@@ -4,6 +4,7 @@ import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
 import { alertId, levelStyle, typeLabel, groupAlertsByBerth } from '../../utils/alertUtils';
+import HelpTip from '../common/HelpTip';
 import { FaCheck, FaCheckCircle, FaExclamationTriangle, FaShieldAlt, FaShip, FaCube } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,15 +69,17 @@ export default function ActiveRiskPanel() {
         <h3 className="glass-card-title">
           <FaShieldAlt style={{ marginRight: '8px', color: unackedTotal ? COLORS.red : COLORS.teal }} />
           현재 위험 선석 ({berths.length})
+          <HelpTip title="현재 위험 선석" align="right">
+            혼재금지 · 화물 미확인 · 흘수 여유(UKC) 경고를 선석별로 묶었습니다. 선석의 [심사 →]를 누르면 왼쪽 심사 폼이
+            그 선석의 재항 화물로 채워지고, [위치 보기]는 3D 관제 화면에서 그 선석을 보여 줍니다. 경고는 선석마다 [확인]합니다.
+          </HelpTip>
         </h3>
         {/* "모두 확인"은 뺐다(2026-09-26) — 안전 경고를 한 번에 확인 처리하는 동작은 실무에 없다.
             경고는 아래 선석 카드에서 한 선석씩 확인한다. */}
       </div>
 
-      <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginBottom: '10px', lineHeight: 1.5 }}>
-        혼재금지 · 화물 미확인 · 흘수 여유(UKC) 경고 {alerts.length}건 (미확인 {unackedTotal}건)
-        <br />
-        선석을 누르면 왼쪽 심사 폼이 그 선석의 재항 화물로 채워집니다.
+      <div style={{ fontSize: '12.5px', color: COLORS.textSecondary, marginBottom: '10px' }}>
+        경고 <strong>{alerts.length}</strong> · 미확인 <strong style={{ color: unackedTotal ? COLORS.red : COLORS.textSecondary }}>{unackedTotal}</strong>
       </div>
 
       {berths.length === 0 ? (

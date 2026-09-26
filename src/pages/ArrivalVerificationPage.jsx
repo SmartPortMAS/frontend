@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { fetchUpcomingArrivals, postAssessAndRecord } from '../api/backendAdapter';
 import { COLORS } from '../utils/constants';
+import HelpTip from '../components/common/HelpTip';
 
 // ─────────────────────────────────────────────
 // 입항 예정 · 검증 (SafeBerth 방향 C, 2026-09-17)
@@ -123,7 +124,13 @@ function UpcomingSection() {
   return (
     <div className="glass-card">
       <div className="glass-card-header" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <h3 className="glass-card-title">지금 들어오는 액체화물선 · 72시간</h3>
+        <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
+          지금 들어오는 액체화물선 · 72시간
+          <HelpTip title="입항 예정 목록">
+            출처: PORT-MIS 입항 신고(오늘~+3일, 매시 갱신) · 항만공사 선박위치(흘수·항해상태) · 선박제원.
+            신고가 최종이 아니면 입항 시각은 예정입니다. 판정이 없는 배는 [판정 요청]으로 그 자리에서 판정하고, 결과는 판정 이력에 남습니다.
+          </HelpTip>
+        </h3>
         <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
           {scopes.map(([key, label]) => (
             <button
@@ -241,9 +248,6 @@ function UpcomingSection() {
           </tbody>
         </table>
       </div>
-      <p style={{ fontSize: 11, color: COLORS.textDim, margin: '8px 0 0' }}>
-        출처: PORT-MIS 입항 신고(오늘~+3일, 매시 갱신) · UPA 선박위치(흘수·항해상태) · 선박제원. 신고가 최종이 아니면 입항 시각은 예정입니다.
-      </p>
     </div>
   );
 }
@@ -333,8 +337,8 @@ function VesselReplay({ replay }) {
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <figcaption style={{ fontSize: 11, color: COLORS.textDim }}>
-          흘수 여유 = 표 수심 + 조위 − 흘수. {replay.source}
+        <figcaption style={{ fontSize: 11.5, color: COLORS.textDim }}>
+          흘수 여유 (m) · 점선 = 기준 1 m
         </figcaption>
       </figure>
     </div>
@@ -383,8 +387,8 @@ function SwellReplay({ replay }) {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-        <figcaption style={{ fontSize: 11, color: COLORS.textDim }}>
-          막대 = 액체화물선 입항 척수(주황: 너울일) · 선 = 외해 부이 유의파고 일평균(오른쪽 축). {replay.caveat}
+        <figcaption style={{ fontSize: 11.5, color: COLORS.textDim }}>
+          막대 입항 척수(주황 = 너울일) · 선 외해 파고(오른쪽 축)
         </figcaption>
       </figure>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
@@ -412,7 +416,19 @@ function ReplaySection() {
   return (
     <div className="glass-card">
       <div className="glass-card-header" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <h3 className="glass-card-title">실제로 있었던 날 — 세 시점 판정 재생</h3>
+        <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
+          실제로 있었던 날 — 세 시점 판정 재생
+          <HelpTip title="판정 재생">
+            <div>흘수 여유 = 표 수심 + 조위 − 흘수. 판정 기준은 조위를 반영한 흘수 여유 1.0 m(체류 중 최저 여유)입니다.</div>
+            {current?.source && <div style={{ marginTop: 4 }}>{current.source}</div>}
+            {current?.caveat && <div style={{ marginTop: 4 }}>{current.caveat}</div>}
+            {replays && (
+              <div style={{ marginTop: 4, color: COLORS.textSecondary }}>
+                재생 자료 기준일 {new Date(replays.generated_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric' })}
+              </div>
+            )}
+          </HelpTip>
+        </h3>
         <div role="tablist" style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
           {replays?.replays.map((r) => (
             <button
@@ -434,11 +450,6 @@ function ReplaySection() {
           {current.kind === 'swell' ? <SwellReplay replay={current} /> : <VesselReplay replay={current} />}
         </div>
       )}
-      {replays && (
-        <p style={{ fontSize: 11, color: COLORS.textDim, margin: '10px 0 0' }}>
-          재생 자료 기준일 {new Date(replays.generated_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric' })} · 판정 기준: 조위 반영 흘수 여유 1.0 m(체류 중 최저 여유)
-        </p>
-      )}
     </div>
   );
 }
@@ -447,10 +458,15 @@ export default function ArrivalVerificationPage() {
   return (
     <div className="dashboard-page">
       <div className="glass-card dash-section" style={{ display: 'grid', gap: 6 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>입항 예정 · 검증</h2>
-        <p style={{ margin: 0, fontSize: 13, color: COLORS.textSecondary, maxWidth: '72ch' }}>
-          기존 선석 배정은 그대로 따릅니다. 배가 들어오는 동안 기상·조위·흘수·인접 화물이 기준을 벗어나면,
-          조치안을 만들어 그 조치를 할 권한이 있는 곳 — 선석 운영 주체 · VTS · 터미널 — 에 근거와 함께 넘깁니다.
+        <h2 style={{ margin: 0, fontSize: 18, display: 'flex', alignItems: 'center' }}>
+          입항 예정 · 검증
+          <HelpTip title="입항 예정 · 검증">
+            기존 선석 배정은 그대로 따릅니다. 배가 들어오는 동안 기상·조위·흘수·인접 화물이 기준을 벗어나면,
+            조치안을 만들어 그 조치를 할 권한이 있는 곳 — 선석 운영 주체 · VTS · 터미널 — 에 근거와 함께 넘깁니다.
+          </HelpTip>
+        </h2>
+        <p style={{ margin: 0, fontSize: 13.5, color: COLORS.textSecondary }}>
+          배정 선석 검증 · <strong>입항 전 → 접안 직전 → 하역 중</strong> · 벗어나면 조치안
         </p>
       </div>
       <div className="dash-section"><ReplaySection /></div>
