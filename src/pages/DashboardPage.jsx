@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import GanttChart from '../components/dashboard/GanttChart';
 import KPICard from '../components/dashboard/KPICard';
 import WeatherPanel from '../components/dashboard/WeatherPanel';
@@ -5,13 +6,27 @@ import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
 import PortMap from '../components/dashboard/PortMap';
 import PortCallTable from '../components/dashboard/PortCallTable';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
-import useSensorStore from '../stores/useSensorStore';
 import useDashboardData from '../hooks/useDashboardData';
+import { fetchPendingApprovals } from '../api/backendAdapter';
 import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt } from 'react-icons/fa';
 
 export default function DashboardPage() {
-  const gateAssessment = useSensorStore((s) => s.gateAssessment);
   const { data } = useDashboardData();
+
+  // 확인 대기 판정 — 판정 감시가 기록한 이력 중 관제사가 아직 보지 않은 것(/approvals/pending).
+  // 예전 4번째 타일은 안전 관제 탭에서 수동 심사를 돌리기 전엔 늘 "심사 전"이라 빈 칸이었다.
+  const [pending, setPending] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetchPendingApprovals().then((rows) => { if (alive) setPending(rows); }).catch(() => { if (alive) setPending(null); });
+    load();
+    const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const countLevel = (lv) => (pending ?? []).filter((r) => r.level === lv).length;
+  const unfitCount = countLevel('부적합');
+  const unknownCount2 = countLevel('판정불가');
+  const cautionCount = countLevel('주의');
 
   // KPI는 실AIS(+실화물 조인) 기준으로 센다 — data.vessels는 데모 시나리오 선박이라
   // 실제 재항 척수와 무관하다.
@@ -34,7 +49,6 @@ export default function DashboardPage() {
   const anchorCount = data?.real_traffic_anchored_total
     ?? vessels.filter((v) => v.nav_status_category === 'AT_ANCHOR').length;
   const unknownNavCount = vessels.filter((v) => v.nav_status_category === 'UNKNOWN').length;
-  const gateHits = gateAssessment?.risk_level_basis?.gate_hits?.length ?? 0;
 
   // 온산 선석 점유 — 백엔드 /dashboard/berths(UPA 선박위치 판정, 2026-09-17 전엔 upa_port_call).
   // 예전 "가동 탱크"는 useSensorStore의 하드코딩 탱크 4기를 세던 값이라
@@ -49,12 +63,12 @@ export default function DashboardPage() {
         <KPICard title="접안 중" value={mooredCount} unit="척" icon={<FaAnchor />} change={`정박지 대기 ${anchorCount}척 · 항내 소형선 ${unknownNavCount}척`} trend="neutral" />
         <KPICard title="온산 선석 점유" value={occupiedBerths} unit="개" icon={<FaWarehouse />} change={`온산 선석 ${onsanBerths.length}개 중 재항 중`} trend="neutral" />
         <KPICard
-          title="최근 안전 심사"
-          value={gateAssessment?.risk_level ?? '심사 전'}
-          unit=""
+          title="확인 대기 판정"
+          value={pending ? pending.length : '—'}
+          unit={pending ? '건' : ''}
           icon={<FaShieldAlt />}
-          change={gateAssessment ? (gateHits > 0 ? `혼재·격리 위반 ${gateHits}건` : '위반 없음') : '안전 관제 탭에서 실행'}
-          trend={gateAssessment ? (gateHits > 0 ? 'negative' : 'positive') : 'neutral'}
+          change={pending ? `부적합 ${unfitCount} · 판정불가 ${unknownCount2} · 주의 ${cautionCount}` : '판정 이력을 불러오지 못했습니다'}
+          trend={!pending ? 'neutral' : unfitCount > 0 ? 'negative' : 'positive'}
         />
       </div>
 

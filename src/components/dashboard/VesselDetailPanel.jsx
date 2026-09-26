@@ -225,7 +225,7 @@ export default function VesselDetailPanel() {
       {vessel.ship_kind_nm && <Row label="선종 (PORT-MIS)">{vessel.ship_kind_nm}</Row>}
       {/* arrival_at_utc 는 지도 마커로 연 경우에만 채워진다(PortMap 이 붙여준다).
           목록·경고에서 연 경우엔 없으므로 AIS 최근 수신 시각을 대신 보여준다. */}
-      <Row label={vessel.arrival_at_utc ? '입항시각 (KST)' : 'AIS 최근 수신 (KST)'}>
+      <Row label={vessel.arrival_at_utc ? '입항시각 (KST)' : '위치 최근 수신 (KST)'}>
         {formatKST(vessel.arrival_at_utc || vessel.received_at_utc)}
       </Row>
       <Row label="배정 선석">{vessel.berth || '미배정'}</Row>
@@ -610,7 +610,7 @@ export default function VesselDetailPanel() {
                 padding: '3px 7px', fontSize: '11.5px',
               }}
             />
-            <span>t — 실 DWT 미수집(AIS·PORT-MIS 모두 없음)</span>
+            <span>t — 실 DWT 미수집(선박위치·PORT-MIS 모두 없음)</span>
           </label>
           {moorSim && !moorSim.error && (
             <div style={{ marginTop: '8px', padding: '10px 12px', background: COLORS.card, borderRadius: '10px', border: `1px solid ${MOOR_VERDICT_COLORS[moorSim.verdict] || COLORS.border}` }}>
