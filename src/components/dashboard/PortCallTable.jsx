@@ -221,7 +221,7 @@ export default function PortCallTable() {
                         선종만 액체화물선인 배를 같은 "위험물"로 적으면 안 된다. */}
                     {v.has_dg_cargo && (
                       <span
-                        title="재항 위험물 신고가 확인된 배 (mart.berth_current_cargo)"
+                        title="재항 위험물 신고가 확인된 배"
                         style={{
                           marginLeft: '8px', background: COLORS.red, color: '#fff',
                           borderRadius: '4px', padding: '1px 6px', fontSize: '11px',
