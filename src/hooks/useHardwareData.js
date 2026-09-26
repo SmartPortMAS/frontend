@@ -104,6 +104,17 @@ export default function useHardwareData() {
     [],
   );
   const clearDemoWeather = useCallback(() => call('/gate/demo/weather', null, 'DELETE'), []);
+  // 시연 판정 — 그 선석의 하역중 판정 값만 넣는다(잠금 규칙은 실제와 같고, 판정 이력엔 남지 않는다)
+  const setDemoVerdict = useCallback(
+    ({ gate_id = null, level, reason = '' }) => call('/gate/demo/verdict', { gate_id, level, reason }),
+    [],
+  );
+  const clearDemoVerdict = useCallback(
+    (gateId = null) => call(`/gate/demo/verdict${gateId ? `?gate_id=${gateId}` : ''}`, null, 'DELETE'),
+    [],
+  );
 
-  return { snapshot, wsState, sendGateCommand, setDemoWeather, clearDemoWeather };
+  return {
+    snapshot, wsState, sendGateCommand, setDemoWeather, clearDemoWeather, setDemoVerdict, clearDemoVerdict,
+  };
 }
