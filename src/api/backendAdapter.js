@@ -221,12 +221,20 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
 /** /dashboard/history 행 → GanttChart의 HistoryGantt 계약(job_id/vessel_name/berth/begin_utc/end_utc).
  * GanttChart.jsx는 이미 ops.filter(is_real_record) 로 이 모양을 기다리고 있었다 — 지금까지
  * 채워주는 API 호출이 없어 항상 빈 배열이었다. */
+// 정박지·묘박지·자동차부두 등 액체화물 관제 대상이 아닌 시설은 접안 이력 막대에서 뺀다.
+const NON_LIQUID_FACILITY = /(정박지|묘박지|자동차|컨테이너|여객)/;
+
+function isLiquidHistoryRecord(row) {
+  return Boolean(row.facility_name) && !NON_LIQUID_FACILITY.test(row.facility_name);
+}
+
 function mapHistoryRecord(row) {
   return {
     job_id: `HIST_${row.callsgn || row.vessel_name}_${row.arrival_at_utc}`,
     vessel_name: row.vessel_name,
     callsgn: row.callsgn,
-    berth: row.facility_name,
+    // "SK2부두 01" 의 슬롯 번호는 관제 화면에서 뜻이 없다 — 부두 이름만
+    berth: String(row.facility_name).replace(/\s+\d{1,2}$/, ''),
     begin_utc: row.arrival_at_utc,
     end_utc: row.departure_at_utc,
     is_real_record: true,
@@ -372,7 +380,7 @@ export async function fetchBackendDashboard() {
     // NOT_ALLOWED/MARGINAL/UNKNOWN 판정은 뷰 안에서 이미 끝나 있어 여기선 가공하지 않는다.
     draughtChecks: draughtCheck ?? [],
     // 완료된 접안 이력 — GanttChart의 "온산 선석 실제 접안 이력" 섹션용
-    history: (history ?? []).map(mapHistoryRecord),
+    history: (history ?? []).filter(isLiquidHistoryRecord).map(mapHistoryRecord),
     // 수집기 생존 신호 — Header 신선도 배지(mart.pipeline_health)
     pipelineHealth: pipelineHealth ?? null,
     // total_port_calls/port_calls_by_facility_type/liquid_callsgns
