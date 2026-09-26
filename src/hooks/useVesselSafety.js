@@ -17,6 +17,14 @@ import { onsanAdjacentBerthNames } from '../utils/geoUtils';
 // ─────────────────────────────────────────────
 
 const EMPTY = { risk_level: '안전', gates_hit: [], checklist: [], source: 'NOT_APPLICABLE' };
+// [2026-09-25] 액체화물선인데 화물을 모르면 '안전'이 아니라 판단불가다. 선종 추정 화물을
+// 없앤 뒤로 이런 배가 EMPTY('안전')로 떨어져, 판정한 적 없는 배가 안전으로 보였다.
+const NO_CARGO = {
+  risk_level: '판단불가',
+  gates_hit: [{ rule: '-', severity: 'HOLD', reason: '화물 미확인 — 현재 입항 건 화물이 없어 판정하지 않았습니다' }],
+  checklist: [],
+  source: 'NO_CARGO',
+};
 
 /** 백엔드 판정 결과 → 화면이 쓰던 계약(risk_level/gates_hit/checklist)으로 변환 */
 function toPanelShape(result) {
@@ -30,6 +38,8 @@ function toPanelShape(result) {
     hazards: result.explanation?.reasoning || [],
     basis: result.risk_level_basis,
     msds_sections_used: result.msds_sections_used || [],
+    // [2026-09-25] 화물별 판정(여러 종을 실은 배). 대표 등급은 is_governing 인 화물의 것.
+    cargo_verdicts: result.cargo_verdicts || [],
     is_local_fallback: Boolean(result.is_local_fallback),
     source: result.source,
   };
@@ -42,13 +52,13 @@ export default function useVesselSafety(vessel) {
   // 화면은 이 플래그로 체크리스트 자리에만 스켈레톤을 띄운다(등급 뱃지는 이미 확정).
   const [state, setState] = useState({ assessment: null, loading: false, narrativeLoading: false });
 
-  // 대상 화물: 실신고 우선, 없으면 선종 추정(backendAdapter.assumed_cargo).
-  // 인접 화물은 실신고만 쓴다 — 인접까지 추정으로 채우면 혼재 판정이
-  // 추정 × 추정이 되어 근거가 사라진다.
-  const effCargo = vessel?.cargo ?? vessel?.assumed_cargo ?? null;
+  // 대상 화물: 입항 건 화물만. 없으면 판정하지 않는다(선종 추정은 2026-09-25 폐지).
+  const effCargo = vessel?.cargo ?? null;
   const cargoName = effCargo?.name || null;
   const cargoCasNo = effCargo?.cas_no || null;
-  const cargoAssumed = Boolean(!vessel?.cargo && vessel?.assumed_cargo);
+  // [2026-09-25] 같은 입항 건의 화물 전부.
+  const extraCargos = vessel?.cargos || [];
+  const extraKey = extraCargos.map((c) => c.chem_id).join('|');
   const berth = vessel?.berth || null;
   const isLiquid = Boolean(vessel?.is_liquid_cargo_vessel);
 
@@ -62,7 +72,9 @@ export default function useVesselSafety(vessel) {
     return (data?.real_traffic || [])
       .filter((v) => v.berth && names.includes(v.berth) && v.cargo?.name
         && v.port_call_id !== vessel?.port_call_id)
-      .map((v) => ({ berth_name: v.berth, cargo_name: v.cargo.name, cas_no: v.cargo.cas_no }));
+      // 인접 배도 실은 화물 전부를 넣는다 — 첫 1종만 넣으면 나머지와의 혼재를 못 본다.
+      .flatMap((v) => (v.cargos?.length ? v.cargos : [v.cargo])
+        .map((c) => ({ berth_name: v.berth, cargo_name: c.name, cas_no: c.cas_no })));
   })();
 
   const adjacentKey = adjacent.map((a) => `${a.berth_name}:${a.cargo_name}`).join('|');
@@ -82,7 +94,11 @@ export default function useVesselSafety(vessel) {
     // 두 등급이 항상 같으므로(백엔드가 규칙엔진 값을 그대로 씀) 먼저 그린 뱃지가
     // 나중에 바뀌지 않는다. 서술 조회가 실패해도 등급은 이미 화면에 있으므로
     // 판정 전체를 '판단불가'로 떨어뜨리지 않는다 — 예전보다 오히려 견고하다.
-    const req = { cargo_name: cargoName, cas_no: cargoCasNo, adjacent_operations: adjacent };
+    const req = {
+      // chem_id 도 넘긴다 — 화물 목록과 같은 키로 대표 화물을 식별해야 중복 판정이 안 생긴다.
+      chem_id: effCargo?.chem_id || null,
+      cargo_name: cargoName, cas_no: cargoCasNo, adjacent_operations: adjacent, extra_cargos: extraCargos,
+    };
 
     // 서술이 먼저 도착할 수도 있다(네트워크 상황). 그때 늦게 온 판정이 서술을
     // 덮어쓰면 체크리스트가 화면에서 사라지므로 플래그로 막는다.
@@ -119,10 +135,11 @@ export default function useVesselSafety(vessel) {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargoName, cargoCasNo, berth, isLiquid, adjacentKey]);
+  }, [cargoName, cargoCasNo, berth, isLiquid, adjacentKey, extraKey]);
 
-  // 액체화물선이 아니거나 화물 정보가 없으면 판정 대상이 아니다
-  if (!isLiquid || !cargoName) return { assessment: EMPTY, loading: false, narrativeLoading: false };
+  // 액체화물선이 아니면 판정 대상이 아니다. 액체화물선인데 화물을 모르면 판단불가.
+  if (!isLiquid) return { assessment: EMPTY, loading: false, narrativeLoading: false };
+  if (!cargoName) return { assessment: NO_CARGO, loading: false, narrativeLoading: false };
   return state.assessment
     ? { assessment: state.assessment, loading: state.loading, narrativeLoading: state.narrativeLoading }
     : { assessment: null, loading: true, narrativeLoading: false };

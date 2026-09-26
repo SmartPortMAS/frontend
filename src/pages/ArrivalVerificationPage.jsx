@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { fetchUpcomingArrivals } from '../api/backendAdapter';
 import { COLORS } from '../utils/constants';
+import { cargoNames, cargoSummary } from '../utils/cargoText';
 
 // ─────────────────────────────────────────────
 // 입항 예정 · 검증 (SafeBerth 방향 C, 2026-09-17)
@@ -140,6 +141,7 @@ function UpcomingSection() {
               <th style={th}>입항(KST)</th>
               <th style={th}>선박</th>
               <th style={th}>신고</th>
+              <th style={th}>화물</th>
               <th style={th}>사전배정 계류시설</th>
               <th style={th}>수심</th>
               <th style={th}>흘수</th>
@@ -157,6 +159,10 @@ function UpcomingSection() {
                   <div style={{ fontSize: 11, color: COLORS.textDim }}>{r.ship_kind} · {r.call_sign}</div>
                 </td>
                 <td style={{ ...td, color: r.report_type === '최종' ? COLORS.textPrimary : COLORS.textSecondary }}>{r.report_type || '-'}</td>
+                {/* 이 입항 건에 단 화물 전부 — 입항 후 위치 화면과 같은 키(입항 건)라 같은 화물이다 */}
+                <td style={td} title={cargoNames(r.cargos).join(', ')}>
+                  {r.cargos?.length ? cargoSummary(r.cargos, 3) : <span style={{ color: COLORS.textDim }}>미확인</span>}
+                </td>
                 <td style={td}>
                   <div>{r.wharf_name || r.facility_name}</div>
                   {r.wharf_name && r.facility_name !== r.wharf_name && (
@@ -178,7 +184,7 @@ function UpcomingSection() {
               </tr>
             ))}
             {data && shown.length === 0 && (
-              <tr><td style={{ ...td, color: COLORS.textDim }} colSpan={9}>이 범위에 입항 예정 선박이 없습니다.</td></tr>
+              <tr><td style={{ ...td, color: COLORS.textDim }} colSpan={10}>이 범위에 입항 예정 선박이 없습니다.</td></tr>
             )}
           </tbody>
         </table>

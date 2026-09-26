@@ -121,41 +121,28 @@ function isRecentlyPresent(row) {
 // null 이 압도적인 이유는 조인 키 문제다 — PORT-MIS 에는 MMSI 컬럼이 없어 호출부호로만
 // 붙일 수 있는데, AIS 호출부호는 선택 필드라 74척이 아예 빈 값이다.
 // ─────────────────────────────────────────────────────────────────────────────
-// 선종 → 대표 화물 (화물 신고가 조인되지 않은 액체화물선의 판정 폴백)
-//
-// "모든 액체화물선을 판정한다"가 이 시스템의 목적인데, 화물 신고(berth-cargo
-// 조인)가 없는 배는 판정 입력이 없어 지금까지 전부 '조회 불가'였다(2026-08-21
-// 피드백: "왜 링 안 쳐진 빨간 배는 판정이 안 되나"). PORT-MIS 선종은 그 배가
-// 어떤 부류의 화물을 싣는 배인지 공식적으로 말해주므로, 카테고리 대표 화물로
-// 추정 판정한다 — 백엔드 스케줄링 에이전트가 인접 화물을 근사할 때 쓰는
-// 대표(category_map.REPRESENTATIVE_CHEM_BY_CATEGORY)와 같은 값이라 판정 기준이
-// 두 벌로 갈라지지 않는다.
-//
-// 추정은 반드시 추정으로 보이게 한다 — is_assumed 를 화면 끝까지 끌고 가서
-// '선종 기반 추정' 표식 없이 실신고처럼 보이는 일이 없게 한다.
-const SHIP_KIND_ASSUMED_CARGO = {
-  '석유제품 운반선': { name: '디젤 연료', chem_id: '000973', cas_no: '68334-30-5' },
-  '기타 유조선':    { name: '디젤 연료', chem_id: '000973', cas_no: '68334-30-5' },
-  '원유운반선':     { name: '석유(원유)', chem_id: '000751', cas_no: '8002-05-9' },
-  '케미칼 운반선':  { name: '벤젠', chem_id: '001008', cas_no: '71-43-2' },
-  'LPG 운반선':     { name: '프로페인', chem_id: '015420', cas_no: '74-98-6' },
-  'LNG 운반선':     { name: '메테인', chem_id: '015390', cas_no: '74-82-8' },
-};
+// [2026-09-25] 선종 → 대표 화물 추정(SHIP_KIND_ASSUMED_CARGO)을 없앴다.
+// 케미칼선이면 무엇을 싣든 벤젠으로 판정하는 식이라 실제 화물과 무관한 값이었다
+// (크롬 확인: 3EVD9 실제 5종 → 화면 '벤젠(선종 추정)'). 화물은 입항 건 화물만 쓰고,
+// 없으면 '화물 미확인' — 판정 입력이 없으니 판정도 하지 않는다(입항 자동 판정과 같은 규칙).
+
+const callsgnKey = (cs) => (cs ? String(cs).trim().toUpperCase() : '');
 
 function liquidByShipType(row) {
   return row.is_liquid_cargo_vessel == null ? null : Boolean(row.is_liquid_cargo_vessel);
 }
 
 /** upa_vessel_position 행 → 기존 vessels 계약 필드 (+ is_real_ais 플래그)
- * cargoByCallsgn: /dashboard/berth-cargo (mart.berth_current_cargo, 실 신고 위험물)를
+ * cargoByCallsgn: /dashboard/vessel-cargo (배마다 지금의 입항 건 화물, 2026-09-25)를
  * callsgn으로 조인 — 위치 API 자체엔 화물 정보가 없어 이걸로 보강한다.
  * ambiguousCallsgns: 재항 선박 중 둘 이상이 같은 호출부호를 쓰는 값들(아래 설명). */
-function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
+function mapVessel(row, cargoByCallsgn, ambiguousCallsgns, cargoListByCallsgn) {
   // 호출부호가 여러 배에 걸리면 화물을 붙이지 않는다. 붙이면 옆 배 위험물이
   // 엉뚱한 배에 표시되고, 그 배가 혼재·흘수 판정 입력으로까지 들어간다.
   // 모르는 것을 아는 척하느니 비워 두는 편이 맞다.
   const ambiguous = row.callsgn ? ambiguousCallsgns.has(row.callsgn) : false;
-  const cargo = (!ambiguous && cargoByCallsgn?.get(row.callsgn)) || null;
+  const cargo = (!ambiguous && cargoByCallsgn?.get(callsgnKey(row.callsgn))) || null;
+  const cargoRows = (!ambiguous && cargoListByCallsgn?.get(callsgnKey(row.callsgn))) || [];
   const byShipType = ambiguous ? null : liquidByShipType(row);
   return {
     // 식별자는 MMSI 우선(vessel_key = mart.vessel_identity 의 MMSI-First vessel_uid).
@@ -201,7 +188,10 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
     // 같은 소스 — 재항 중인 배는 departure_at_utc가 항상 null이다(아직 출항 전).
     arrival_at_utc: row.arrival_at_utc ?? null,
     departure_at_utc: row.departure_at_utc ?? null,
-    berth: cargo?.facility_name || null,
+    // 지금 붙어 있는 선석(위치 판정). 예전엔 berth-cargo 행의 facility_name 이었는데
+    // 그 값이 곧 vessel_presence.berth_name 이었다. 화물 출처를 입항 건으로 바꾸면서
+    // facility_name 이 적하목록 신고 시설(정박지 등)이 되므로 원래 값을 직접 쓴다.
+    berth: row.presence_berth_name ?? null,
     cargo: cargo ? {
       // chem_id 는 스케줄링·안전 에이전트가 화물을 식별하는 1순위 키다.
       // (UN 번호로는 조회할 수 없다 — msds_context 는 chem_id/cas_no 만 쓴다)
@@ -209,12 +199,10 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns) {
       un_no: cargo.dg_un_no, cas_no: cargo.cas_no,
       imdg_class: cargo.imdg_class, is_synthetic: cargo.is_synthetic,
     } : null,
-    // 화물 신고가 없을 때만 선종 대표 화물을 추정으로 붙인다.
-    // cargo 와 별도 필드로 둔다 — 지도 링(화물 '확인' 표식)과 KPI 는 실신고만
-    // 세야 하고, 추정을 cargo 에 섞으면 그 구분이 사라진다.
-    assumed_cargo: (!cargo && byShipType === true && SHIP_KIND_ASSUMED_CARGO[row.ship_kind_nm])
-      ? { ...SHIP_KIND_ASSUMED_CARGO[row.ship_kind_nm], is_assumed: true, basis: row.ship_kind_nm }
-      : null,
+    // 같은 입항 건에 함께 실은 화물 전부(cargo 포함). 판정 요청의 cargos 로 간다.
+    cargos: cargoRows.map((c) => ({
+      name: c.cargo_name, chem_id: c.chem_id, cas_no: c.cas_no ?? null, un_no: c.dg_un_no,
+    })),
   };
 }
 
@@ -261,7 +249,7 @@ async function getJson(path) {
  * 기상+선박 둘 다 실패하면 null (백엔드 다운으로 간주 — 호출측이 기존 소스 유지).
  */
 export async function fetchBackendDashboard() {
-  const [weather, vessels, berths, anchorages, berthCargo, draughtCheck, history, pipelineHealth, stats, alerts, berthDwell] =
+  const [weather, vessels, berths, anchorages, berthCargo, draughtCheck, history, pipelineHealth, stats, alerts, berthDwell, vesselCargo] =
     await Promise.allSettled([
       getJson('/dashboard/weather'),
       getJson('/dashboard/vessels'),
@@ -274,14 +262,27 @@ export async function fetchBackendDashboard() {
       getJson('/dashboard/stats'),
       getJson('/dashboard/alerts'),
       getJson('/dashboard/berth-dwell'),
+      getJson('/dashboard/vessel-cargo'),
     ]).then((rs) => rs.map((r) => (r.status === 'fulfilled' ? r.value : null)));
 
   if (!weather && !vessels) return null;
 
-  // callsgn당 여러 위험물을 신고했을 수 있어 첫 건만 대표로 쓴다(선박 카드엔 1개만 표시).
+  // [2026-09-25] 선박 화물은 /dashboard/vessel-cargo(배마다 **지금의 입항 건** 화물)로
+  // 붙인다. 예전엔 /berth-cargo 로 붙였는데 그건 선석에 붙은 배만 담아서, 항해 중·
+  // 정박지의 배는 입항 건에 화물이 있어도 '화물 미신고'로 보였다(크롬 확인 2026-09-25:
+  // 목록의 액체화물선 12척 전부). 새 엔드포인트가 없는 백엔드면 예전 방식으로 떨어진다.
+  //
+  // cargo(대표 1종)는 목록 첫 행, cargos 는 그 입항 건 화물 전부(chem_id 중복 제거).
+  // 키는 호출부호 대문자·공백 제거 — 백엔드 뷰가 그렇게 정규화해서 내려준다.
   const cargoByCallsgn = new Map();
-  for (const row of berthCargo ?? []) {
-    if (row.callsgn && !cargoByCallsgn.has(row.callsgn)) cargoByCallsgn.set(row.callsgn, row);
+  const cargoListByCallsgn = new Map();
+  for (const row of vesselCargo ?? berthCargo ?? []) {
+    const key = callsgnKey(row.callsgn);
+    if (!key) continue;
+    if (!cargoByCallsgn.has(key)) cargoByCallsgn.set(key, row);
+    const list = cargoListByCallsgn.get(key) ?? [];
+    if (row.chem_id && !list.some((c) => c.chem_id === row.chem_id)) list.push(row);
+    cargoListByCallsgn.set(key, list);
   }
 
   // 지도에 그릴 수 있는 선박(좌표 있음 + bbox 내 + 최근 신호). 상한을 걸기 전 전체.
@@ -306,7 +307,7 @@ export async function fetchBackendDashboard() {
   // KPI 분류 — mapVessel 과 같은 판정을 쓴다. 두 곳이 갈리면 KPI 와 목록 숫자가
   // 어긋나고, 어느 쪽이 맞는지 화면만 봐서는 알 수 없게 된다.
   const isAmbiguous = (r) => Boolean(r.callsgn) && ambiguousCallsgns.has(r.callsgn);
-  const hasCargo = (r) => !isAmbiguous(r) && cargoByCallsgn.has(r.callsgn);
+  const hasCargo = (r) => !isAmbiguous(r) && cargoByCallsgn.has(callsgnKey(r.callsgn));
   const shipType = (r) => (isAmbiguous(r) ? null : liquidByShipType(r));
 
   return {
@@ -318,12 +319,12 @@ export async function fetchBackendDashboard() {
     // 협상 콘솔의 판정 대상으로도 쓰여서, 상한에 잘린 액체화물선은 배정을 받아
     // 놓고도 콘솔에서 찾을 수 없었다 — 배정현황의 "협상 로그 →" 가 그 배 대신
     // 기본값을 여는 실사고(2026-08-23, 미시칸/D8BD). 판정 대상(액체화물선 중
-    // 화물 확인·선종 추정)은 상한과 무관하게 항상 포함하고, 나머지 배경 표적만
+    // 화물 확인)은 상한과 무관하게 항상 포함하고, 나머지 배경 표적만
     // 남은 자리를 채운다.
     realTraffic: (() => {
-      const mapped = presentVessels.map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns));
-      const judgeable = mapped.filter((v) => v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo));
-      const rest = mapped.filter((v) => !(v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo)));
+      const mapped = presentVessels.map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns, cargoListByCallsgn));
+      const judgeable = mapped.filter((v) => v.is_liquid_cargo_vessel && v.cargo);
+      const rest = mapped.filter((v) => !(v.is_liquid_cargo_vessel && v.cargo));
       return [...judgeable, ...rest.slice(0, Math.max(0, MAP_VESSEL_LIMIT - judgeable.length))];
     })(),
     realTrafficTotal: presentVessels.length,
@@ -340,8 +341,8 @@ export async function fetchBackendDashboard() {
     // 않는다. 대신 승인 대기 건에서 지목될 때만 콘솔이 여기서 찾아 쓴다.
     offscreenJudgeable: inBbox
       .filter((r) => !isRecentlyPresent(r))
-      .map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns))
-      .filter((v) => v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo)),
+      .map((row) => mapVessel(row, cargoByCallsgn, ambiguousCallsgns, cargoListByCallsgn))
+      .filter((v) => v.is_liquid_cargo_vessel && v.cargo),
     // 선석별 재항 위험물 화물 원본 — 안전 심사 폼이 "재항 선박에서 불러오기"에 쓴다.
     // (화물을 수기로 고르는 대신 지금 실제로 붙어 있는 배를 선택하게 하기 위함)
     berthCargo: berthCargo ?? [],
@@ -396,7 +397,7 @@ export async function fetchBackendDashboard() {
  * 흘수는 실측(AIS draught)만 쓴다. 미수집이면 호출하지 않는다 — 가정 흘수로
  * 낸 "배정 가능"은 근거 없는 안전 판정이 된다.
  */
-export async function fetchBerthCandidates({ draught_m, chem_id, cas_no, name_hint, hours = 24 }) {
+export async function fetchBerthCandidates({ draught_m, chem_id, cas_no, name_hint, hours = 24, extra_cargos = [] }) {
   if (draught_m == null) throw new Error('흘수 미수집 — 후보 조회 불가');
   if (!chem_id && !cas_no) throw new Error('화물 미확인 — 후보 조회 불가');
   const now = new Date();
@@ -406,6 +407,10 @@ export async function fetchBerthCandidates({ draught_m, chem_id, cas_no, name_hi
     body: JSON.stringify({
       vessel: { draught_m, name_hint: name_hint ?? null },
       cargo: { chem_id: chem_id ?? null, cas_no: cas_no ?? null, name_hint: name_hint ?? null },
+      // [2026-09-25] 함께 실은 화물 — 모든 화물 카테고리를 취급하는 선석만 후보가 된다.
+      additional_cargos: extra_cargos
+        .filter((c) => c?.chem_id && c.chem_id !== chem_id)
+        .map((c) => ({ chem_id: c.chem_id, cas_no: c.cas_no ?? null })),
       window_start: now.toISOString(),
       window_end: new Date(now.getTime() + hours * 3600 * 1000).toISOString(),
     }),

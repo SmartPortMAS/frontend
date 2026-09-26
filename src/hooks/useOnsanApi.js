@@ -37,6 +37,13 @@ const resolveCargoRef = ({ chem_id, cas_no, cargo_name }) => {
   return cargoRef(cargo_name);
 };
 
+// [2026-09-25] 같은 입항 건의 나머지 화물 → 요청 cargos. 주 화물과 같은 물질은 뺀다.
+// 주 화물이 cas_no 로만 올 때도 있어서(resolveCargoRef) 둘 다 대조한다.
+const extraCargoRefs = (extraCargos, primary) => (extraCargos || [])
+  .filter((c) => c?.chem_id && c.chem_id !== primary?.chem_id
+    && !(primary?.cas_no && c.cas_no === primary.cas_no))
+  .map((c) => ({ chem_id: c.chem_id, cas_no: c.cas_no ?? null }));
+
 /** 질문 문장이 화물명을 스스로 지목하는가 — cargo_hint 를 붙일지 판단하는 데 쓴다 */
 export const namesAnyCargo = (text) =>
   Object.keys(CARGO_CAS).some((name) => text.includes(name));
@@ -488,6 +495,7 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
       checklist: r.checklist || [],
     },
     target_cargo_name: r.target_cargo_name,
+    cargo_verdicts: r.cargo_verdicts || [],
     msds_sections_used: r.msds_sections_used || [],
     is_local_fallback: false,
     source: 'BACKEND_LLM',
@@ -554,6 +562,8 @@ function mapOrchestration(r) {
       (u) => `${u.adjacent_berth} ${u.adjacent_name} — ${u.assessability}: ${u.reason}`
     ),
     safety_checklist: r.safety_assessment?.checklist || [],
+    // [2026-09-25] 화물별 혼재 판정. 대표 등급(risk_level)은 is_governing 인 화물의 것.
+    safety_cargo_verdicts: r.safety_assessment?.cargo_verdicts || [],
     weather_grade: r.weather_assessment?.status || null,
     weather_reasons: r.weather_assessment?.reasons || [],
     summary: r.summary,
@@ -667,7 +677,9 @@ export default function useOnsanApi() {
         .filter(Boolean);
       if (!target) return null;
 
-      const data = await postJson('/safety/verdict', { target_cargo: target, adjacent_cargos: adj });
+      const data = await postJson('/safety/verdict', {
+        target_cargo: target, target_cargos: extraCargoRefs(req.extra_cargos, target), adjacent_cargos: adj,
+      });
       if (!data) return null;
       // mapSafety는 checklist/reasoning이 없어도 동작한다(옵셔널 체이닝).
       return { ...mapSafety(data, adj, target.chem_id), is_verdict_only: true };
@@ -686,7 +698,9 @@ export default function useOnsanApi() {
         .filter(Boolean);
 
       const data = target
-        ? await postJson('/safety/assess', { target_cargo: target, adjacent_cargos: adj })
+        ? await postJson('/safety/assess', {
+          target_cargo: target, target_cargos: extraCargoRefs(req.extra_cargos, target), adjacent_cargos: adj,
+        })
         : null;
 
       const result = data ? mapSafety(data, adj, target?.chem_id) : {
@@ -713,7 +727,7 @@ export default function useOnsanApi() {
   // assignedWharfName을 주면 검증모드 — top-3 새 추천 대신 그 선석 하나만
   // "지금 이 자리 괜찮은가"로 확인한다. 생략하면 기존 탐색모드(신규 추천).
   const orchestrate = useCallback(
-    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선', assignedWharfName = null, callSign = null }) => {
+    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선', assignedWharfName = null, callSign = null, extraCargos = [] }) => {
       const cargo = resolveCargoRef({ cas_no: casNo, cargo_name: cargoName });
       const now = Date.now();
       const data = cargo
@@ -727,6 +741,7 @@ export default function useOnsanApi() {
             call_sign: callSign ?? null,
           },
           cargo,
+          cargos: extraCargoRefs(extraCargos, cargo),
           window_start: new Date(now).toISOString(),
           window_end: new Date(now + 8 * 3600 * 1000).toISOString(),
           ...(assignedWharfName ? { assigned_wharf_name: assignedWharfName } : {}),
@@ -770,6 +785,7 @@ export default function useOnsanApi() {
   const recordAssessment = useCallback(
     async ({
       cargoName, chemId, casNo, dwt, draught, vesselName, callSign, imoNo, assignedWharfName,
+      extraCargos = [],
     }) => {
       const cargo = resolveCargoRef({ chem_id: chemId, cas_no: casNo, cargo_name: cargoName });
       if (!cargo) throw new Error(`화물 '${cargoName}' 식별 불가 — chem_id/CAS 매핑이 없습니다.`);
@@ -785,6 +801,7 @@ export default function useOnsanApi() {
           call_sign: callSign ?? null,
         },
         cargo,
+        cargos: extraCargoRefs(extraCargos, cargo),
         window_start: new Date(now).toISOString(),
         window_end: new Date(now + 8 * 3600 * 1000).toISOString(),
         assigned_wharf_name: assignedWharfName,

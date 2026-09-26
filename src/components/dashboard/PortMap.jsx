@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Circle, CircleMarker, Rectangle
 import useVesselSafety from '../../hooks/useVesselSafety';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { cargoSummary } from '../../utils/cargoText';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
 import { ONSAN_BERTHS, ONSAN_ADJACENCY, ONSAN_WEATHER_GROUP, onsanDisplayPos, findBerthIdByName } from '../../utils/geoUtils';
@@ -27,7 +28,7 @@ const SHIP_SVG_PATH =
 const createVesselIcon = (vessel) => {
   const confirmed = Boolean(vessel.cargo); // 화물까지 확인된 배
   // 화물 미확인 액체화물선은 속이 빈 배로 그린다 — "꽉 찬 빨강(확인)" 과
-  // "빈 빨강(선종 추정)" 은 링 유무보다 한눈에 갈린다(2026-08-21 피드백).
+  // "빈 빨강(화물 미확인)" 은 링 유무보다 한눈에 갈린다(2026-08-21 피드백).
   const hollow = !confirmed && vessel.is_liquid_cargo_vessel;
   const status = NAV_STATUS[vessel.nav_status_category] || NAV_STATUS.UNKNOWN;
   const color = vessel.is_liquid_cargo_vessel ? COLORS.red : status.color;
@@ -89,7 +90,9 @@ function VesselPopup({ vessel }) {
       </p>
       {vessel.cargo && (
         <p style={{ margin: '2px 0' }}>
-          <strong>화물</strong> {vessel.cargo.name} ({vessel.cargo.un_no})
+          <strong>화물</strong> {vessel.cargos?.length > 1
+            ? cargoSummary(vessel.cargos, 3)
+            : `${vessel.cargo.name} (${vessel.cargo.un_no})`}
           {vessel.cargo_source === 'ASSUMED' && (
             <span style={{
               marginLeft: 5, padding: '0 5px', borderRadius: 3, fontSize: 10,

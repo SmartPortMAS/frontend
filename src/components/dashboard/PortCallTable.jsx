@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS } from '../../utils/constants';
+import { cargoNames, cargoSummary } from '../../utils/cargoText';
 
 const formatKST = (utcString) => {
   if (!utcString) return '-';
@@ -65,10 +66,16 @@ const CARGO_FILTERS = [
 
 /** 화물 셀 표기 — 모르는 것을 아는 것처럼 적지 않는다 */
 function cargoLabel(v) {
-  if (v.cargo) return { text: `${v.cargo.name} (${v.cargo.un_no})`, dim: false };
+  // 입항 건 화물이 여럿이면 'A, B 외 N종' — 전체 목록은 칸 title 로.
+  if (v.cargo) {
+    const all = cargoNames(v.cargos);
+    return all.length > 1
+      ? { text: cargoSummary(v.cargos), title: all.join(', '), dim: false }
+      : { text: `${v.cargo.name} (${v.cargo.un_no})`, dim: false };
+  }
   // 호출부호가 다른 배와 겹치면 화물·선종을 붙일 수 없다. 왜 비었는지 적어준다.
   if (v.callsgn_ambiguous) return { text: '호출부호 중복 — 대조 불가', dim: true };
-  if (v.liquid_by_ship_type === true) return { text: '액체화물선 · 화물 미신고', dim: true };
+  if (v.liquid_by_ship_type === true) return { text: '액체화물선 · 화물 미확인', dim: true };
   if (v.liquid_by_ship_type === false) return { text: '일반화물', dim: true };
   return { text: '미확인', dim: true };
 }
@@ -84,7 +91,7 @@ const COLUMNS = [
   // 뱃지만 있으면 "왜 이 배가 위험물선인가"를 물었을 때 답할 근거가 화면에 없다.
   { key: 'ship_kind_nm', label: '선종 (PORT-MIS)', width: '14%', getValue: (v) => v.ship_kind_nm ?? '' },
   { key: 'nav_status_category', label: '상태', width: '9%', getValue: (v) => (NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label },
-  { key: 'cargo', label: '화물', width: '18%', getValue: (v) => v.cargo?.name ?? '' },
+  { key: 'cargo', label: '화물', width: '18%', getValue: (v) => (v.cargo ? cargoSummary(v.cargos?.length ? v.cargos : [v.cargo]) : '') },
   { key: 'berth', label: '배정 선석', width: '14%', getValue: (v) => v.berth ?? (v.anchorage ? `정박지 ${v.anchorage}` : '') },
   { key: 'sog', label: '속력', width: '7%', getValue: (v) => v.sog ?? 0 },
   { key: 'received_at_utc', label: '최근 수신 (KST)', width: '10%', getValue: (v) => (v.received_at_utc ? new Date(v.received_at_utc).getTime() : 0) },
@@ -255,7 +262,7 @@ export default function PortCallTable() {
                       {status.label}
                     </span>
                   </td>
-                  <td style={{ ...cellStyle, color: cargo.dim ? COLORS.textDim : COLORS.textPrimary }}>
+                  <td style={{ ...cellStyle, color: cargo.dim ? COLORS.textDim : COLORS.textPrimary }} title={cargo.title}>
                     {cargo.text}
                   </td>
                   <td style={cellStyle}>

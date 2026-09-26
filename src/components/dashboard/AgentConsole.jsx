@@ -10,6 +10,7 @@ import useDashboardData from '../../hooks/useDashboardData';
 import { fetchPendingApprovals, postAcknowledgement } from '../../api/backendAdapter';
 import { COLORS, OPERATOR_NAME } from '../../utils/constants';
 import { ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
+import { cargoSummary } from '../../utils/cargoText';
 
 // ─────────────────────────────────────────────
 // 멀티 에이전트 협상 콘솔 (우하단 플로팅 탭)
@@ -114,10 +115,21 @@ function toMessages({ orchestration, berthWeather, vessel }) {
         (t) => `[참고 · 판정 미반영] ${t} — 선내 적부 기준이라 부두 간 배치에는 적용되지 않습니다`
       ),
     ];
+    // [2026-09-25] 한 배가 여러 화물을 실으면 화물마다 판정하고 가장 위험한 쪽이
+    // 대표 등급이 된다. 어느 화물 때문에 이 등급인지를 맨 앞에 보여준다.
+    const verdicts = orchestration.safety_cargo_verdicts || [];
+    const verdictLine = verdicts.length > 1
+      ? [`화물 ${verdicts.length}종 판정: ${verdicts.map(
+        (v) => `${v.target_cargo_name} ${v.risk_level}${v.is_governing ? '(대표)' : ''}`,
+      ).join(' · ')}`]
+      : [];
     msgs.push({
       agent: 'safety', time: at(3),
       text: `안전 판정: ${orchestration.risk_level}`,
-      detail: detail.length ? detail : ['인접·동시 작업 화물과 혼재금지·IMDG 격리 충돌 없음'],
+      detail: [
+        ...verdictLine,
+        ...(detail.length ? detail : ['인접·동시 작업 화물과 혼재금지·IMDG 격리 충돌 없음']),
+      ],
     });
   }
 
@@ -269,9 +281,8 @@ export default function AgentConsole() {
   // 판정 대상: 실AIS + berth-cargo(실 신고 위험물) 조인 결과를 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
   const realCargoVessels = useMemo(
-    // 실신고 화물 + 선종 추정 화물(assumed_cargo) 모두 판정 대상 —
-    // "모든 액체화물선을 판정한다"(2026-08-21). 추정은 목록·결과에 표식.
-    () => (data?.real_traffic ?? []).filter((v) => v.is_liquid_cargo_vessel && (v.cargo || v.assumed_cargo)),
+    // 입항 건 화물이 확인된 액체화물선만 판정 대상. 선종 추정 화물은 없앴다(2026-09-25).
+    () => (data?.real_traffic ?? []).filter((v) => v.is_liquid_cargo_vessel && v.cargo),
     [data]
   );
   // 폴백 없음 — 실화물이 확인된 배만 판정 대상으로 둔다.
@@ -389,13 +400,15 @@ export default function AgentConsole() {
       const group = berthId ? ONSAN_WEATHER_GROUP[berthId] : null;
       if (group) await assessBerthWeather({ berthGroup: group });
       await orchestrate({
-        cargoName: (target.cargo ?? target.assumed_cargo)?.name,
-        casNo: (target.cargo ?? target.assumed_cargo)?.cas_no, // 실신고 우선, 없으면 선종 추정
+        cargoName: target.cargo?.name,
+        casNo: target.cargo?.cas_no,
         dwt: null, // 실AIS 위치 데이터엔 DWT가 없음 — 미상으로 보내 오케스트레이터가 보수적으로 판단하게 함
         draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
         // 이 배가 이미 받아 둔 추천을 자기 점유로 세지 않도록 호출부호를 넘긴다
         callSign: target.callsgn,
+        // 같은 입항 건의 나머지 화물
+        extraCargos: target.cargos ?? [],
       });
       // orchestrate()는 매번 새로 계산하는 상태없는 판단이라 아무것도 기록하지
       // 않는다. arrival_watcher(10분 주기 배경 잡)가 같은 배를 이미 판정해 뒀으면
@@ -425,14 +438,8 @@ export default function AgentConsole() {
     setDecisionError(null);
     setDecisionReadOnly(false);
     try {
-      // 판정에 쓴 화물과 기록에 쓰는 화물이 같아야 한다.
-      //
-      // 종합 판정은 실신고 화물이 없으면 선종 추정 화물(assumed_cargo)로 판단하는데,
-      // 기록은 target.cargo 만 보고 있었다. 그래서 선종 추정 선박은 판정을 받고
-      // 버튼까지 떠 놓고, 누르면 "화물 'undefined' 식별 불가"로 실패했다 — 판정과
-      // 기록이 서로 다른 입력을 본 것이다(2026-08-24 실측: 판정 대상 60척 중
-      // 선종 추정이 다수라 시연 흐름이 통째로 막혔다).
-      const cargo = target.cargo ?? target.assumed_cargo;
+      // 판정에 쓴 화물과 기록에 쓰는 화물이 같아야 한다 — 둘 다 target.cargo(입항 건 화물).
+      const cargo = target.cargo;
       const outcome = await recordAssessment({
         cargoName: cargo?.name,
         chemId: cargo?.chem_id,
@@ -442,6 +449,7 @@ export default function AgentConsole() {
         vesselName: target.vessel_name,
         callSign: target.callsgn,
         assignedWharfName: berthNow,
+        extraCargos: target.cargos ?? [],
       });
       // 판정을 다시 돌린 결과다 — 콘솔에 보이던 판단을 그걸로 갱신해 화면과
       // 기록된 내용이 어긋나지 않게 한다.
@@ -609,7 +617,7 @@ export default function AgentConsole() {
             /* 신호가 끊겨 목록에 없는 배를 승인 대기에서 지목한 경우 —
                선택된 사실이 보이도록 이 항목만 임시로 띄운다 */
             <option key={target.port_call_id} value={target.port_call_id}>
-              {target.vessel_name} · {(target.cargo ?? target.assumed_cargo)?.name} (AIS 신호 없음)
+              {target.vessel_name} · {target.cargo?.name ?? '화물 미확인'} (AIS 신호 없음)
             </option>
           )}
           {vessels.map((v) => (
@@ -617,7 +625,8 @@ export default function AgentConsole() {
               {/* 부두 이름은 안 보여준다 — 이 콘솔은 항상 탐색모드로 새로 추천받는다(위
                   run() 참고). 지금 있는 자리를 먼저 보여주면 "이미 정해진 자리를
                   확인하는 화면"처럼 보여 탐색모드로 바꾼 의도와 어긋난다. */}
-              {v.vessel_name} · {v.cargo?.name ?? `${v.assumed_cargo?.name} (선종 추정)`}
+              {/* 판정은 입항 건 화물 전부로 돈다(run 의 extraCargos) — 목록도 전부 보여준다 */}
+              {v.vessel_name} · {cargoSummary(v.cargos?.length ? v.cargos : [v.cargo])}
             </option>
           ))}
         </select>
