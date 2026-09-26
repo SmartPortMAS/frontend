@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Scene from '../components/three/Scene';
-import { findBerthIdByName } from '../utils/geoUtils';
+import { findBerthIdByName, ONSAN_BERTHS, OMNIVERSE_BERTH_IDS } from '../utils/geoUtils';
+import HelpTip from '../components/common/HelpTip';
 import PortMap from '../components/dashboard/PortMap';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import RadarMap from '../components/three/hud/RadarMap';
@@ -12,7 +13,7 @@ import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
 import { BACKEND_BASE, postTwinFocus } from '../api/backendAdapter';
-import { FaMap, FaPlay, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
+import { FaMap, FaPlay, FaExclamationTriangle, FaArrowRight } from 'react-icons/fa';
 import { alertSubject, levelStyle, typeLabel } from '../utils/alertUtils';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
@@ -85,8 +86,28 @@ export default function DigitalTwinPage() {
     }
     setStreamStatus('unreachable');
   };
-  const predictionOffset = useSensorStore(state => state.predictionOffset);
-  const setPredictionOffset = useSensorStore(state => state.setPredictionOffset);
+  // 3D 화면에서 고른 배·선석 → 정밀 검토 지목 (InfoPopup 의 [정밀 검토] 버튼과 같은 규칙).
+  // 장면에는 온산 액체화물 부두 11곳만 있어 그 밖의 선석은 지목할 수 없다.
+  const selectedObject = useSensorStore((s) => s.selectedObject);
+  const focusFromSelection = (obj) => {
+    if (!obj) return null;
+    const type = obj.type;
+    const berthId = type === 'Ship' ? obj.berth : type === 'Berth' ? obj.id : null;
+    if (!berthId || !OMNIVERSE_BERTH_IDS.has(berthId)) return null;
+    const berthName = type === 'Ship' ? (obj.berth_name || ONSAN_BERTHS[obj.berth]?.name) : ONSAN_BERTHS[obj.id]?.name;
+    if (!berthName) return null;
+    return {
+      berth: berthName,
+      call_sign: type === 'Ship' ? (obj.callsgn || null) : null,
+      vessel_name: type === 'Ship' ? obj.id : null,
+    };
+  };
+  const selectionFocus = focusFromSelection(selectedObject);
+  const selectionLabel = selectedObject
+    ? (selectedObject.type === 'Ship' ? selectedObject.id : ONSAN_BERTHS[selectedObject.id]?.name || selectedObject.id)
+    : null;
+  const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
+
   
 
   // 선박 상세의 계류 물리 검증에서 '정밀 검토'로 넘어온 경우 바로 켠다.
@@ -242,6 +263,7 @@ export default function DigitalTwinPage() {
           className="action-btn"
           onClick={() => {
             const next = !showOmniverseStream;
+            if (next && selectionFocus) { requestOmniverse(selectionFocus); return; }
             setShowOmniverseStream(next);
             if (next) checkStream();
           }}
@@ -290,10 +312,13 @@ export default function DigitalTwinPage() {
                 : '순환 재생'}
             </span>
             <span style={{ color: '#94a3b8' }}>
-              {omniFocus
-                ? '— 앞으로 72시간 (기상청 단기예보 · 국립해양조사원 조석예보 · 판정 규칙 그대로)'
-                : '— 조감 → 과거 사례 · 3D 관제 화면에서 배나 선석을 누르면 그곳을 봅니다'}
+              {omniFocus ? '· 앞으로 72시간' : '· 지목 없음 — 3D 화면에서 배나 선석을 누르세요'}
             </span>
+            <HelpTip title="정밀 검토">
+              <div>지목한 선석의 <strong>앞으로 72시간</strong>을 기상청 단기예보 · 국립해양조사원 조석예보로 한 시각씩 판정합니다. 판정 규칙은 관제 화면과 같습니다.</div>
+              <div style={{ marginTop: 4 }}>지목이 없으면 조감 → 과거 사례를 순환합니다. 3D 관제 화면에서 배나 선석을 누르고 [정밀 검토]를 누르면 그곳을 봅니다.</div>
+              <div style={{ marginTop: 4 }}>선박 이동·하역 진행은 예측 근거(유량계·소요시간 모델)가 없어 재현하지 않습니다.</div>
+            </HelpTip>
             {replayCases.map((r) => (
               <button
                 key={r.id}
@@ -412,60 +437,44 @@ export default function DigitalTwinPage() {
       {/* 선박 상세 패널 (2D 지도 마커 클릭 시) */}
       <VesselDetailPanel />
 
-      {/* Time Travel Slider with Media Controls — 스트리밍 중에는 숨김 */}
+      {/* 시간축 — 지금(이 화면, 실측) ↔ 앞으로 72시간(정밀 검토, 예보). 스트리밍 중에는 숨김.
+          [2026-09-24] 예전 재생 슬라이더는 미래 이동을 지어내 재생해 껐다(실측이 아닌 것을 실측처럼 보이지 않게).
+          [2026-09-27] 빈 슬라이더 대신 두 화면을 잇는 한 줄로 — 현재는 Three.js, 앞으로는 Omniverse.
+          위치 이력 되감기는 이력 연결 뒤 이 자리에 붙인다. */}
       {!showOmniverseStream && (
-      <div className="time-slider-container" style={{ 
-        position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)', 
-        width: '600px', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(10px)',
-        padding: '16px 24px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)',
-        display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 1000 
+      <div className="time-slider-container" style={{
+        position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)',
+        width: '640px', maxWidth: 'calc(100% - 40px)', background: 'rgba(15, 23, 42, 0.82)', backdropFilter: 'blur(10px)',
+        padding: '12px 18px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)',
+        display: 'flex', alignItems: 'center', gap: '14px', zIndex: 1000,
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {/* [2026-09-24] 시간 재생은 자리만 둔다. 예전 오토플레이는 접안 4시간 뒤 출항 같은
-                미래 이동을 지어내 재생했다 — 실측이 아닌 것을 실측처럼 보이게 하지 않는다.
-                선박위치 이력(upa_vessel_position)을 되감는 기능으로 바꿀 때 이 자리를 쓴다.
-                앞으로의 기상·조위는 정밀 검토(Omniverse)가 예보로 보여준다. */}
-            <button type="button" disabled title="위치 이력 되감기 — 연결 예정" style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 12px', cursor: 'not-allowed', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <FaPlay /> 시간 재생
-            </button>
-            <button type="button" disabled style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'not-allowed' }}>1x</button>
-            <button type="button" disabled style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'not-allowed' }}><FaForward /></button>
-            <button type="button" disabled style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'not-allowed' }}><FaFastForward /></button>
-          </div>
-
-          <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>
-            실시간 관제 중 <span style={{ color: '#94a3b8', fontWeight: 'normal', fontSize: '11.5px' }}>· 되감기는 위치 이력 연결 뒤 제공</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
+          <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 800 }}>● 지금</span>
+          <span style={{ color: '#94a3b8', fontSize: '11px' }}>실측 · 이 화면</span>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          <div style={{ flex: 1, height: '3px', background: 'linear-gradient(90deg, #10b981, #38bdf8)', borderRadius: '2px' }} />
+          <FaArrowRight color="#38bdf8" size={12} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0, alignItems: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (selectionFocus) requestOmniverse(selectionFocus);
+              else { setShowOmniverseStream(true); checkStream(); }
+            }}
+            title={selectionFocus ? `${selectionLabel} 의 앞으로 72시간을 정밀 검토(Omniverse)에서 봅니다` : '배나 선석을 고른 뒤 누르면 그곳의 앞으로 72시간을 봅니다'}
+            style={{
+              background: 'rgba(56, 189, 248, 0.16)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.55)',
+              borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 800, fontSize: '13px', whiteSpace: 'nowrap',
+            }}
+          >
+            앞으로 72시간 → 정밀 검토{selectionFocus ? ` (${selectionLabel})` : ''}
+          </button>
+          <span style={{ color: '#64748b', fontSize: '10.5px' }}>
+            {selectedObject && !selectionFocus ? '이 대상은 장면 밖 — 온산 부두의 배·선석을 고르세요' : '위치 이력 되감기 — 예정'}
           </span>
         </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '11px', marginTop: '-4px' }}>
-          <span>지금 (실측)</span>
-          <span>이력 되감기 — 예정</span>
-        </div>
-
-        {/* 슬라이더를 밀면 실AIS 선박이 움직인다. 무엇이 실측이고 무엇이 연출인지
-            밝혀 둔다 — 하역 소요시간 예측 모델은 아직 없다. 현재 위치·상태는 실측이고,
-            미래 이동(접안→출항)은 시나리오 애니메이션이다. */}
-        {predictionOffset > 0 && (
-          <div style={{
-            fontSize: '11px', color: '#fbbf24', background: 'rgba(251,191,36,0.10)',
-            border: '1px solid rgba(251,191,36,0.35)', borderRadius: '6px',
-            padding: '6px 10px', lineHeight: 1.5, marginTop: '-2px',
-          }}>
-            ※ 선박의 <strong>현재 위치·항해상태는 실측(AIS)</strong>이지만, 미래 이동은
-            데모 시나리오입니다 — 하역 소요시간 예측 모델은 아직 없습니다.
-            일조/조명 변화만 시각 기준으로 실제 반영됩니다.
-          </div>
-        )}
-        
-        <input
-          type="range" min="0" max="720" step="10" disabled
-          value={predictionOffset}
-          readOnly
-          title="위치 이력 되감기 — 연결 예정"
-          style={{ width: '100%', cursor: 'not-allowed', accentColor: '#64748b' }}
-        />
       </div>
       )}
     </div>
