@@ -42,7 +42,7 @@ const PAGE_SIZE = 12;
 // 이 셋을 "일반화물"로 뭉뚱그리면 모르는 걸 안다고 말하는 셈이라 따로 둔다.
 // ─────────────────────────────────────────────────────────────────────────────
 const CARGO_FILTERS = [
-  { key: 'ALL', label: '전체', hint: '수신된 AIS 선박 전부' },
+  { key: 'ALL', label: '전체', hint: '위치가 수신된 선박 전부' },
   {
     key: 'LIQUID',
     label: '액체화물선',
@@ -152,8 +152,8 @@ export default function PortCallTable() {
             real_traffic 은 지도 성능 상한(MAP_VESSEL_LIMIT=200)까지만 내려온다. */}
         <span style={{ fontSize: '13px', color: COLORS.textDim }}>
           {aisTotal > filterCounts.ALL
-            ? `AIS ${aisTotal}척 중 최근 수신 ${filterCounts.ALL}척 · 표시 ${vessels.length}척`
-            : `AIS ${filterCounts.ALL}척 · 표시 ${vessels.length}척`}
+            ? `선박위치 ${aisTotal}척 중 최근 수신 ${filterCounts.ALL}척 · 표시 ${vessels.length}척`
+            : `선박위치 ${filterCounts.ALL}척 · 표시 ${vessels.length}척`}
         </span>
       </div>
 

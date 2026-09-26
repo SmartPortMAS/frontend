@@ -123,7 +123,7 @@ export default function ActiveRiskPanel() {
                       <button
                         type="button"
                         onClick={() => setSelectedVessel(vessel)}
-                        title={`${vessel.vessel_name} 상세 보기 (AIS 신호 수신 중)`}
+                        title={`${vessel.vessel_name} 상세 보기 (선박위치 수신 중)`}
                         style={{
                           display: 'flex', alignItems: 'center', gap: '4px',
                           background: 'transparent', border: `1px solid ${COLORS.border}`,
