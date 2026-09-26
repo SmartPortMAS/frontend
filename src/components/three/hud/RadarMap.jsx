@@ -125,7 +125,7 @@ export default function RadarMap() {
       ))}
 
       <div style={{ position: 'absolute', bottom: 8, left: 0, right: 0, textAlign: 'center', color: '#00d4aa', fontSize: '9.5px', fontFamily: 'monospace', lineHeight: 1.3 }}>
-        온산 AIS · 반경 {RADIUS_KM}km
+        온산 선박위치 · 반경 {RADIUS_KM}km
         <div style={{ fontSize: '8.5px', opacity: 0.75 }}>{blips.length}척 표시</div>
       </div>
     </div>

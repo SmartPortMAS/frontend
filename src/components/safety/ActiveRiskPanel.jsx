@@ -69,18 +69,8 @@ export default function ActiveRiskPanel() {
           <FaShieldAlt style={{ marginRight: '8px', color: unackedTotal ? COLORS.red : COLORS.teal }} />
           현재 위험 선석 ({berths.length})
         </h3>
-        {unackedTotal > 0 && (
-          <button
-            type="button"
-            onClick={() => alerts.forEach((a) => ackAlert(alertId(a)))}
-            style={{
-              background: COLORS.teal, color: '#FFFFFF', border: 'none', borderRadius: '6px',
-              padding: '5px 12px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            모두 확인
-          </button>
-        )}
+        {/* "모두 확인"은 뺐다(2026-09-26) — 안전 경고를 한 번에 확인 처리하는 동작은 실무에 없다.
+            경고는 아래 선석 카드에서 한 선석씩 확인한다. */}
       </div>
 
       <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginBottom: '10px', lineHeight: 1.5 }}>
@@ -152,7 +142,7 @@ export default function ActiveRiskPanel() {
                     <button
                       type="button"
                       onClick={() => navigate(`/twin?berth=${encodeURIComponent(g.berth)}`)}
-                      title={`${g.berth} 와 인접 선석의 현장 배치를 3D 로 봅니다`}
+                      title={`${g.berth} 와 인접 선석의 위치를 3D 로 봅니다`}
                       style={{
                         display: 'flex', alignItems: 'center', gap: '4px',
                         background: 'transparent', border: `1px solid ${COLORS.border}`,
@@ -160,7 +150,7 @@ export default function ActiveRiskPanel() {
                         fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
                       }}
                     >
-                      <FaCube size={9} /> 현장 배치
+                      <FaCube size={9} /> 위치 보기
                     </button>
                     {!allAcked && (
                       <button
