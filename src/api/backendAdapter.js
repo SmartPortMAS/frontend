@@ -436,6 +436,42 @@ export async function fetchUpcomingArrivals({ aheadHours = 72, pastHours = 12 } 
   return res.json();
 }
 
+/**
+ * 화면에서 바로 판정 요청 — POST /orchestrator/assess-and-record.
+ * 판정 감시 작업(10분 주기)이 아직 안 훑은 배를 관제사가 지금 판정받을 때 쓴다.
+ * 결과는 판정 이력(assessment_history)에 남고, 입항 예정 표가 다시 읽는다.
+ * 흘수를 모르면 부르지 않는다(백엔드가 흘수 > 0 을 요구하고, 지어내면 판정이 거짓이 된다).
+ */
+export async function postAssessAndRecord({
+  callSign, vesselName, draughtM, dwtT, chemId, casNo, cargoName, wharfName, hours = 8,
+}) {
+  if (!wharfName) throw new Error('계류시설이 확인되지 않아 판정할 수 없습니다');
+  if (!(Number(draughtM) > 0)) throw new Error('흘수가 없어 판정할 수 없습니다(판정불가)');
+  const cargo = chemId ? { chem_id: chemId, name_hint: cargoName }
+    : casNo ? { cas_no: casNo, name_hint: cargoName } : null;
+  if (!cargo) throw new Error('화물이 확인되지 않아 판정할 수 없습니다(판정불가)');
+  const now = Date.now();
+  const res = await fetch(`${BACKEND_BASE}/orchestrator/assess-and-record`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      vessel: { draught_m: Number(draughtM), dwt_t: dwtT ? Number(dwtT) : null, name_hint: vesselName, call_sign: callSign },
+      cargo,
+      window_start: new Date(now).toISOString(),
+      window_end: new Date(now + hours * 3600 * 1000).toISOString(),
+      assigned_wharf_name: wharfName,
+      call_sign: callSign,
+      vessel_name: vesselName,
+    }),
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { const j = await res.json(); detail = j.detail ? String(j.detail).slice(0, 140) : detail; } catch { /* 본문 없음 */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export async function fetchBerthAssignments() {
   const res = await fetch(`${BACKEND_BASE}/dashboard/berth-assignments`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

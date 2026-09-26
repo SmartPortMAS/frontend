@@ -59,8 +59,15 @@ function GateCard({ gate, onCommand }) {
         </div>
       )}
       {/* 지금 이 선석에 붙어 있는 배와 그 배의 하역중 판정. 부적합·판정불가면 게이트가 잠긴다. */}
+      {gate.demo_verdict && (
+        <div style={{ fontSize: '11.5px', marginTop: '3px', color: ['부적합', '판정불가'].includes(gate.demo_verdict.level) ? COLORS.red : COLORS.yellow, fontWeight: 700 }}>
+          시연 판정 <strong>{gate.demo_verdict.level}</strong>
+          {gate.demo_verdict.reason && <span> — {gate.demo_verdict.reason}</span>}
+          <span style={{ fontWeight: 400, color: COLORS.textDim }}> (아래 실측 판정 대신 사용 중)</span>
+        </div>
+      )}
       {Array.isArray(gate.vessels) && (
-        <div style={{ fontSize: '11.5px', marginTop: '3px', color: COLORS.textSecondary }}>
+        <div style={{ fontSize: '11.5px', marginTop: '3px', color: COLORS.textSecondary, opacity: gate.demo_verdict ? 0.6 : 1 }}>
           {gate.vessels.length === 0 ? (
             <span style={{ color: COLORS.textDim }}>접안 선박 없음 — 기상 기준만 적용</span>
           ) : (
@@ -145,9 +152,22 @@ function GateCard({ gate, onCommand }) {
 
 // 시연 입력 — 시연장에서 실제 바람이 16 m/s 가 될 리 없어 값을 넣는다.
 // 판정 규칙은 실제와 같고 값만 주입되며, 주입 중이면 배지가 뜬다(심사 질문에 정직하게).
-function DemoControl({ demo, onApply, onClear }) {
+// 시연 판정 보기 — 시스템이 실제로 내는 판정 축(기상·흘수·혼재·근거 부족)에서 골랐다.
+// 기상은 위 풍속·파고로 넣으므로 여기엔 없다. 인접 선석 부적합은 산적 호환성 충돌로 든다 —
+// IMDG 격리표는 선내 적재 규정이라 부두 간 판정에 쓰지 않는다(rule_engine.compute_imdg_berth_adjacency_floor).
+const VERDICT_PRESETS = [
+  { key: 'fit', level: '적합', reason: '흘수·혼재 모두 기준 안 — 하역 개시 가능' },
+  { key: 'ukc', level: '부적합', reason: '흘수 여유 부족 — 저조 시 가용수심 < 흘수 + 10%' },
+  { key: 'seg', level: '부적합', reason: '인접 선석 화물과 반응 위험 조합(산적 호환성 충돌)' },
+  { key: 'unk', level: '판정불가', reason: '흘수 미신고 — 판단 근거 없음' },
+];
+
+function DemoControl({ demo, demoVerdict, gates, onApply, onClear, onVerdict, onVerdictClear }) {
   const [wind, setWind] = useState(demo?.wind_ms ?? 16);
   const [wave, setWave] = useState(demo?.wave_m ?? 0.5);
+  const [vGate, setVGate] = useState(gates?.[0]?.gate_id ?? 'G01');
+  const [vKey, setVKey] = useState('ukc');
+  const anyDemo = Boolean(demo) || Boolean(demoVerdict);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const run = async (fn) => {
@@ -155,10 +175,10 @@ function DemoControl({ demo, onApply, onClear }) {
     try { await fn(); } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
   return (
-    <div className="sensor-card" style={{ borderLeft: `3px solid ${demo ? COLORS.yellow : COLORS.border}` }}>
+    <div className="sensor-card" style={{ borderLeft: `3px solid ${anyDemo ? COLORS.yellow : COLORS.border}` }}>
       <div className="sensor-card-header">
-        <span className="sensor-id"><FaFlask style={{ marginRight: '6px' }} />시연 입력 — 기상값 주입</span>
-        {demo && (
+        <span className="sensor-id"><FaFlask style={{ marginRight: '6px' }} />시연 입력 — 기상·판정</span>
+        {anyDemo && (
           <span style={{ fontSize: '11px', fontWeight: 800, color: '#FFFFFF', background: COLORS.yellow, padding: '2px 8px', borderRadius: '999px' }}>
             시연 입력 중
           </span>
@@ -187,13 +207,41 @@ function DemoControl({ demo, onApply, onClear }) {
           해제 (실측으로)
         </button>
       </div>
+      <div style={{ borderTop: `1px solid ${COLORS.border}`, marginTop: '12px', paddingTop: '10px' }}>
+        <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginBottom: '8px', lineHeight: 1.5 }}>
+          하역중 판정 — 실제로는 판정 감시가 정하는 값입니다. 부적합·판정불가면 게이트가 잠깁니다(규칙은 실제와 같고, 판정 기록엔 남지 않습니다).
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select value={vGate} onChange={(e) => setVGate(e.target.value)}
+            style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, background: COLORS.card, color: COLORS.textPrimary, fontSize: '12px' }}>
+            {(gates || []).map((g) => <option key={g.gate_id} value={g.gate_id}>{g.label} · {g.berth}</option>)}
+          </select>
+          <select value={vKey} onChange={(e) => setVKey(e.target.value)}
+            style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, background: COLORS.card, color: COLORS.textPrimary, fontSize: '12px', maxWidth: '100%' }}>
+            {VERDICT_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.level} — {p.reason}</option>)}
+          </select>
+          <button disabled={busy} onClick={() => {
+            const p = VERDICT_PRESETS.find((x) => x.key === vKey);
+            run(() => onVerdict({ gate_id: vGate, level: p.level, reason: p.reason }));
+          }}
+            style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: COLORS.yellow, color: '#FFFFFF', fontWeight: 700, cursor: 'pointer' }}>
+            판정 적용
+          </button>
+          <button disabled={busy || !demoVerdict} onClick={() => run(() => onVerdictClear(null))}
+            style={{ padding: '6px 12px', borderRadius: '8px', border: `1px solid ${COLORS.border}`, background: 'transparent', color: demoVerdict ? COLORS.textPrimary : COLORS.textDim, fontWeight: 700, cursor: demoVerdict ? 'pointer' : 'not-allowed' }}>
+            실측 판정으로
+          </button>
+        </div>
+      </div>
       {error && <div style={{ marginTop: '6px', fontSize: '12px', color: COLORS.red }}>{error}</div>}
     </div>
   );
 }
 
 export default function HardwarePanel() {
-  const { snapshot, wsState, sendGateCommand, setDemoWeather, clearDemoWeather } = useHardwareData();
+  const {
+    snapshot, wsState, sendGateCommand, setDemoWeather, clearDemoWeather, setDemoVerdict, clearDemoVerdict,
+  } = useHardwareData();
   const broker = snapshot?.broker;
 
   return (
@@ -202,10 +250,10 @@ export default function HardwarePanel() {
         하역 개시 인터락 — 선석 A·B 게이트 (실물)
       </h3>
       <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginBottom: '14px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-        <span>화면 ↔ 관제 서버: <strong style={{ color: wsState === 'open' ? COLORS.teal : COLORS.yellow }}>{wsState === 'open' ? '연결됨' : wsState === 'connecting' ? '연결 중' : '끊김 — 다시 연결 중'}</strong></span>
+        <span>화면 ↔ 관제 서버: <strong style={{ color: (wsState === 'open' || wsState === 'polling') ? COLORS.teal : COLORS.yellow }}>{wsState === 'open' ? '연결됨' : wsState === 'polling' ? '연결됨 (1초 조회)' : wsState === 'connecting' ? '연결 중' : '끊김 — 다시 연결 중'}</strong></span>
         {broker && (
           <span>관제 서버 ↔ 장치 중계: <strong style={{ color: broker.connected ? COLORS.teal : COLORS.red }}>{broker.connected ? '연결됨' : '끊김'}</strong>
-            {!broker.connected && <span style={{ color: COLORS.textDim }}> (노트북에서 mosquitto 를 켜야 합니다)</span>}
+            {!broker.connected && <span style={{ color: COLORS.textDim }}> (브로커가 꺼져 있습니다)</span>}
           </span>
         )}
         <span style={{ color: COLORS.textDim }}>잠긴 동안의 열기 요청은 장치가 거부합니다 — 화면은 판단하지 않습니다</span>
@@ -214,7 +262,7 @@ export default function HardwarePanel() {
       {!snapshot ? (
         <div className="sensor-card" style={{ color: COLORS.textSecondary, fontSize: '13px' }}>
           {wsState === 'closed'
-            ? '관제 서버(8001)에 연결할 수 없습니다 — 관제시스템_시작.bat 을 실행하세요.'
+            ? '관제 서버에 연결할 수 없습니다 — 서버가 켜져 있는지 확인하세요.'
             : '게이트 상태를 기다리는 중…'}
         </div>
       ) : (
@@ -222,7 +270,11 @@ export default function HardwarePanel() {
           {snapshot.gates.map((gate) => (
             <GateCard key={gate.gate_id} gate={gate} onCommand={sendGateCommand} />
           ))}
-          <DemoControl demo={snapshot.demo} onApply={setDemoWeather} onClear={clearDemoWeather} />
+          <DemoControl
+            demo={snapshot.demo} demoVerdict={snapshot.demo_verdict} gates={snapshot.gates}
+            onApply={setDemoWeather} onClear={clearDemoWeather}
+            onVerdict={setDemoVerdict} onVerdictClear={clearDemoVerdict}
+          />
         </div>
       )}
     </>

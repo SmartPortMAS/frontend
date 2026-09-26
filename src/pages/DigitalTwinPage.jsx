@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Scene from '../components/three/Scene';
 import { findBerthIdByName } from '../utils/geoUtils';
@@ -12,7 +12,7 @@ import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
 import { BACKEND_BASE, postTwinFocus } from '../api/backendAdapter';
-import { FaMap, FaPlay, FaPause, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
+import { FaMap, FaPlay, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
 import { alertSubject, levelStyle, typeLabel } from '../utils/alertUtils';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
@@ -88,28 +88,6 @@ export default function DigitalTwinPage() {
   const predictionOffset = useSensorStore(state => state.predictionOffset);
   const setPredictionOffset = useSensorStore(state => state.setPredictionOffset);
   
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playSpeed, setPlaySpeed] = useState(1);
-  const intervalRef = useRef(null);
-
-  useEffect(() => {
-    if (isPlaying) {
-      intervalRef.current = setInterval(() => {
-        setPredictionOffset(prev => {
-          if (prev >= 720) {
-            setIsPlaying(false);
-            return 720;
-          }
-          return prev + 10;
-        });
-      }, 1000 / playSpeed);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isPlaying, playSpeed, setPredictionOffset]);
 
   // 선박 상세의 계류 물리 검증에서 '정밀 검토'로 넘어온 경우 바로 켠다.
   // 사용자가 화면을 옮겨온 목적이 이미 분명한데 버튼을 한 번 더 누르게 할 이유가 없다.
@@ -169,7 +147,6 @@ export default function DigitalTwinPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showOmniverseStream]);
 
-  const togglePlay = () => setIsPlaying(!isPlaying);
 
   return (
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
@@ -445,22 +422,26 @@ export default function DigitalTwinPage() {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={togglePlay} style={{ background: isPlaying ? '#ef4444' : '#10b981', color: '#fff', border: 'none', borderRadius: '4px', padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              {isPlaying ? <FaPause /> : <FaPlay />} {isPlaying ? '정지' : '오토플레이'}
+            {/* [2026-09-24] 시간 재생은 자리만 둔다. 예전 오토플레이는 접안 4시간 뒤 출항 같은
+                미래 이동을 지어내 재생했다 — 실측이 아닌 것을 실측처럼 보이게 하지 않는다.
+                선박위치 이력(upa_vessel_position)을 되감는 기능으로 바꿀 때 이 자리를 쓴다.
+                앞으로의 기상·조위는 정밀 검토(Omniverse)가 예보로 보여준다. */}
+            <button type="button" disabled title="위치 이력 되감기 — 연결 예정" style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 12px', cursor: 'not-allowed', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <FaPlay /> 시간 재생
             </button>
-            <button onClick={() => setPlaySpeed(1)} style={{ background: playSpeed === 1 ? '#38bdf8' : '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'pointer' }}>1x</button>
-            <button onClick={() => setPlaySpeed(2)} style={{ background: playSpeed === 2 ? '#38bdf8' : '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'pointer' }}><FaForward /></button>
-            <button onClick={() => setPlaySpeed(5)} style={{ background: playSpeed === 5 ? '#38bdf8' : '#334155', color: '#fff', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'pointer' }}><FaFastForward /></button>
+            <button type="button" disabled style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'not-allowed' }}>1x</button>
+            <button type="button" disabled style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'not-allowed' }}><FaForward /></button>
+            <button type="button" disabled style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'not-allowed' }}><FaFastForward /></button>
           </div>
-          
-          <span style={{ color: predictionOffset > 0 ? '#38bdf8' : '#10b981', fontSize: '13px', fontWeight: 'bold' }}>
-            {predictionOffset === 0 ? '실시간 관제 중' : `예측 시뮬레이션: +${Math.floor(predictionOffset / 60)}시간 ${predictionOffset % 60}분 뒤`}
+
+          <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>
+            실시간 관제 중 <span style={{ color: '#94a3b8', fontWeight: 'normal', fontSize: '11.5px' }}>· 되감기는 위치 이력 연결 뒤 제공</span>
           </span>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '11px', marginTop: '-4px' }}>
-          <span>Live</span>
-          <span>+12h</span>
+          <span>지금 (실측)</span>
+          <span>이력 되감기 — 예정</span>
         </div>
 
         {/* 슬라이더를 밀면 실AIS 선박이 움직인다. 무엇이 실측이고 무엇이 연출인지
@@ -478,17 +459,12 @@ export default function DigitalTwinPage() {
           </div>
         )}
         
-        <input 
-          type="range" 
-          min="0" 
-          max="720" 
-          step="10" 
-          value={predictionOffset} 
-          onChange={(e) => {
-            setIsPlaying(false);
-            setPredictionOffset(parseInt(e.target.value));
-          }}
-          style={{ width: '100%', cursor: 'pointer', accentColor: '#38bdf8' }}
+        <input
+          type="range" min="0" max="720" step="10" disabled
+          value={predictionOffset}
+          readOnly
+          title="위치 이력 되감기 — 연결 예정"
+          style={{ width: '100%', cursor: 'not-allowed', accentColor: '#64748b' }}
         />
       </div>
       )}
