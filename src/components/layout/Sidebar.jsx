@@ -28,7 +28,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
 
         <NavLink to="/berth-assignments" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
           <div className="nav-icon"><FaClipboardCheck /></div>
-          <div className="nav-label">선석 배정현황</div>
+          <div className="nav-label">선석 현황</div>
         </NavLink>
 
         <NavLink to="/safety" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>

@@ -103,7 +103,7 @@ export default function InfoPopup({ object, onClose }) {
                 )}
                 {object.is_real && (
                   <div style={{ marginTop: '8px', fontSize: '11px', color: '#10b981' }}>
-                    실 AIS 수신 선박 — 위치·속력·항해상태는 실측입니다
+                    항만공사 선박위치 수신 — 위치·속력·항해상태는 실측입니다
                   </div>
                 )}
               </div>
@@ -198,8 +198,8 @@ export default function InfoPopup({ object, onClose }) {
 
             {type === 'Ship' && object.is_real && (
               <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.6 }}>
-                안전 판정(혼재금지·IMDG 격리)은 <strong style={{ color: '#e8f0f2' }}>대시보드 → 선박 상세</strong> 또는
-                우하단 <strong style={{ color: '#e8f0f2' }}>협상 콘솔의 종합 판정</strong>에서 실행합니다.
+                인접 선석 화물 판정(혼재 · 산적 호환성)은 <strong style={{ color: '#e8f0f2' }}>대시보드 → 선박 상세</strong> 또는
+                우하단 <strong style={{ color: '#e8f0f2' }}>에이전트 판단 과정</strong>의 종합 판정에서 봅니다.
               </div>
             )}
           </div>

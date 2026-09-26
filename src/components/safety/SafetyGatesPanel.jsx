@@ -350,8 +350,8 @@ export default function SafetyGatesPanel() {
       </div>
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '11.5px', color: COLORS.textDim, lineHeight: 1.5 }}>
-          선체 제원(흘수·DWT)에 따른 접안 가능성은 우하단 <strong style={{ color: COLORS.teal }}>협상 콘솔의 종합 판정</strong>이
-          스케줄링 에이전트로 검토합니다 — 이 심사는 화물 조합의 위험만 봅니다.
+          흘수·DWT 에 따른 접안 가능성은 우하단 <strong style={{ color: COLORS.teal }}>에이전트 판단 과정</strong>에서
+          스케줄링 에이전트가 검토합니다 — 이 심사는 화물 조합의 위험만 봅니다.
         </span>
         <button
           onClick={run}

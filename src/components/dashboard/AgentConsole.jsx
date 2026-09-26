@@ -61,7 +61,7 @@ function toMessages({ orchestration, berthWeather, vessel }) {
     const obs = usingOrchestrationWeather ? null : berthWeather?.observed;
     const reasons = usingOrchestrationWeather ? orchestration.weather_reasons : berthWeather?.reasons;
     const wBerthName = usingOrchestrationWeather
-      ? (orchestration.berth_assigned || '추천 선석')
+      ? (orchestration.berth_assigned || '배정 선석')
       : (vessel?.berth || '대상 선석');
     msgs.push({
       agent: 'weather', time: at(9),
