@@ -388,35 +388,37 @@ export async function fetchBackendDashboard() {
 
 
 /**
- * 선석 후보 조회 — POST /scheduling/candidates (스케줄링 에이전트, LLM 미사용 결정적 판단).
+ * 대체 선석 제안 — POST /scheduling/alternatives (LLM 미사용 결정적 판단).
  *
- * 지도에서 배를 눌렀을 때 "이 배가 지금 댈 수 있는 선석"을 바로 보여주기 위한 호출.
- * 예전에는 이 에이전트 결과를 볼 수 있는 곳이 우하단 종합 판정 콘솔 하나뿐이라,
- * 배 단위로는 "어디에 댈 수 있나"를 화면에서 확인할 방법이 없었다.
+ * [2026-09-27] 예전 POST /scheduling/candidates(카테고리 기준 top-3, 조위 미반영)를 대체했다.
+ * 판정 잡이 부적합일 때 붙이는 대체안과 같은 계산이다 — 조위를 더한 가용수심, 필요 여유
+ * max(1.0m, 흘수 10%), 함께 실은 화물 카테고리 모두 취급. **배정이 아니라 제안이다.**
+ * 지금 부두(exclude_wharf_name)는 뺀다. 후보가 없으면 note 에 이유가 온다.
  *
  * 흘수는 실측(AIS draught)만 쓴다. 미수집이면 호출하지 않는다 — 가정 흘수로
- * 낸 "배정 가능"은 근거 없는 안전 판정이 된다.
+ * 낸 제안은 근거 없는 안전 판정이 된다.
  */
-export async function fetchBerthCandidates({ draught_m, chem_id, cas_no, name_hint, hours = 24, extra_cargos = [] }) {
+export async function fetchAlternativeBerths({ draught_m, chem_id, cas_no, name_hint, hours = 24, extra_cargos = [], exclude_wharf_name = null }) {
   if (draught_m == null) throw new Error('흘수 미수집 — 후보 조회 불가');
   if (!chem_id && !cas_no) throw new Error('화물 미확인 — 후보 조회 불가');
   const now = new Date();
-  const res = await fetch(`${BACKEND_BASE}/scheduling/candidates`, {
+  const res = await fetch(`${BACKEND_BASE}/scheduling/alternatives`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       vessel: { draught_m, name_hint: name_hint ?? null },
       cargo: { chem_id: chem_id ?? null, cas_no: cas_no ?? null, name_hint: name_hint ?? null },
-      // [2026-09-25] 함께 실은 화물 — 모든 화물 카테고리를 취급하는 선석만 후보가 된다.
-      additional_cargos: extra_cargos
+      // 함께 실은 화물 — 모든 화물 카테고리를 취급하는 선석만 제안된다.
+      cargos: extra_cargos
         .filter((c) => c?.chem_id && c.chem_id !== chem_id)
         .map((c) => ({ chem_id: c.chem_id, cas_no: c.cas_no ?? null })),
       window_start: now.toISOString(),
       window_end: new Date(now.getTime() + hours * 3600 * 1000).toISOString(),
+      exclude_wharf_name,
     }),
   });
   if (!res.ok) {
-    // 422(화물 카테고리 미지정)·404(MSDS 없음)는 실제로 자주 난다.
+    // 404(MSDS 없음)는 실제로 난다.
     // 조용히 빈 목록으로 만들지 않는다 — 왜 안 나오는지 화면에 적어야 한다.
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `HTTP ${res.status}`);

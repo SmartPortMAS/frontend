@@ -10,7 +10,7 @@ import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs, FaMapMarker
 import { simulateMooring } from '../../utils/mooringPhysics';
 import { alertId, typeLabel } from '../../utils/alertUtils';
 import AgentChip from '../../utils/AgentChip';
-import { fetchBerthCandidates, estimateEta, estimateBerthRelease } from '../../api/backendAdapter';
+import { fetchAlternativeBerths, estimateEta, estimateBerthRelease } from '../../api/backendAdapter';
 
 const RISK_COLORS = {
   '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red,
@@ -257,9 +257,12 @@ export default function VesselDetailPanel() {
         if (!dc) return null;
         const v = DRAUGHT_VERDICT_STYLE[dc.draught_verdict] || DRAUGHT_VERDICT_STYLE.UNKNOWN;
         return (
-          <Row label="흘수·UKC (조위 반영)">
+          // [2026-09-27] 이 값은 **지금 조위**로 잰 여유다. 판정(체류 중 예보 최저 조위)과
+          // 시점이 달라 여유 수치가 다를 수 있다(실측 WDH3033: 지금 1.21m · 체류 중 최저 1.01m).
+          // 필요 여유는 판정과 같은 규칙 max(1.0m, 흘수 10%)다(alembic 0034).
+          <Row label="흘수·UKC (현재 조위 기준)">
             <span style={{ color: v.color, fontWeight: 700 }}>{v.label}</span>
-            {dc.ukc_m != null && ` · UKC ${dc.ukc_m}m (필요 ${dc.ukc_required_m}m)`}
+            {dc.ukc_m != null && ` · 여유 ${dc.ukc_m}m (필요 ${dc.ukc_required_m}m = max(1.0m, 흘수 10%))`}
           </Row>
         );
       })()}
@@ -436,14 +439,11 @@ export default function VesselDetailPanel() {
         </>
       )}
 
-      {/* ── 배정 가능 선석 (스케줄링 에이전트 POST /scheduling/candidates) ──
-          지도에서 배를 누르면 관제사가 실제로 다음에 하는 판단은 "이 배 어디 대지"다.
-          그 답을 내는 에이전트는 이미 있었는데 화면에서는 우하단 종합 판정 콘솔로만
-          닿을 수 있어, 배 단위로는 볼 방법이 없었다. 여기서 바로 부른다.
-
-          이 목록은 "확정 배정"이 아니라 조건을 만족하는 후보다 — 확정은 종합 판정
-          (기상·안전 게이트까지 통과)에서 난다. 문구로 그 차이를 분명히 적는다. */}
-      <SectionTitle icon={<FaMapMarkerAlt />}>배정 가능 선석 (후보)<AgentChip agent="scheduling" /></SectionTitle>
+      {/* ── 대체 선석 제안 (POST /scheduling/alternatives) ──
+          [2026-09-27] 예전 '배정 가능 선석(후보)'은 조위를 빼고 top-3 를 새로 골랐다.
+          우리는 배정하지 않는다 — 판정 잡이 부적합일 때 붙이는 대체안과 같은 계산으로,
+          지금 부두를 뺀 **제안**만 보인다(조위 반영 가용수심, 필요 여유 max(1.0m, 흘수 10%)). */}
+      <SectionTitle icon={<FaMapMarkerAlt />}>대체 선석 제안<AgentChip agent="scheduling" /></SectionTitle>
       {/* 판정 입력 화물: 입항 건 화물만. 없으면 조회하지 않는다 */}
       {(() => { return null; })()}
       {(vessel.draught_m == null || !(vessel.cargo?.chem_id || vessel.cargo?.cas_no)) ? (
@@ -460,12 +460,13 @@ export default function VesselDetailPanel() {
             onClick={async () => {
               setCandLoading(true); setCandError(null);
               try {
-                setCands(await fetchBerthCandidates({
+                setCands(await fetchAlternativeBerths({
                   draught_m: vessel.draught_m,
                   chem_id: vessel.cargo.chem_id,
                   cas_no: vessel.cargo.cas_no,
                   name_hint: vessel.vessel_name,
                   extra_cargos: vessel.cargos || [],
+                  exclude_wharf_name: vessel.presence_berth_name ?? null,
                 }));
               } catch (e) {
                 setCandError(e.message);
@@ -479,13 +480,14 @@ export default function VesselDetailPanel() {
               color: '#FFFFFF', fontWeight: 700, cursor: 'pointer', fontSize: '13px',
             }}
           >
-            {candLoading ? '스케줄링 에이전트 조회 중...' : '이 선박이 접안 가능한 선석 조회'}
+            {candLoading ? '스케줄링 에이전트 조회 중...' : '이 선박의 대체 선석 제안 보기'}
           </button>
           <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginTop: '6px', lineHeight: 1.6 }}>
             흘수 {vessel.draught_m} m · {vessel.cargos?.length > 1
               ? `화물 ${vessel.cargos.length}종(${cargoSummary(vessel.cargos, 3)})`
               : vessel.cargo.name} 기준, 앞으로 24시간 창.
-            수심·화물 카테고리 조건을 만족하는 후보이며 확정 배정은 아닙니다.
+            {vessel.presence_berth_name ? `지금 부두(${vessel.presence_berth_name})를 뺀 ` : ''}
+            조위를 반영한 수심·화물 조건을 만족하는 제안이며, 배정이 아닙니다.
           </div>
           {candError && (
             <div style={{ marginTop: '8px', fontSize: '12px', color: COLORS.yellow, lineHeight: 1.6 }}>
@@ -496,7 +498,7 @@ export default function VesselDetailPanel() {
             <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {cands.candidates?.length === 0 && (
                 <div style={{ fontSize: '12.5px', color: COLORS.yellow }}>
-                  조건을 만족하는 선석이 없습니다 — 정박지 대기 대상
+                  제안할 선석이 없습니다{cands.note ? ` — ${cands.note}` : ''}
                 </div>
               )}
               {(cands.candidates ?? []).map((c) => {
@@ -516,7 +518,7 @@ export default function VesselDetailPanel() {
                       </span>
                     </div>
                     <div style={{ fontSize: '11.5px', color: COLORS.textSecondary, marginTop: '3px' }}>
-                      수심 {c.depth_m} m · 흘수 여유 {c.draught_margin_m?.toFixed(1)} m
+                      수심 {c.depth_m} m · 흘수 여유 {c.draught_margin_m?.toFixed(2)} m(체류 중 최저 조위 반영)
                       {c.onsan_scope ? ' · 온산' : ''}
                       {c.adjacent_cargos?.length > 0 ? ` · 인접 화물 ${c.adjacent_cargos.length}건` : ''}
                     </div>
@@ -544,11 +546,6 @@ export default function VesselDetailPanel() {
                   </div>
                 );
               })}
-              {cands.total_eligible_count > (cands.candidates?.length ?? 0) && (
-                <div style={{ fontSize: '11.5px', color: COLORS.textDim }}>
-                  조건 충족 전체 {cands.total_eligible_count}개 중 상위 {cands.candidates.length}개
-                </div>
-              )}
             </div>
           )}
         </>

@@ -39,7 +39,7 @@ const RISK_COLOR = (lv) => ({
 }[lv] || COLORS.textDim);
 
 const VERDICT_COLOR = {
-  APPROVED: COLORS.teal, WAITING_ANCHORAGE: COLORS.yellow,
+  APPROVED: COLORS.teal,
   REJECTED: COLORS.red, PENDING: COLORS.info,
 };
 
@@ -50,19 +50,14 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   const at = (s) => new Date(Date.now() - s * 1000).toLocaleTimeString('ko-KR', { hour12: false });
 
   // 1) 기상 — 오케스트레이터 결과 우선, 없으면 패널에서 본 판정 사용.
-  // 상태·근거·선석 이름 셋 다 반드시 같은 출처에서 함께 가져온다. 예전엔
-  // 상태·근거는 출처를 맞췄는데 선석 이름만 항상 vessel.berth(AIS 실측 "지금
-  // 있는 자리")를 썼다 — 이 콘솔은 항상 탐색모드라(위 run() 참고) 오케스트레이터가
-  // 그 자리와 무관하게 새로 top-3를 탐색해 다른 선석을 추천할 수 있는데, 그 경우
-  // "SK5부두 기상 판정: 정상"처럼 실제로는 추천 선석(예: 현대오일터미널 신항1부두)의
-  // 기상 판정인데 라벨만 배가 지금 있는 선석으로 잘못 찍혔다(실측 확인, 2026-08-19).
+  // 상태·근거·선석 이름 셋 다 반드시 같은 출처에서 함께 가져온다.
   const usingOrchestrationWeather = Boolean(orchestration.weather_grade);
   const wStatus = orchestration.weather_grade || berthWeather?.status;
   if (wStatus) {
     const obs = usingOrchestrationWeather ? null : berthWeather?.observed;
     const reasons = usingOrchestrationWeather ? orchestration.weather_reasons : berthWeather?.reasons;
     const wBerthName = usingOrchestrationWeather
-      ? (orchestration.berth_assigned || '추천 선석')
+      ? (orchestration.berth_assigned || vessel?.berth || '대상 선석')
       : (vessel?.berth || '대상 선석');
     msgs.push({
       agent: 'weather', time: at(9),
@@ -72,16 +67,14 @@ function toMessages({ orchestration, berthWeather, vessel }) {
     });
   }
 
-  // 2) 스케줄링 — 전용/대체/정박지 판단 경로
+  // 2) 선석 — 지금 붙은 부두가 이 배에 맞는가(검증). [2026-09-27] 배정·정박지 경로는 없어졌다.
   const trace = orchestration.berth_decision?.trace || [];
   if (trace.length) {
     msgs.push({
       agent: 'scheduling', time: at(6),
       text: orchestration.berth_assigned
-        ? `선석 배정: ${orchestration.berth_assigned} (경로: ${orchestration.berth_decision?.path || '-'})`
-        : orchestration.anchorage
-          ? `접안 불가 → 정박지 대기 배정: ${orchestration.anchorage}`
-          : '배정 가능한 선석을 찾지 못했습니다.',
+        ? `판정 선석: ${orchestration.berth_assigned}`
+        : '지금 선석이 이 배·화물 조건에 맞지 않거나 확인할 수 없습니다.',
       detail: trace,
     });
   }
@@ -89,8 +82,18 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   if (rejected.length) {
     msgs.push({
       agent: 'scheduling', time: at(5),
-      text: `탈락 후보 ${rejected.length}건 — 재탐색했습니다.`,
-      detail: rejected.map((r) => `${r.berth_id} (${r.rank}순위): ${r.reason}`),
+      text: '혼재 판정으로 이 선석이 부적합합니다.',
+      detail: rejected.map((r) => `${r.berth_id}: ${r.reason}`),
+    });
+  }
+  const alts = orchestration.suggested_alternatives || [];
+  if (alts.length || orchestration.suggestion_note) {
+    msgs.push({
+      agent: 'scheduling', time: at(4),
+      text: alts.length
+        ? `대체 선석 제안 ${alts.length}곳 — 제안이며 배정이 아닙니다`
+        : `대체 선석을 제안하지 못했습니다: ${orchestration.suggestion_note}`,
+      detail: alts.map((c) => `${c.wharf_name} (흘수 여유 ${c.draught_margin_m?.toFixed(2)} m · ${c.occupancy_status})`),
     });
   }
 
@@ -142,7 +145,7 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   if (!orchestration.risk_level && (trace.length || rejected.length)) {
     msgs.push({
       agent: 'safety', time: at(2),
-      text: '안전 심사 생략 — 배정할 선석이 확보되지 않았습니다',
+      text: '안전 심사 생략 — 선석 또는 기상 단계에서 판정이 끝났습니다',
       detail: ['안전 심사는 선석이 정해진 뒤 그 선석의 인접 화물 기준으로 실행됩니다.'],
     });
   }
@@ -151,13 +154,7 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   msgs.push({
     agent: 'orchestrator', time: at(1),
     text: orchestration.summary || `${orchestration.decision_label || orchestration.status}`,
-    // assignment_changed는 검증모드(assigned_wharf_name 지정) 호출에서만 True가
-    // 될 수 있다 — 이 콘솔은 항상 탐색모드로 부르므로(위 run() 참고) 여기서는
-    // 항상 false다. 필드 자체는 다른 검증모드 호출자(anchorage_promoter 등)를
-    // 위해 백엔드가 계속 채워 주므로 렌더링 분기는 그대로 둔다.
-    detail: orchestration.assignment_changed
-      ? [`⚠ 원래 위치가 아닌 대체 선석으로 배정되었습니다 (${orchestration.berth_assigned || '-'})`]
-      : [],
+    detail: [],
     verdict: orchestration.status,
     verdictLabel: orchestration.decision_label,
   });
@@ -370,14 +367,11 @@ export default function AgentConsole() {
 
   // 한 번의 실행으로 기상 → 스케줄링 → 안전 → 종합을 순차 수행.
   //
-  // 항상 탐색모드로 호출한다(assignedWharfName 안 넘김) — 예전엔 target.berth
-  // (실데이터 기준 지금 있는 자리)가 있으면 검증모드로 보내 그 선석 하나만
-  // 확인했지만, 그러면 trace가 "전용 선석 OOO 사용 가능" 한 줄뿐이라 왜 다른
-  // 후보보다 이 선석이 나은지 비교 근거가 안 나온다(2026-08-19 지적). 이
-  // 콘솔은 "지금 이 화물이면 시스템이 top-3 중 뭘 고르는가"를 보여주는 게
-  // 목적이라 항상 탐색모드가 맞다 — 검증모드 자체는 여전히 유효한 기능이고
-  // anchorage_promoter.py(§5.4, "방금 빈 슬롯이 이 배에 안전한가"만 확인)가
-  // 계속 쓴다.
+  // [2026-09-27] 배가 실제로 붙은 부두(presence_berth_name)를 검증한다 — 판정 잡·'판정 기록'
+  // 버튼과 같은 질문("이 자리가 맞나")이다. 예전엔 항상 탐색모드(top-3 새 추천)로 불러,
+  // 실측 43척 중 42척에 기록된 판정과 다른 답(다른 선석 추천·'적합 선석 없음')을 보였다.
+  // 접안 전인 배는 여기서 판정하지 않는다 — 이 목록의 facility_name 은 하루 늦은 VTS
+  // 이력이라 믿을 수 없고, 사전 검토는 판정 잡이 PORT-MIS 신고 선석으로 한다.
   const run = async () => {
     if (!target) return;
     setLoading(true);
@@ -405,8 +399,8 @@ export default function AgentConsole() {
         dwt: null, // 실AIS 위치 데이터엔 DWT가 없음 — 미상으로 보내 오케스트레이터가 보수적으로 판단하게 함
         draught: target.draught_m ?? undefined,
         vesselName: target.vessel_name,
-        // 이 배가 이미 받아 둔 추천을 자기 점유로 세지 않도록 호출부호를 넘긴다
         callSign: target.callsgn,
+        assignedWharfName: target.presence_berth_name ?? null,
         // 같은 입항 건의 나머지 화물
         extraCargos: target.cargos ?? [],
       });
