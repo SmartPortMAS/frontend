@@ -153,11 +153,12 @@ function GateCard({ gate, onCommand }) {
 // 시연 입력 — 시연장에서 실제 바람이 16 m/s 가 될 리 없어 값을 넣는다.
 // 판정 규칙은 실제와 같고 값만 주입되며, 주입 중이면 배지가 뜬다(심사 질문에 정직하게).
 // 시연 판정 보기 — 시스템이 실제로 내는 판정 축(기상·흘수·혼재·근거 부족)에서 골랐다.
-// 기상은 위 풍속·파고로 넣으므로 여기엔 없다.
+// 기상은 위 풍속·파고로 넣으므로 여기엔 없다. 인접 선석 부적합은 산적 호환성 충돌로 든다 —
+// IMDG 격리표는 선내 적재 규정이라 부두 간 판정에 쓰지 않는다(rule_engine.compute_imdg_berth_adjacency_floor).
 const VERDICT_PRESETS = [
   { key: 'fit', level: '적합', reason: '흘수·혼재 모두 기준 안 — 하역 개시 가능' },
   { key: 'ukc', level: '부적합', reason: '흘수 여유 부족 — 저조 시 가용수심 < 흘수 + 10%' },
-  { key: 'seg', level: '부적합', reason: '인접 선석 화물과 혼재 격리 위반(IMDG)' },
+  { key: 'seg', level: '부적합', reason: '인접 선석 화물과 반응 위험 조합(산적 호환성 충돌)' },
   { key: 'unk', level: '판정불가', reason: '흘수 미신고 — 판단 근거 없음' },
 ];
 
