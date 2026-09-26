@@ -533,7 +533,9 @@ export default function PortMap() {
         padding: '10px 14px', color: COLORS.textPrimary, fontSize: '12px',
       }}>
         <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>
-          관제 중 {vessels.length}척 · 위험물선 <span style={{ color: COLORS.red }}>{liquidCount}척</span>
+          {vessels.length === liquidCount
+            ? <>액체화물선 <span style={{ color: COLORS.red }}>{liquidCount}척</span> 표시</>
+            : <>표시 {vessels.length}척 · 액체화물선 <span style={{ color: COLORS.red }}>{liquidCount}척</span></>}
         </div>
         {occupiedCount > 0 && (
           <div style={{ marginBottom: '6px', fontSize: '11px', color: COLORS.textSecondary }}>
