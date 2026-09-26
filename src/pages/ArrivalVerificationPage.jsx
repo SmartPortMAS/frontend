@@ -399,16 +399,19 @@ function SwellReplay({ replay }) {
 }
 
 function ReplaySection() {
+  // 실무 화면이 아니라 교육·사후 검토용(9/27 현우 결정) — 아래에 접어 두고, 펼칠 때만 자료를 읽는다.
+  const [open, setOpen] = useState(false);
   const [replays, setReplays] = useState(null);
   const [active, setActive] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (!open || replays) return;
     fetch('/demo/replays.json')
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((d) => { setReplays(d); setActive(d.replays[0]?.id); })
       .catch((e) => setError(e.message));
-  }, []);
+  }, [open, replays]);
 
   const current = replays?.replays.find((r) => r.id === active);
   const tabLabel = (r) => (r.kind === 'swell' ? '외해 너울 9/4~9/11' : `${r.vessel.name} ${r.arrival.slice(5, 10).replace('-', '/')}`);
@@ -417,8 +420,16 @@ function ReplaySection() {
     <div className="glass-card">
       <div className="glass-card-header" style={{ flexWrap: 'wrap', gap: 10 }}>
         <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
-          실제로 있었던 날 — 세 시점 판정 재생
-          <HelpTip title="판정 재생">
+          <button
+            type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+            style={{ background: 'transparent', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <span style={{ display: 'inline-block', width: 12, color: COLORS.textDim }}>{open ? '▾' : '▸'}</span>
+            과거 사례 다시 보기
+            <span style={{ fontSize: 12, fontWeight: 400, color: COLORS.textDim }}>(교육 · 사후 검토)</span>
+          </button>
+          <HelpTip title="과거 사례 다시 보기">
+            <div>실제로 있었던 날의 실측 조위·기상으로 입항 전 → 접안 직전 → 하역 중 세 시점 판정이 어떻게 달라졌는지 다시 봅니다. 판정이 한 번으로 끝나지 않는 이유를 보여 주는 자료입니다.</div>
             <div>흘수 여유 = 표 수심 + 조위 − 흘수. 판정 기준은 조위를 반영한 흘수 여유 1.0 m(체류 중 최저 여유)입니다.</div>
             {current?.source && <div style={{ marginTop: 4 }}>{current.source}</div>}
             {current?.caveat && <div style={{ marginTop: 4 }}>{current.caveat}</div>}
@@ -429,7 +440,7 @@ function ReplaySection() {
             )}
           </HelpTip>
         </h3>
-        <div role="tablist" style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
+        {open && <div role="tablist" style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
           {replays?.replays.map((r) => (
             <button
               key={r.id} type="button" role="tab" aria-selected={active === r.id} onClick={() => setActive(r.id)}
@@ -441,10 +452,10 @@ function ReplaySection() {
               }}
             >{tabLabel(r)}</button>
           ))}
-        </div>
+        </div>}
       </div>
-      {error && <p style={{ color: COLORS.red, fontSize: 13 }}>재생 데이터를 불러오지 못했습니다 ({error}).</p>}
-      {current && (
+      {open && error && <p style={{ color: COLORS.red, fontSize: 13 }}>재생 데이터를 불러오지 못했습니다 ({error}).</p>}
+      {open && current && (
         <div style={{ display: 'grid', gap: 12 }}>
           <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{current.headline}</p>
           {current.kind === 'swell' ? <SwellReplay replay={current} /> : <VesselReplay replay={current} />}
@@ -459,8 +470,8 @@ export default function ArrivalVerificationPage() {
     <div className="dashboard-page">
       <div className="glass-card dash-section" style={{ display: 'grid', gap: 6 }}>
         <h2 style={{ margin: 0, fontSize: 18, display: 'flex', alignItems: 'center' }}>
-          입항 예정 · 검증
-          <HelpTip title="입항 예정 · 검증">
+          입항 예정 판정
+          <HelpTip title="입항 예정 판정">
             기존 선석 배정은 그대로 따릅니다. 배가 들어오는 동안 기상·조위·흘수·인접 화물이 기준을 벗어나면,
             조치안을 만들어 그 조치를 할 권한이 있는 곳 — 선석 운영 주체 · VTS · 터미널 — 에 근거와 함께 넘깁니다.
           </HelpTip>
@@ -469,8 +480,8 @@ export default function ArrivalVerificationPage() {
           배정 선석 검증 · <strong>입항 전 → 접안 직전 → 하역 중</strong> · 벗어나면 조치안
         </p>
       </div>
-      <div className="dash-section"><ReplaySection /></div>
       <div className="dash-section"><UpcomingSection /></div>
+      <div className="dash-section"><ReplaySection /></div>
     </div>
   );
 }
