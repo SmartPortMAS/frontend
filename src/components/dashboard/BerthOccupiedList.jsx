@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchBerthAssignments } from '../../api/backendAdapter';
 import { COLORS } from '../../utils/constants';
+import { cargoSummary } from '../../utils/cargoText';
 import HelpTip from '../common/HelpTip';
 import useSensorStore from '../../stores/useSensorStore';
 
@@ -163,7 +164,9 @@ export default function BerthOccupiedList({ scope }) {
               <tr key={`${row.wharf_name}-${row.slot_no}`} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
                 <td style={{ padding: '6px 8px' }}>{row.wharf_name}{row.slot_no ? ` · 슬롯${row.slot_no}` : ''}</td>
                 <td style={{ padding: '6px 8px' }}>{row.vessel_name || '(선명 미상)'} ({row.call_sign || '-'})</td>
-                <td style={{ padding: '6px 8px', color: COLORS.textSecondary }}>{row.cargo_name || '-'}</td>
+                <td style={{ padding: '6px 8px', color: COLORS.textSecondary }} title={(row.cargo_names || []).join(', ')}>
+                  {(row.cargo_names?.length ? cargoSummary(row.cargo_names, 3) : row.cargo_name) || '-'}
+                </td>
                 <td style={{ padding: '6px 8px', color: COLORS.textDim }}>{periodLabel(row)}</td>
                 <td style={{ padding: '6px 8px', color: COLORS.textDim }}>{row.acknowledged_by || '-'}</td>
                 <td style={{ padding: '6px 8px' }}>

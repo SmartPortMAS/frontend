@@ -37,6 +37,13 @@ const resolveCargoRef = ({ chem_id, cas_no, cargo_name }) => {
   return cargoRef(cargo_name);
 };
 
+// [2026-09-25] 같은 입항 건의 나머지 화물 → 요청 cargos. 주 화물과 같은 물질은 뺀다.
+// 주 화물이 cas_no 로만 올 때도 있어서(resolveCargoRef) 둘 다 대조한다.
+const extraCargoRefs = (extraCargos, primary) => (extraCargos || [])
+  .filter((c) => c?.chem_id && c.chem_id !== primary?.chem_id
+    && !(primary?.cas_no && c.cas_no === primary.cas_no))
+  .map((c) => ({ chem_id: c.chem_id, cas_no: c.cas_no ?? null }));
+
 /** 질문 문장이 화물명을 스스로 지목하는가 — cargo_hint 를 붙일지 판단하는 데 쓴다 */
 export const namesAnyCargo = (text) =>
   Object.keys(CARGO_CAS).some((name) => text.includes(name));
@@ -488,6 +495,7 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
       checklist: r.checklist || [],
     },
     target_cargo_name: r.target_cargo_name,
+    cargo_verdicts: r.cargo_verdicts || [],
     msds_sections_used: r.msds_sections_used || [],
     is_local_fallback: false,
     source: 'BACKEND_LLM',
@@ -502,7 +510,6 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
 // .includes('적합') 도 참이라, 부적합 판정이 전부 APPROVED 로 뒤집힌다.
 const DECISION_TO_STATUS = {
   '적합': 'APPROVED',
-  '정박지대기': 'WAITING_ANCHORAGE',
   '기상불가_중단권고': 'REJECTED',
   '적합선석없음': 'REJECTED',
   '전 후보 부적합': 'REJECTED',
@@ -514,16 +521,16 @@ function mapOrchestration(r) {
   // 보이는 것보다, 보수적으로 막히고 눈에 띄는 편이 낫다.
   const status = DECISION_TO_STATUS[d] ?? 'REJECTED';
   const trace = r.assignment_trace || [];
-  const path = r.anchorage_assignment ? '정박지대기'
-    : trace.some((t) => t.includes('대체')) ? '대체' : '전용';
   return {
     status,
     decision_label: d,
+    // [2026-09-27] 검증모드 전용 — 배정한 선석이 아니라 **판정한 선석**이다.
+    // 정박지 배정(anchorage_assignment)·대체 배정(assignment_changed)은 백엔드에서 없어졌다.
     berth_assigned: r.selected_berth?.wharf_name || null,
-    anchorage: r.anchorage_assignment?.name || null,
-    berth_decision: { path, trace, anchorage: r.anchorage_assignment?.name || null },
-    // 검증모드에서 원래 있던 자리가 아니라 대체 선석으로 바뀌었는지(탐색모드에서는 항상 false)
-    assignment_changed: Boolean(r.assignment_changed),
+    berth_decision: { path: '검증', trace },
+    // 부적합일 때 붙는 대체 선석 **제안**(배정 아님)
+    suggested_alternatives: r.suggested_alternatives || [],
+    suggestion_note: r.suggestion_note || null,
     risk_level: r.safety_assessment?.risk_level || null,
     // 안전 판정의 근거 — 예전엔 등급만 넘겨서 협상 콘솔의 안전 에이전트 발화가
     // "안전 판정: 위험" 한 줄로 끝났다(기상·스케줄링은 근거를 보여주는데 안전만
@@ -554,6 +561,8 @@ function mapOrchestration(r) {
       (u) => `${u.adjacent_berth} ${u.adjacent_name} — ${u.assessability}: ${u.reason}`
     ),
     safety_checklist: r.safety_assessment?.checklist || [],
+    // [2026-09-25] 화물별 혼재 판정. 대표 등급(risk_level)은 is_governing 인 화물의 것.
+    safety_cargo_verdicts: r.safety_assessment?.cargo_verdicts || [],
     weather_grade: r.weather_assessment?.status || null,
     weather_reasons: r.weather_assessment?.reasons || [],
     summary: r.summary,
@@ -667,7 +676,9 @@ export default function useOnsanApi() {
         .filter(Boolean);
       if (!target) return null;
 
-      const data = await postJson('/safety/verdict', { target_cargo: target, adjacent_cargos: adj });
+      const data = await postJson('/safety/verdict', {
+        target_cargo: target, target_cargos: extraCargoRefs(req.extra_cargos, target), adjacent_cargos: adj,
+      });
       if (!data) return null;
       // mapSafety는 checklist/reasoning이 없어도 동작한다(옵셔널 체이닝).
       return { ...mapSafety(data, adj, target.chem_id), is_verdict_only: true };
@@ -686,7 +697,9 @@ export default function useOnsanApi() {
         .filter(Boolean);
 
       const data = target
-        ? await postJson('/safety/assess', { target_cargo: target, adjacent_cargos: adj })
+        ? await postJson('/safety/assess', {
+          target_cargo: target, target_cargos: extraCargoRefs(req.extra_cargos, target), adjacent_cargos: adj,
+        })
         : null;
 
       const result = data ? mapSafety(data, adj, target?.chem_id) : {
@@ -710,13 +723,13 @@ export default function useOnsanApi() {
   // casNo가 오면(실AIS+berth-cargo 조인으로 이미 CAS를 아는 경우) 데모용 이름사전
   // cargoRef()를 거치지 않고 그대로 쓴다 — 실물질명은 사전 12종 밖일 수 있어서다.
   //
-  // assignedWharfName을 주면 검증모드 — top-3 새 추천 대신 그 선석 하나만
-  // "지금 이 자리 괜찮은가"로 확인한다. 생략하면 기존 탐색모드(신규 추천).
+  // [2026-09-27] 검증모드 전용 — assignedWharfName(배가 실제로 붙은 부두)이 필수다.
+  // 선석을 새로 고르는 탐색모드는 백엔드에서 없어졌다(27번 설계안 D단계).
   const orchestrate = useCallback(
-    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선', assignedWharfName = null, callSign = null }) => {
+    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선', assignedWharfName = null, callSign = null, extraCargos = [] }) => {
       const cargo = resolveCargoRef({ cas_no: casNo, cargo_name: cargoName });
       const now = Date.now();
-      const data = cargo
+      const data = cargo && assignedWharfName
         ? await postJson('/orchestrator/assess', {
           vessel: {
             draught_m: Number(draught) || 7.5,
@@ -727,9 +740,10 @@ export default function useOnsanApi() {
             call_sign: callSign ?? null,
           },
           cargo,
+          cargos: extraCargoRefs(extraCargos, cargo),
           window_start: new Date(now).toISOString(),
           window_end: new Date(now + 8 * 3600 * 1000).toISOString(),
-          ...(assignedWharfName ? { assigned_wharf_name: assignedWharfName } : {}),
+          assigned_wharf_name: assignedWharfName,
         })
         : null;
 
@@ -738,11 +752,14 @@ export default function useOnsanApi() {
       const result = data ? mapOrchestration({ ...data, _vessel_name: vesselName, _cargo_name: cargoName }) : {
         status: 'PENDING',
         decision_label: '판단 보류',
-        berth_assigned: null, anchorage: null,
-        berth_decision: { path: null, trace: ['백엔드 오케스트레이터 응답 없음 — 판단 보류'], anchorage: null },
+        berth_assigned: null,
+        berth_decision: { path: null, trace: [] },
         risk_level: null, weather_grade: null,
         vessel_name: vesselName, cargo_name: cargoName,
-        summary: cargo ? '백엔드 응답이 없어 배정 판단을 보류합니다.' : `화물 '${cargoName}' CAS 매핑이 없어 조회할 수 없습니다.`,
+        summary: !assignedWharfName
+          ? '이 배가 지금 접안한 부두가 확인되지 않아 콘솔에서 판정할 수 없습니다. '
+            + '접안 전 사전 검토는 판정 잡이 PORT-MIS 신고 선석으로 10분마다 합니다(확인 대기 목록).'
+          : cargo ? '백엔드 응답이 없어 판단을 보류합니다.' : `화물 '${cargoName}' CAS 매핑이 없어 조회할 수 없습니다.`,
         is_local_fallback: true, source: 'LOCAL_FALLBACK',
       };
       setOrchestration(result);
@@ -770,6 +787,7 @@ export default function useOnsanApi() {
   const recordAssessment = useCallback(
     async ({
       cargoName, chemId, casNo, dwt, draught, vesselName, callSign, imoNo, assignedWharfName,
+      extraCargos = [],
     }) => {
       const cargo = resolveCargoRef({ chem_id: chemId, cas_no: casNo, cargo_name: cargoName });
       if (!cargo) throw new Error(`화물 '${cargoName}' 식별 불가 — chem_id/CAS 매핑이 없습니다.`);
@@ -785,6 +803,7 @@ export default function useOnsanApi() {
           call_sign: callSign ?? null,
         },
         cargo,
+        cargos: extraCargoRefs(extraCargos, cargo),
         window_start: new Date(now).toISOString(),
         window_end: new Date(now + 8 * 3600 * 1000).toISOString(),
         assigned_wharf_name: assignedWharfName,

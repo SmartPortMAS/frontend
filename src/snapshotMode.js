@@ -114,9 +114,10 @@ if (ENABLED && typeof window !== 'undefined') {
       );
     }
 
-    // 선석 후보는 body 의 name_hint(선명)로 갈라 저장해 뒀다
-    if (path.endsWith('/scheduling/candidates')) {
-      const byName = snap['/api/v1/scheduling/candidates'] || {};
+    // 대체 선석 제안은 body 의 name_hint(선명)로 갈라 저장해 둔다
+    // ([2026-09-27] /scheduling/candidates → /scheduling/alternatives. 옛 스냅샷에는 없다 — 재생성 필요)
+    if (path.endsWith('/scheduling/alternatives')) {
+      const byName = snap['/api/v1/scheduling/alternatives'] || {};
       let name = null;
       try { name = JSON.parse(init?.body ?? '{}').vessel?.name_hint; } catch { /* 아래 503 */ }
       if (name && byName[name]) return jsonResponse(byName[name]);

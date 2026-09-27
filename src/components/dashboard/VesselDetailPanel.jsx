@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS, WEATHER_STATUS_COLORS } from '../../utils/constants';
+import { cargoSummary } from '../../utils/cargoText';
 import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP, OMNIVERSE_BERTH_IDS, findBerthIdByName } from '../../utils/geoUtils';
 import useVesselSafety from '../../hooks/useVesselSafety';
 import useDashboardData from '../../hooks/useDashboardData';
@@ -9,7 +10,7 @@ import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs, FaMapMarker
 import { simulateMooring } from '../../utils/mooringPhysics';
 import { alertId, typeLabel } from '../../utils/alertUtils';
 import AgentChip from '../../utils/AgentChip';
-import { fetchBerthCandidates, estimateEta, estimateBerthRelease } from '../../api/backendAdapter';
+import { fetchAlternativeBerths, estimateEta, estimateBerthRelease } from '../../api/backendAdapter';
 
 const RISK_COLORS = {
   '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red,
@@ -123,6 +124,9 @@ export default function VesselDetailPanel() {
     if (vessel.callsgn && (a.callsgns || []).includes(vessel.callsgn)) return true;
     return Boolean(vessel.berth) && a.berth_name === vessel.berth;
   });
+  // 대체 선석 제안은 지금 선석이 부적합일 때만 보인다 — 혼재 판정 배정불가 또는 흘수 접안 불가.
+  const draughtVerdict = (data?.draught_checks || []).find((r) => r.callsgn === vessel.callsgn)?.draught_verdict;
+  const berthUnsuitable = assessment?.risk_level === '배정불가' || draughtVerdict === 'NOT_ALLOWED';
 
   return (
     <div className="vessel-detail-panel" style={{
@@ -208,19 +212,18 @@ export default function VesselDetailPanel() {
              도입됐을 때의 제품"을 보여주고, 데이터 계보의 사실 명시는 설계서·
              보고서 한계점 절이 담당한다. 이 원칙을 되돌리려면 여기서
              vessel.cargo.is_synthetic 을 쓰면 된다 — 필드는 계속 내려온다. */
-          ? `${vessel.cargo.name} (${vessel.cargo.un_no})`
-          : vessel.assumed_cargo
+          ? (vessel.cargos?.length > 1
+            // 같은 입항 건에 실은 화물 전부 — 한 줄에 하나씩(UN 번호 포함)
             ? (
               <span>
-                {vessel.assumed_cargo.name}{' '}
-                <span style={{ color: COLORS.yellow, fontSize: '11px', fontWeight: 700 }}
-                  title={`화물 신고가 없어 PORT-MIS 선종(${vessel.assumed_cargo.basis})의 대표 화물로 추정합니다`}>
-                  선종 추정
-                </span>
+                {vessel.cargos.map((c) => (
+                  <span key={c.chem_id} style={{ display: 'block' }}>{c.name} ({c.un_no})</span>
+                ))}
               </span>
             )
-            : vessel.liquid_by_ship_type === true ? '액체화물선 · 화물 미신고'
-              : vessel.liquid_by_ship_type === false ? '일반화물' : '미확인'}
+            : `${vessel.cargo.name} (${vessel.cargo.un_no})`)
+          : vessel.liquid_by_ship_type === true ? '액체화물선 · 화물 미확인'
+            : vessel.liquid_by_ship_type === false ? '일반화물' : '미확인'}
       </Row>
       {vessel.ship_kind_nm && <Row label="선종 (PORT-MIS)">{vessel.ship_kind_nm}</Row>}
       {/* arrival_at_utc 는 지도 마커로 연 경우에만 채워진다(PortMap 이 붙여준다).
@@ -257,9 +260,12 @@ export default function VesselDetailPanel() {
         if (!dc) return null;
         const v = DRAUGHT_VERDICT_STYLE[dc.draught_verdict] || DRAUGHT_VERDICT_STYLE.UNKNOWN;
         return (
-          <Row label="흘수·UKC (조위 반영)">
+          // [2026-09-27] 이 값은 **지금 조위**로 잰 여유다. 판정(체류 중 예보 최저 조위)과
+          // 시점이 달라 여유 수치가 다를 수 있다(실측 WDH3033: 지금 1.21m · 체류 중 최저 1.01m).
+          // 필요 여유는 판정과 같은 규칙 max(1.0m, 흘수 10%)다(alembic 0034).
+          <Row label="흘수·UKC (현재 조위 기준)">
             <span style={{ color: v.color, fontWeight: 700 }}>{v.label}</span>
-            {dc.ukc_m != null && ` · UKC ${dc.ukc_m}m (필요 ${dc.ukc_required_m}m)`}
+            {dc.ukc_m != null && ` · 여유 ${dc.ukc_m}m (필요 ${dc.ukc_required_m}m = max(1.0m, 흘수 10%))`}
           </Row>
         );
       })()}
@@ -314,6 +320,16 @@ export default function VesselDetailPanel() {
             </div>
             {safetyLoading && <span style={{ fontSize: '11px', color: COLORS.textDim }}>갱신 중…</span>}
           </div>
+          {/* 화물이 여럿이면 화물마다 등급 — 대표 등급이 어느 화물 때문인지 보이게 */}
+          {assessment.cargo_verdicts?.length > 1 && (
+            <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginTop: '6px' }}>
+              {assessment.cargo_verdicts.map((v) => (
+                <span key={v.chem_id} style={{ display: 'inline-block', marginRight: '10px' }}>
+                  {v.target_cargo_name} <b>{v.risk_level}</b>{v.is_governing ? ' (대표)' : ''}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* LLM 근거 문장은 길다(보통 3~5줄). 그런데 관제사가 이 패널에서 먼저
               봐야 할 것은 등급과 "무엇이 걸렸나"이지 서술이 아니다. 서술이 위에
@@ -392,9 +408,11 @@ export default function VesselDetailPanel() {
           )}
 
           <div style={{ fontSize: '11px', color: COLORS.textDim, marginTop: '6px', lineHeight: 1.6 }}>
-            {assessment.is_local_fallback
-              ? '※ 백엔드 안전 에이전트 미응답 — 판단 보류(fail-safe). 임의로 안전 판정하지 않습니다'
-              : '※ 백엔드 안전 에이전트 판정 — MSDS 반응성 + IMDG 7.2 격리표 기준'}
+            {assessment.source === 'NO_CARGO'
+              ? '※ 판정 입력(화물)이 없어 안전 에이전트를 호출하지 않았습니다. 모르는 화물을 안전으로 보지 않습니다'
+              : assessment.is_local_fallback
+                ? '※ 백엔드 안전 에이전트 미응답 — 판단 보류(fail-safe). 임의로 안전 판정하지 않습니다'
+                : '※ 백엔드 안전 에이전트 판정 — MSDS 반응성 + IMDG 7.2 격리표 기준'}
             {assessment.msds_sections_used?.length > 0
               && ` · 근거 섹션 ${assessment.msds_sections_used.length}개`}
           </div>
@@ -424,22 +442,20 @@ export default function VesselDetailPanel() {
         </>
       )}
 
-      {/* ── 배정 가능 선석 (스케줄링 에이전트 POST /scheduling/candidates) ──
-          지도에서 배를 누르면 관제사가 실제로 다음에 하는 판단은 "이 배 어디 대지"다.
-          그 답을 내는 에이전트는 이미 있었는데 화면에서는 우하단 종합 판정 콘솔로만
-          닿을 수 있어, 배 단위로는 볼 방법이 없었다. 여기서 바로 부른다.
-
-          이 목록은 "확정 배정"이 아니라 조건을 만족하는 후보다 — 확정은 종합 판정
-          (기상·안전 게이트까지 통과)에서 난다. 문구로 그 차이를 분명히 적는다. */}
-      <SectionTitle icon={<FaMapMarkerAlt />}>배정 가능 선석 (후보)<AgentChip agent="scheduling" /></SectionTitle>
-      {/* 판정 입력 화물: 실신고 우선, 없으면 선종 추정(표식과 함께) */}
+      {/* ── 대체 선석 제안 (POST /scheduling/alternatives) ──
+          [2026-09-27] 예전 '배정 가능 선석(후보)'은 조위를 빼고 top-3 를 새로 골랐다.
+          우리는 배정하지 않는다 — 판정 잡이 부적합일 때 붙이는 대체안과 같은 계산으로,
+          지금 부두를 뺀 **제안**만 보인다(조위 반영 가용수심, 필요 여유 max(1.0m, 흘수 10%)). */}
+      {berthUnsuitable && (<>
+      <SectionTitle icon={<FaMapMarkerAlt />}>대체 선석 제안<AgentChip agent="scheduling" /></SectionTitle>
+      {/* 판정 입력 화물: 입항 건 화물만. 없으면 조회하지 않는다 */}
       {(() => { return null; })()}
-      {(vessel.draught_m == null || !((vessel.cargo ?? vessel.assumed_cargo)?.chem_id || (vessel.cargo ?? vessel.assumed_cargo)?.cas_no)) ? (
+      {(vessel.draught_m == null || !(vessel.cargo?.chem_id || vessel.cargo?.cas_no)) ? (
         <div style={{ fontSize: '12.5px', color: COLORS.textDim, lineHeight: 1.7 }}>
           {/* 없는 값을 가정으로 채워 후보를 만들지 않는다 — 근거 없는 "배정 가능"이 된다 */}
           조회 불가 — {vessel.draught_m == null ? '흘수 미수신' : ''}
           {vessel.draught_m == null && !(vessel.cargo?.chem_id || vessel.cargo?.cas_no) ? ' · ' : ''}
-          {!((vessel.cargo ?? vessel.assumed_cargo)?.chem_id || (vessel.cargo ?? vessel.assumed_cargo)?.cas_no) ? '화물·선종 모두 미확인(PORT-MIS 대조 안 됨)' : ''}
+          {!(vessel.cargo?.chem_id || vessel.cargo?.cas_no) ? '화물 미확인(현재 입항 건 화물 없음)' : ''}
         </div>
       ) : (
         <>
@@ -448,11 +464,13 @@ export default function VesselDetailPanel() {
             onClick={async () => {
               setCandLoading(true); setCandError(null);
               try {
-                setCands(await fetchBerthCandidates({
+                setCands(await fetchAlternativeBerths({
                   draught_m: vessel.draught_m,
-                  chem_id: (vessel.cargo ?? vessel.assumed_cargo).chem_id,
-                  cas_no: (vessel.cargo ?? vessel.assumed_cargo).cas_no,
+                  chem_id: vessel.cargo.chem_id,
+                  cas_no: vessel.cargo.cas_no,
                   name_hint: vessel.vessel_name,
+                  extra_cargos: vessel.cargos || [],
+                  exclude_wharf_name: vessel.presence_berth_name ?? null,
                 }));
               } catch (e) {
                 setCandError(e.message);
@@ -466,11 +484,14 @@ export default function VesselDetailPanel() {
               color: '#FFFFFF', fontWeight: 700, cursor: 'pointer', fontSize: '13px',
             }}
           >
-            {candLoading ? '스케줄링 에이전트 조회 중...' : '이 선박이 접안 가능한 선석 조회'}
+            {candLoading ? '스케줄링 에이전트 조회 중...' : '이 선박의 대체 선석 제안 보기'}
           </button>
           <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginTop: '6px', lineHeight: 1.6 }}>
-            흘수 {vessel.draught_m} m · {(vessel.cargo ?? vessel.assumed_cargo).name}{vessel.assumed_cargo && !vessel.cargo ? ' (선종 추정)' : ''} 기준, 앞으로 24시간 창.
-            수심·화물 카테고리 조건을 만족하는 후보이며 확정 배정은 아닙니다.
+            흘수 {vessel.draught_m} m · {vessel.cargos?.length > 1
+              ? `화물 ${vessel.cargos.length}종(${cargoSummary(vessel.cargos, 3)})`
+              : vessel.cargo.name} 기준, 앞으로 24시간 창.
+            {vessel.presence_berth_name ? `지금 부두(${vessel.presence_berth_name})를 뺀 ` : ''}
+            조위를 반영한 수심·화물 조건을 만족하는 제안이며, 배정이 아닙니다.
           </div>
           {candError && (
             <div style={{ marginTop: '8px', fontSize: '12px', color: COLORS.yellow, lineHeight: 1.6 }}>
@@ -481,7 +502,7 @@ export default function VesselDetailPanel() {
             <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {cands.candidates?.length === 0 && (
                 <div style={{ fontSize: '12.5px', color: COLORS.yellow }}>
-                  조건을 만족하는 선석이 없습니다 — 정박지 대기 대상
+                  제안할 선석이 없습니다{cands.note ? ` — ${cands.note}` : ''}
                 </div>
               )}
               {(cands.candidates ?? []).map((c) => {
@@ -501,7 +522,7 @@ export default function VesselDetailPanel() {
                       </span>
                     </div>
                     <div style={{ fontSize: '11.5px', color: COLORS.textSecondary, marginTop: '3px' }}>
-                      수심 {c.depth_m} m · 흘수 여유 {c.draught_margin_m?.toFixed(1)} m
+                      수심 {c.depth_m} m · 흘수 여유 {c.draught_margin_m?.toFixed(2)} m(체류 중 최저 조위 반영)
                       {c.onsan_scope ? ' · 온산' : ''}
                       {c.adjacent_cargos?.length > 0 ? ` · 인접 화물 ${c.adjacent_cargos.length}건` : ''}
                     </div>
@@ -529,15 +550,11 @@ export default function VesselDetailPanel() {
                   </div>
                 );
               })}
-              {cands.total_eligible_count > (cands.candidates?.length ?? 0) && (
-                <div style={{ fontSize: '11.5px', color: COLORS.textDim }}>
-                  조건 충족 전체 {cands.total_eligible_count}개 중 상위 {cands.candidates.length}개
-                </div>
-              )}
             </div>
           )}
         </>
       )}
+      </>)}
 
       {/* 계류 물리 검증 (8월 시나리오 S1 — 준정적 근사, PhysX 스크립트로 검증) */}
       {vessel.berth && (
