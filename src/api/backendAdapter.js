@@ -398,6 +398,20 @@ export async function fetchBackendDashboard() {
  * 흘수는 실측(AIS draught)만 쓴다. 미수집이면 호출하지 않는다 — 가정 흘수로
  * 낸 제안은 근거 없는 안전 판정이 된다.
  */
+/**
+ * 선석의 이웃 화물 — GET /scheduling/adjacent-cargos (판정 잡과 같은 인접 계산).
+ * [2026-09-27] 선박 상세 패널이 프론트 자체 인접표(온산 13곳)를 쓰던 것을 대체한다.
+ * 반환: [{ berth_name, chem_id, cas_no }] — 판정 요청의 adjacent_operations 모양.
+ */
+export async function fetchAdjacentCargos({ wharf_name, call_sign = null }) {
+  const qs = new URLSearchParams({ wharf_name });
+  if (call_sign) qs.set('call_sign', call_sign);
+  const data = await getJson(`/scheduling/adjacent-cargos?${qs}`);
+  return (data.adjacent_cargos || []).map((a) => ({
+    berth_name: a.berth_name, chem_id: a.cargo.chem_id, cas_no: a.cargo.cas_no ?? null,
+  }));
+}
+
 export async function fetchAlternativeBerths({ draught_m, chem_id, cas_no, name_hint, hours = 24, extra_cargos = [], exclude_wharf_name = null }) {
   if (draught_m == null) throw new Error('흘수 미수집 — 후보 조회 불가');
   if (!chem_id && !cas_no) throw new Error('화물 미확인 — 후보 조회 불가');
