@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { fetchBerthAssignments } from '../../api/backendAdapter';
 import { COLORS, ULSAN_BBOX_BOUNDS } from '../../utils/constants';
+import { cargoSummary } from '../../utils/cargoText';
 
 const ONSAN_MAP_CENTER = [35.435, 129.365];
 const ONSAN_MAP_ZOOM = 14;
@@ -169,7 +170,8 @@ function SlotRow({ slot, onShowReason }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px', marginTop: '4px' }}>
         <p style={{ margin: 0 }}>
           {slot.vessel_name || '(선명 미상)'} · {slot.call_sign}
-          {slot.cargo_name && ` · ${slot.cargo_name}`}
+          {(slot.cargo_names?.length || slot.cargo_name)
+            && ` · ${slot.cargo_names?.length ? cargoSummary(slot.cargo_names, 3) : slot.cargo_name}`}
         </p>
         {hasReason && (
           <button
