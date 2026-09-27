@@ -60,7 +60,7 @@ const INVISIBLE_ICON = L.divIcon({
   html: '', className: 'invisible-marker', iconSize: [90, 24], iconAnchor: [45, 12],
 });
 
-// 판정 등급 → 배지 색. assessment_history.level 의 다섯 값이 전부다.
+// 판정 등급 → 배지 색. assessment_history.level 의 네 값이 전부다.
 // '판정불가'를 회색이 아니라 노랑으로 두는 것이 핵심이다 — 근거가 없다는 사실
 // 자체를 관제사가 봐야 한다. 회색으로 두면 '해당 없음'처럼 읽힌다.
 const VERDICT_BG = {
@@ -68,8 +68,6 @@ const VERDICT_BG = {
   '주의': COLORS.yellow,
   '부적합': COLORS.red,
   '판정불가': COLORS.yellow,
-  // [2026-09-27] 충돌은 없고 이웃 화물 혼재 근거가 없었다 — 입항 검증 화면과 같은 보라
-  '확인요청': COLORS.purple,
 };
 
 function formatKST(iso) {

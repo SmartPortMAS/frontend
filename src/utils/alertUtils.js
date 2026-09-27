@@ -42,7 +42,6 @@ export const TYPE_LABEL = {
   ASSESSMENT_부적합: '판정 부적합',
   ASSESSMENT_주의: '판정 주의',
   ASSESSMENT_판정불가: '판정불가',
-  ASSESSMENT_확인요청: '혼재 확인요청',
 };
 
 export const typeLabel = (type) => TYPE_LABEL[type] || type;
