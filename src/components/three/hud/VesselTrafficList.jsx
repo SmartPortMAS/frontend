@@ -52,7 +52,7 @@ export default function VesselTrafficList() {
   // CCTV 패널 아래에 놓는다. CCTV 가 접히면 그만큼 따라 올라간다 —
   // 예전 top:226 은 CCTV 에 조작줄이 붙기 전 값이라 두 패널이 겹쳤다.
   const cctvCollapsed = useSensorStore((s) => s.hudCctvCollapsed);
-  const TOP = cctvCollapsed ? 88 : 264;
+  const TOP = cctvCollapsed ? 88 : 336;
 
   if (collapsed) {
     return (
@@ -68,7 +68,7 @@ export default function VesselTrafficList() {
   return (
     <div className="vessel-traffic-list" style={{
       position: 'absolute', top: TOP, left: 20, zIndex: 1000,
-      width: '320px',
+      width: '400px',
       background: 'var(--hud-panel)',
       backdropFilter: 'blur(10px)',
       border: '1px solid var(--hud-border)',
@@ -82,9 +82,9 @@ export default function VesselTrafficList() {
         background: 'rgba(255,255,255,0.05)', fontWeight: 'bold',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
       }}>
-        <span style={{ fontSize: '12.5px' }} title="항만공사 선박위치 기준">온산 선박</span>
+        <span style={{ fontSize: '14.5px' }} title="항만공사 선박위치 기준">온산 선박</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '11px', opacity: 0.8 }}>
+          <span style={{ fontSize: '12.5px', opacity: 0.8 }}>
             {filter === 'ALL' ? `${ships.length}척` : `${shown.length}/${ships.length}척`}
           </span>
           <button
@@ -117,8 +117,8 @@ export default function VesselTrafficList() {
                 background: on ? 'rgba(255,255,255,0.14)' : 'transparent',
                 border: `1px solid ${on ? (c || '#6FD3BE') : 'var(--hud-border)'}`,
                 color: on ? (c || 'var(--hud-text)') : 'var(--hud-dim)',
-                borderRadius: '999px', padding: '3px 10px',
-                fontSize: '10.5px', fontWeight: on ? 800 : 600,
+                borderRadius: '999px', padding: '4px 11px',
+                fontSize: '12px', fontWeight: on ? 800 : 600,
                 cursor: 'pointer', fontFamily: 'inherit',
               }}
             >
@@ -128,7 +128,7 @@ export default function VesselTrafficList() {
         })}
       </div>
 
-      <div style={{ padding: '6px 10px 10px', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
+      <div style={{ padding: '6px 10px 10px', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: 'max(260px, calc(100vh - 600px))', overflowY: 'auto' }}>
         {ships.length === 0 ? (
           <div style={{ color: 'var(--hud-dim)', fontSize: '12px', textAlign: 'center', padding: '12px 4px', lineHeight: 1.6 }}>
             온산 범위 내 선박위치 없음
@@ -154,25 +154,25 @@ export default function VesselTrafficList() {
                 title="클릭하면 선박 상세가 열립니다"
                 style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '8px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px',
+                  padding: '10px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px',
                   borderLeft: `3px solid ${st.color}`, cursor: 'pointer',
                 }}
               >
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{
-                    color: 'var(--hud-text)', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px',
+                    color: 'var(--hud-text)', fontSize: '15px', fontWeight: 'bold', marginBottom: '4px',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {ship.id}
                   </div>
-                  <div style={{ color: 'var(--hud-dim)', fontSize: '11px' }}>{berthName}</div>
+                  <div style={{ color: 'var(--hud-dim)', fontSize: '12.5px' }}>{berthName}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '8px' }}>
-                  <div style={{ color: st.color, fontSize: '11.5px', marginBottom: '4px' }}>{st.text}</div>
+                  <div style={{ color: st.color, fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>{st.text}</div>
                   {/* 적재량은 수집 소스가 없다(cargoAmount=null). 예전엔
                       Math.round(null/1000) = 0 이라 실선박이 전부 "0k t"로 떴다 —
                       빈 배라는 틀린 정보였다. 대신 실제로 아는 값(속력)을 보여준다. */}
-                  <div style={{ color: '#6FD3BE', fontSize: '11px' }}>
+                  <div style={{ color: '#6FD3BE', fontSize: '12.5px' }}>
                     {ship.vessel_speed != null ? `${ship.vessel_speed} kn` : '속력 미상'}
                   </div>
                 </div>

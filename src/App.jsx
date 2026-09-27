@@ -4,7 +4,6 @@ import DigitalTwinPage from './pages/DigitalTwinPage';
 import DashboardPage from './pages/DashboardPage';
 import SafetyPage from './pages/SafetyPage';
 import SensorPage from './pages/SensorPage';
-import BerthAssignmentPage from './pages/BerthAssignmentPage';
 import ArrivalVerificationPage from './pages/ArrivalVerificationPage';
 import AgentConsole from './components/dashboard/AgentConsole';
 
@@ -19,7 +18,8 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/arrivals" element={<ArrivalVerificationPage />} />
-        <Route path="/berth-assignments" element={<BerthAssignmentPage />} />
+        {/* 선석 현황은 선박 판정 화면 안으로 합쳤다(2026-09-27) — 예전 링크는 그 자리로 보낸다 */}
+        <Route path="/berth-assignments" element={<Navigate to="/arrivals#berthed" replace />} />
         <Route path="/twin" element={<DigitalTwinPage />} />
         <Route path="/safety" element={<SafetyPage />} />
         <Route path="/sensors" element={<SensorPage />} />

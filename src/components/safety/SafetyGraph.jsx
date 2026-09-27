@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Tooltip } from 'recharts';
 import { BACKEND_BASE } from '../../api/backendAdapter';
+import HelpTip from '../common/HelpTip';
 
 // 이 6축은 원래 탱크 압력·배관 유속·가스 농도·온도 제어·작업자 안전이었고 값이
 // 코드에 박혀 있었다. 전부 현장 센서가 있어야 나오는 값인데 우리는 그 센서를
@@ -47,17 +48,20 @@ export default function SafetyGraph() {
 
   return (
     <div className="glass-card" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
-      <h3 style={{ fontSize: '18px', color: 'var(--teal)', marginBottom: '8px' }}>
+      <h3 style={{ fontSize: '18px', color: 'var(--teal)', marginBottom: '8px', display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
         다차원 안전 평가 지수
+        <HelpTip title="다차원 안전 평가 지수">
+          설비 상태가 아니라 <strong>지금 하역을 진행해도 되는가</strong>를 재는 5개 축입니다(기상 여유 · 흘수 여유 · 혼재 안전 · 화물 식별 · 선석 특정).
+          100점은 하역을 막을 이유가 없다는 뜻입니다. "선석 특정" 축은 신고 표기와 선석 마스터의 매핑 한계로 실제보다 낮게 나올 수 있습니다.
+        </HelpTip>
         {index?.overall != null && (
           <span style={{ marginLeft: '12px', fontSize: '15px', color: 'var(--text-primary)' }}>
             종합 {overall ?? index.overall}
           </span>
         )}
       </h3>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '18px', lineHeight: 1.6 }}>
-        <strong>100점 = 지금 하역을 막을 이유가 없음.</strong>{' '}
-        설비 상태가 아니라 <strong>지금 하역을 진행해도 되는가</strong>를 재는 5개 축입니다.
+      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '18px' }}>
+        100 = 하역을 막을 이유 없음
       </p>
 
       <div style={{ flex: 1, minHeight: '300px' }}>
@@ -86,8 +90,8 @@ export default function SafetyGraph() {
       </div>
 
       {axes.length > 0 && (
-        <div className="safety-rationale" style={{ marginTop: '24px' }}>
-          <strong>축별 근거</strong>
+        <details className="safety-rationale" style={{ marginTop: '24px' }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 700 }}>축별 근거 보기</summary>
           <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {axes.map((a) => (
               <div key={a.subject} style={{ fontSize: '12.5px', lineHeight: 1.5 }}>
@@ -104,7 +108,7 @@ export default function SafetyGraph() {
               (0점이 아니라 &ldquo;모름&rdquo;입니다).
             </div>
           )}
-        </div>
+        </details>
       )}
     </div>
   );

@@ -20,7 +20,7 @@ export default function BerthStatusBar() {
   return (
     <div style={{
       // CCTV(좌, ~300px)와 우측 버튼(~390px) 사이 구간에만 배치 — 어느 쪽도 가리지 않음
-      position: 'absolute', top: 44, left: 320, right: 400,
+      position: 'absolute', top: 44, left: 440, right: 400,
       zIndex: 1000, display: 'flex', gap: '6px', alignItems: 'center',
       background: 'rgba(13, 27, 42, 0.8)', backdropFilter: 'blur(8px)',
       border: `1px solid ${COLORS.glassBorder}`, borderRadius: '10px',

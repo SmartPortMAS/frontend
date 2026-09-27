@@ -118,7 +118,7 @@ export default function CCTVPanel() {
     : '공석';
 
   return (
-    <div style={{ position: 'absolute', top: 44, left: 20, zIndex: 1000, width: '280px' }}>
+    <div style={{ position: 'absolute', top: 44, left: 20, zIndex: 1000, width: '400px' }}>
       {/* 조작 줄 — 카메라 선택·자동순회·접기.
           패널 본체는 pointerEvents:none 을 유지해 3D 조작을 가리지 않고,
           이 줄에만 pointerEvents:auto 를 준다. */}
@@ -150,7 +150,7 @@ export default function CCTVPanel() {
 
     <div className="cctv-panel" key={`${berthId}-${P.label}`} style={{
       position: 'relative',
-      width: '280px', height: '168px',
+      width: '400px', height: '240px',
       background: P.sky1,
       border: '1px solid rgba(255, 255, 255, 0.2)',
       borderRadius: '4px',
@@ -160,7 +160,7 @@ export default function CCTVPanel() {
       animation: 'camswitch 0.35s ease-out',
     }}>
       {/* 가상 부두 장면 */}
-      <svg width="280" height="168" viewBox="0 0 280 168" style={{ position: 'absolute', inset: 0 }}>
+      <svg width="400" height="240" viewBox="0 0 280 168" style={{ position: 'absolute', inset: 0 }}>
         <defs>
           <linearGradient id="cctv-sky" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={P.sky1} />
@@ -247,20 +247,20 @@ export default function CCTVPanel() {
       }} />
 
       {/* 오버레이 */}
-      <div style={{ position: 'absolute', top: 8, left: 10, color: '#ef4444', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 'bold' }}>
-        <div style={{ width: '8px', height: '8px', background: '#ef4444', borderRadius: '50%', animation: 'pulse 1s infinite' }} />
+      <div style={{ position: 'absolute', top: 10, left: 12, color: '#ef4444', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 'bold' }}>
+        <div style={{ width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', animation: 'pulse 1s infinite' }} />
         REC
       </div>
-      <div style={{ position: 'absolute', top: 8, right: 10, color: P.text, fontSize: '11.5px', fontWeight: 700 }}>
+      <div style={{ position: 'absolute', top: 10, right: 12, color: P.text, fontSize: '14px', fontWeight: 700 }}>
         CAM-{String(camNo).padStart(2, '0')} · {berth?.name}
       </div>
-      <div style={{ position: 'absolute', top: 24, right: 10, color: P.sub, fontSize: '10px' }}>
+      <div style={{ position: 'absolute', top: 30, right: 12, color: P.sub, fontSize: '12px' }}>
         {P.label} 모드 {isManual ? '· 수동 선택' : '· 자동 순찰'}
       </div>
-      <div style={{ position: 'absolute', bottom: 8, left: 10, color: P.sub, fontSize: '10.5px', maxWidth: '190px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <div style={{ position: 'absolute', bottom: 10, left: 12, color: P.sub, fontSize: '12.5px', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {footer}
       </div>
-      <div style={{ position: 'absolute', bottom: 8, right: 10, color: P.text, fontSize: '11px' }}>
+      <div style={{ position: 'absolute', bottom: 10, right: 12, color: P.text, fontSize: '13px' }}>
         {time.toLocaleTimeString('ko-KR', { hour12: false })}
       </div>
 

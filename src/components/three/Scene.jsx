@@ -13,7 +13,7 @@ import useSensorStore from '../../stores/useSensorStore';
 // 실제 계약(wind_speed_ms·visibility_m)과 달라 연결해도 동작하지 않았다.
 // 파티클만 만들어 놓고 한 번도 렌더하지 않는 순수 비용이었다.
 
-function SimulationEnvironment({ focusBerth }) {
+function SimulationEnvironment({ focusBerth, focusRings = true }) {
   const predictionOffset = useSensorStore((s) => s.predictionOffset);
 
   // 기준 시각은 현재 시각이다.
@@ -80,7 +80,7 @@ function SimulationEnvironment({ focusBerth }) {
 
       <Water />
       <Port />
-      <BerthFocus berthName={focusBerth} />
+      <BerthFocus berthName={focusBerth} showRings={focusRings} />
 
       <EffectComposer disableNormalPass>
         <Bloom luminanceThreshold={0.55} mipmapBlur intensity={0.8} />
@@ -102,7 +102,7 @@ function SimulationEnvironment({ focusBerth }) {
   );
 }
 
-export default function Scene({ focusBerth }) {
+export default function Scene({ focusBerth, focusRings = true }) {
   return (
     <Canvas
       camera={{ position: [330, 230, -250], fov: 50 }}
@@ -119,7 +119,7 @@ export default function Scene({ focusBerth }) {
       }}
     >
       <Suspense fallback={null}>
-        <SimulationEnvironment focusBerth={focusBerth} />
+        <SimulationEnvironment focusBerth={focusBerth} focusRings={focusRings} />
       </Suspense>
     </Canvas>
   );
