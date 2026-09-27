@@ -124,6 +124,9 @@ export default function VesselDetailPanel() {
     if (vessel.callsgn && (a.callsgns || []).includes(vessel.callsgn)) return true;
     return Boolean(vessel.berth) && a.berth_name === vessel.berth;
   });
+  // 대체 선석 제안은 지금 선석이 부적합일 때만 보인다 — 혼재 판정 배정불가 또는 흘수 접안 불가.
+  const draughtVerdict = (data?.draught_checks || []).find((r) => r.callsgn === vessel.callsgn)?.draught_verdict;
+  const berthUnsuitable = assessment?.risk_level === '배정불가' || draughtVerdict === 'NOT_ALLOWED';
 
   return (
     <div className="vessel-detail-panel" style={{
@@ -443,6 +446,7 @@ export default function VesselDetailPanel() {
           [2026-09-27] 예전 '배정 가능 선석(후보)'은 조위를 빼고 top-3 를 새로 골랐다.
           우리는 배정하지 않는다 — 판정 잡이 부적합일 때 붙이는 대체안과 같은 계산으로,
           지금 부두를 뺀 **제안**만 보인다(조위 반영 가용수심, 필요 여유 max(1.0m, 흘수 10%)). */}
+      {berthUnsuitable && (<>
       <SectionTitle icon={<FaMapMarkerAlt />}>대체 선석 제안<AgentChip agent="scheduling" /></SectionTitle>
       {/* 판정 입력 화물: 입항 건 화물만. 없으면 조회하지 않는다 */}
       {(() => { return null; })()}
@@ -550,6 +554,7 @@ export default function VesselDetailPanel() {
           )}
         </>
       )}
+      </>)}
 
       {/* 계류 물리 검증 (8월 시나리오 S1 — 준정적 근사, PhysX 스크립트로 검증) */}
       {vessel.berth && (
