@@ -2,6 +2,16 @@ import { useMemo } from 'react';
 import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
 
+// [2026-09-27 fix] 모형 진행률 목록을 걷어낼 때 이 함수까지 같이 지워져, 접안 이력이 있는 환경에서
+// HistoryGantt 가 ReferenceError 로 선박 판정 화면을 통째로 비웠다(배포 서버는 이력이 비어 있어 캡처 때 안 드러남).
+const fmtKST = (utc, withDate = true) =>
+  utc
+    ? new Date(utc).toLocaleString('ko-KR', {
+        ...(withDate ? { month: '2-digit', day: '2-digit' } : {}),
+        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul',
+      })
+    : '-';
+
 // 실데이터 접안 이력 간트 (upa_port_call 실기록) — 부두별 그룹
 //
 // 이영서 요청(2026-08-17): "부두 별로 그룹화하면 현황이 더 잘 드러나지 않을까"
