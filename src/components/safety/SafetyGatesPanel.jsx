@@ -5,6 +5,7 @@ import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
 import { ONSAN_BERTHS, onsanAdjacentBerthNames } from '../../utils/geoUtils';
 import ReasoningGraph from './ReasoningGraph';
+import HelpTip from '../common/HelpTip';
 import { FaShieldAlt, FaCheckCircle, FaTimesCircle, FaQuestionCircle } from 'react-icons/fa';
 
 // risk_level 4등급 (결정론: 같은 입력 = 같은 등급)
@@ -257,10 +258,16 @@ export default function SafetyGatesPanel() {
       }}
     >
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 className="glass-card-title">
-          <FaShieldAlt style={{ marginRight: '8px', color: COLORS.teal }} />신규 입항 안전 심사 — 혼재금지 · IMDG 격리 · 포장등급
+        <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
+          <FaShieldAlt style={{ marginRight: '8px', color: COLORS.teal }} />화물 안전 심사
+          <HelpTip title="화물 안전 심사">
+            <div>대상 선석의 화물과 같은 선석·인접 선석 화물의 조합 위험을 봅니다.</div>
+            <div style={{ marginTop: 4 }}>인접 선석 — MSDS 반응성 · 산적 호환성그룹 / 같은 선석 동시 취급 — IMDG 격리 · 포장등급.
+              IMDG 격리표는 배 한 척 안의 적재 규정이라 부두 사이 판정에서는 참고로만 표시합니다.</div>
+            <div style={{ marginTop: 4, color: COLORS.textSecondary }}>흘수·DWT 에 따른 접안 가능성은 우하단 "에이전트 판단 과정"에서 스케줄링 에이전트가 검토합니다.</div>
+          </HelpTip>
         </h3>
-        <span style={{ fontSize: '12px', color: COLORS.textDim }}>화물 조합의 혼재 위험을 봅니다</span>
+        <span style={{ fontSize: '12.5px', color: COLORS.textSecondary, fontWeight: 600 }}>혼재 · 격리 · 포장등급</span>
       </div>
 
       {/* 경고에서 넘어왔을 때 무엇이 채워졌는지 밝힌다 — 조용히 바뀌면 뭘 심사하는지 모른다 */}
@@ -349,10 +356,6 @@ export default function SafetyGatesPanel() {
         </label>
       </div>
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '11.5px', color: COLORS.textDim, lineHeight: 1.5 }}>
-          흘수·DWT 에 따른 접안 가능성은 우하단 <strong style={{ color: COLORS.teal }}>에이전트 판단 과정</strong>에서
-          스케줄링 에이전트가 검토합니다 — 이 심사는 화물 조합의 위험만 봅니다.
-        </span>
         <button
           onClick={run}
           disabled={running || !form.cargo_chem_id}

@@ -5,14 +5,21 @@ import {
 } from 'recharts';
 import { fetchUpcomingArrivals, postAssessAndRecord } from '../api/backendAdapter';
 import { COLORS } from '../utils/constants';
+import HelpTip from '../components/common/HelpTip';
+import BerthAssignmentMap from '../components/dashboard/BerthAssignmentMap';
+import BerthOccupiedList from '../components/dashboard/BerthOccupiedList';
+import GanttChart from '../components/dashboard/GanttChart';
 
 // ─────────────────────────────────────────────
-// 입항 예정 · 검증 (SafeBerth 방향 C, 2026-09-17)
+// 선박 판정 (SafeBerth 방향 C, 2026-09-17 · 2026-09-27 선석 현황 통합)
 //
 // 기존 선석 배정(항만공사 선석회의 → PORT-MIS 입항 신고의 계류시설)은 그대로 따른다.
-// 이 화면은 두 가지를 보여준다.
-//   1) 지금 들어오고 있는 액체화물선 — 사전배정 계류시설과 판정에 쓰일 사실
-//   2) 실제로 있었던 날의 재생 — 세 시점(입항 전 · 접안 직전 · 하역 중) 판정과
+// 배 한 척을 입항 전 → 접안 직전 → 하역 중 순서로 따라가는 화면이다.
+//   1) 들어오는 배 — 사전배정 계류시설과 판정에 쓰일 사실, 판정 요청
+//   2) 붙어 있는 배 — 선석 슬롯 지도(판정 근거 팝업)와 점유 목록. 9/27 까지 '선석 현황' 메뉴였다.
+//      하역 중인 배가 1)에도 나와 같은 배가 두 화면에 보였고 판정 칸도 두 곳이라 합쳤다.
+//   3) 부두별 접안 이력(실측) — 대시보드에 있던 간트. 선석이 축인 정보라 이 화면 몫이다.
+//   4) 실제로 있었던 날의 재생 — 세 시점(입항 전 · 접안 직전 · 하역 중) 판정과
 //      조치안 · 받는 곳. 데이터는 data-pipeline/data_pipeline/checks/
 //      export_demo_replays.py 가 만든 public/demo/replays.json (정적 파일이라
 //      백엔드가 꺼져 있어도 재생된다)
@@ -123,7 +130,13 @@ function UpcomingSection() {
   return (
     <div className="glass-card">
       <div className="glass-card-header" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <h3 className="glass-card-title">지금 들어오는 액체화물선 · 72시간</h3>
+        <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
+          들어오는 배 · 앞으로 72시간
+          <HelpTip title="입항 예정 목록">
+            출처: PORT-MIS 입항 신고(오늘~+3일, 매시 갱신) · 항만공사 선박위치(흘수·항해상태) · 선박제원.
+            신고가 최종이 아니면 입항 시각은 예정입니다. 판정이 없는 배는 [판정 요청]으로 그 자리에서 판정하고, 결과는 판정 이력에 남습니다.
+          </HelpTip>
+        </h3>
         <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
           {scopes.map(([key, label]) => (
             <button
@@ -241,9 +254,6 @@ function UpcomingSection() {
           </tbody>
         </table>
       </div>
-      <p style={{ fontSize: 11, color: COLORS.textDim, margin: '8px 0 0' }}>
-        출처: PORT-MIS 입항 신고(오늘~+3일, 매시 갱신) · UPA 선박위치(흘수·항해상태) · 선박제원. 신고가 최종이 아니면 입항 시각은 예정입니다.
-      </p>
     </div>
   );
 }
@@ -333,8 +343,8 @@ function VesselReplay({ replay }) {
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <figcaption style={{ fontSize: 11, color: COLORS.textDim }}>
-          흘수 여유 = 표 수심 + 조위 − 흘수. {replay.source}
+        <figcaption style={{ fontSize: 11.5, color: COLORS.textDim }}>
+          흘수 여유 (m) · 점선 = 기준 1 m
         </figcaption>
       </figure>
     </div>
@@ -383,8 +393,8 @@ function SwellReplay({ replay }) {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-        <figcaption style={{ fontSize: 11, color: COLORS.textDim }}>
-          막대 = 액체화물선 입항 척수(주황: 너울일) · 선 = 외해 부이 유의파고 일평균(오른쪽 축). {replay.caveat}
+        <figcaption style={{ fontSize: 11.5, color: COLORS.textDim }}>
+          막대 입항 척수(주황 = 너울일) · 선 외해 파고(오른쪽 축)
         </figcaption>
       </figure>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
@@ -394,17 +404,45 @@ function SwellReplay({ replay }) {
   );
 }
 
+// ── 3. 지금 선석에 붙어 있는 배 ────────────────
+// 선석 슬롯 지도(클릭 → 슬롯별 배·판정 근거) + 점유 목록. 두 부품은 같은 범위(온산/전체)를 본다.
+function BerthedSection() {
+  const [scope, setScope] = useState('onsan');
+  return (
+    <>
+      <div className="glass-card dash-section" id="berthed">
+        <div className="glass-card-header">
+          <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
+            붙어 있는 배 — 선석 점유
+            <HelpTip title="선석 점유">
+              항만공사 선박위치로 판정한 "지금 선석에 붙어 있는 배"입니다. 지도의 선석을 누르면 슬롯별 배와 판정 근거가 뜹니다.
+              아래 목록은 같은 배를 선석·화물·입출항·확인자·판정 순으로 보여 줍니다. 위 표의 "하역 중"과 같은 배입니다.
+            </HelpTip>
+          </h3>
+        </div>
+        <div style={{ height: 'clamp(380px, 48vh, 600px)' }}>
+          <BerthAssignmentMap scope={scope} onScopeChange={setScope} />
+        </div>
+      </div>
+      <div className="dash-section"><BerthOccupiedList scope={scope} /></div>
+    </>
+  );
+}
+
 function ReplaySection() {
+  // 실무 화면이 아니라 교육·사후 검토용(9/27 현우 결정) — 아래에 접어 두고, 펼칠 때만 자료를 읽는다.
+  const [open, setOpen] = useState(false);
   const [replays, setReplays] = useState(null);
   const [active, setActive] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (!open || replays) return;
     fetch('/demo/replays.json')
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((d) => { setReplays(d); setActive(d.replays[0]?.id); })
       .catch((e) => setError(e.message));
-  }, []);
+  }, [open, replays]);
 
   const current = replays?.replays.find((r) => r.id === active);
   const tabLabel = (r) => (r.kind === 'swell' ? '외해 너울 9/4~9/11' : `${r.vessel.name} ${r.arrival.slice(5, 10).replace('-', '/')}`);
@@ -412,8 +450,28 @@ function ReplaySection() {
   return (
     <div className="glass-card">
       <div className="glass-card-header" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <h3 className="glass-card-title">실제로 있었던 날 — 세 시점 판정 재생</h3>
-        <div role="tablist" style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
+        <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
+          <button
+            type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+            style={{ background: 'transparent', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <span style={{ display: 'inline-block', width: 12, color: COLORS.textDim }}>{open ? '▾' : '▸'}</span>
+            과거 사례 다시 보기
+            <span style={{ fontSize: 12, fontWeight: 400, color: COLORS.textDim }}>(교육 · 사후 검토)</span>
+          </button>
+          <HelpTip title="과거 사례 다시 보기">
+            <div>실제로 있었던 날의 실측 조위·기상으로 입항 전 → 접안 직전 → 하역 중 세 시점 판정이 어떻게 달라졌는지 다시 봅니다. 판정이 한 번으로 끝나지 않는 이유를 보여 주는 자료입니다.</div>
+            <div>흘수 여유 = 표 수심 + 조위 − 흘수. 판정 기준은 조위를 반영한 흘수 여유 1.0 m(체류 중 최저 여유)입니다.</div>
+            {current?.source && <div style={{ marginTop: 4 }}>{current.source}</div>}
+            {current?.caveat && <div style={{ marginTop: 4 }}>{current.caveat}</div>}
+            {replays && (
+              <div style={{ marginTop: 4, color: COLORS.textSecondary }}>
+                재생 자료 기준일 {new Date(replays.generated_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric' })}
+              </div>
+            )}
+          </HelpTip>
+        </h3>
+        {open && <div role="tablist" style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexWrap: 'wrap' }}>
           {replays?.replays.map((r) => (
             <button
               key={r.id} type="button" role="tab" aria-selected={active === r.id} onClick={() => setActive(r.id)}
@@ -425,19 +483,14 @@ function ReplaySection() {
               }}
             >{tabLabel(r)}</button>
           ))}
-        </div>
+        </div>}
       </div>
-      {error && <p style={{ color: COLORS.red, fontSize: 13 }}>재생 데이터를 불러오지 못했습니다 ({error}).</p>}
-      {current && (
+      {open && error && <p style={{ color: COLORS.red, fontSize: 13 }}>재생 데이터를 불러오지 못했습니다 ({error}).</p>}
+      {open && current && (
         <div style={{ display: 'grid', gap: 12 }}>
           <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{current.headline}</p>
           {current.kind === 'swell' ? <SwellReplay replay={current} /> : <VesselReplay replay={current} />}
         </div>
-      )}
-      {replays && (
-        <p style={{ fontSize: 11, color: COLORS.textDim, margin: '10px 0 0' }}>
-          재생 자료 기준일 {new Date(replays.generated_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric' })} · 판정 기준: 조위 반영 흘수 여유 1.0 m(체류 중 최저 여유)
-        </p>
       )}
     </div>
   );
@@ -447,14 +500,23 @@ export default function ArrivalVerificationPage() {
   return (
     <div className="dashboard-page">
       <div className="glass-card dash-section" style={{ display: 'grid', gap: 6 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>입항 예정 · 검증</h2>
-        <p style={{ margin: 0, fontSize: 13, color: COLORS.textSecondary, maxWidth: '72ch' }}>
-          기존 선석 배정은 그대로 따릅니다. 배가 들어오는 동안 기상·조위·흘수·인접 화물이 기준을 벗어나면,
-          조치안을 만들어 그 조치를 할 권한이 있는 곳 — 선석 운영 주체 · VTS · 터미널 — 에 근거와 함께 넘깁니다.
+        <h2 style={{ margin: 0, fontSize: 18, display: 'flex', alignItems: 'center' }}>
+          선박 판정
+          <HelpTip title="선박 판정">
+            <div>기존 선석 배정은 그대로 따릅니다. 배 한 척을 <strong>입항 전 → 접안 직전 → 하역 중</strong> 순서로 따라가며,
+            기상·조위·흘수·인접 화물이 기준을 벗어나면 조치안을 만들어 권한 있는 곳 — 선석 운영 주체 · VTS · 터미널 — 에 근거와 함께 넘깁니다.</div>
+            <div style={{ marginTop: 4 }}>위 표는 <strong>들어오는 배와 판정</strong>, 아래는 <strong>지금 선석에 붙어 있는 배</strong>(자리·화물·확인자)입니다.
+            대시보드의 "확인 대기 판정"을 누르면 이 화면으로 옵니다.</div>
+          </HelpTip>
+        </h2>
+        <p style={{ margin: 0, fontSize: 13.5, color: COLORS.textSecondary }}>
+          들어오는 배 → 붙어 있는 배 · <strong>입항 전 → 접안 직전 → 하역 중</strong> · 벗어나면 조치안
         </p>
       </div>
-      <div className="dash-section"><ReplaySection /></div>
       <div className="dash-section"><UpcomingSection /></div>
+      <BerthedSection />
+      <div className="dash-section"><GanttChart /></div>
+      <div className="dash-section"><ReplaySection /></div>
     </div>
   );
 }

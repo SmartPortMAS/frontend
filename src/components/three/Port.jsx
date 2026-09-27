@@ -162,10 +162,17 @@ function ringShape(points) {
   return s;
 }
 
+// 시간축 미리보기 등급 색 — OutlookTimeline.LEVEL_COLOR 와 같은 값(어두운 바탕용)
+const OUTLOOK_LEVEL_COLOR = {
+  적합: '#10b981', 주의: '#f59e0b', 부적합: '#ef4444', 확인요청: '#a78bfa', 판정불가: '#a78bfa',
+};
+
 export default function Port() {
   const { tanks, ships, pipes, selectedObject, setSelectedObject } =
     useSensorStore();
   const berthWeather = useSensorStore((s) => s.berthWeather);
+  // "앞으로 72시간" 시간축(OutlookTimeline)이 가리키는 시각의 판정 — 그 선석만 이 값으로 그린다
+  const outlookPreview = useSensorStore((s) => s.outlookPreview);
 
   // 육지: 해안선 경로에서 내륙(-N) 방향으로 420유닛 확장한 폴리곤
   const landShape = useMemo(() => {
@@ -360,14 +367,21 @@ export default function Port() {
           (s) => s.berth === id && ['operating', 'mooring', 'docked'].includes(s.status)
         );
         // 기상 판정 역연동: 이 선석의 임계군에 대한 최근 판정
-        const verdict =
+        const liveVerdict =
           berthWeather && ONSAN_WEATHER_GROUP[id] === berthWeather.berth_group
             ? berthWeather.status
             : null;
-        const escalated = verdict && verdict !== '정상';
-        const stripeColor = escalated
-          ? WEATHER_STATUS_COLORS[verdict] || '#eab308'
-          : '#eab308';
+        // 시간축 미리보기(2026-09-27): 이 선석을 가리키면 그 시각의 예보 판정으로 색·라벨을 바꾼다.
+        // 등급(적합/주의/부적합)이 색, 머리말(정상/하역중단/흘수 여유 부족…)이 글이다.
+        const preview = outlookPreview && outlookPreview.berthId === id ? outlookPreview : null;
+        const verdict = preview ? (preview.headline || preview.status || '정상') : liveVerdict;
+        const escalated = preview ? Boolean(preview.level) && preview.level !== '적합' : Boolean(verdict) && verdict !== '정상';
+        const stripeColor = preview
+          ? (OUTLOOK_LEVEL_COLOR[preview.level] || '#94a3b8')
+          : escalated ? (WEATHER_STATUS_COLORS[verdict] || '#eab308') : '#eab308';
+        const labelSuffix = preview
+          ? ` · ${preview.offsetH === 0 ? '지금' : `+${preview.offsetH}h`} ${verdict}`
+          : escalated ? ` · ${verdict}` : '';
 
         return (
           <group
@@ -389,15 +403,15 @@ export default function Port() {
             <Html position={[10, 22, 0]} center zIndexRange={[20, 0]} distanceFactor={320}>
               <div style={{
                 ...berthLabelStyle,
-                ...(escalated ? { border: `1px solid ${stripeColor}`, color: stripeColor } : {}),
+                ...(escalated || preview ? { border: `1px solid ${stripeColor}`, color: stripeColor } : {}),
               }}>
                 {berth.name}
-                {escalated && ` · ${verdict}`}
+                {labelSuffix}
               </div>
             </Html>
 
-            {/* 판정 경보 링: 하역중단/이안/호스분리 시 잔교 주위 발광 링 */}
-            {escalated && (
+            {/* 판정 경보 링: 하역중단/이안/호스분리 시 잔교 주위 발광 링. 시간축 미리보기 중엔 등급 색으로 늘 켠다 */}
+            {(escalated || preview) && (
               <mesh position={[5, 0.7, 0]} rotation={[-Math.PI / 2, 0, 0]}>
                 <ringGeometry args={[38, 40.5, 40]} />
                 <meshBasicMaterial color={stripeColor} transparent opacity={0.55} depthWrite={false} />
@@ -416,7 +430,7 @@ export default function Port() {
               <meshStandardMaterial
                 color={stripeColor}
                 emissive={stripeColor}
-                emissiveIntensity={escalated ? 1.2 : 0.4}
+                emissiveIntensity={escalated || preview ? 1.2 : 0.4}
               />
             </mesh>
 

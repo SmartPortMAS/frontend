@@ -5,6 +5,7 @@ import {
 import useSensorStore from '../../stores/useSensorStore';
 import {
   ONSAN_BERTHS,
+  ONSAN_BERTHS_3D,
   ONSAN_WEATHER_GROUP,
   OMNIVERSE_BERTH_IDS,
   onsanAdjacentBerthNames,
@@ -38,6 +39,7 @@ function MockNotice() {
 
 export default function InfoPopup({ object, onClose }) {
   const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
+  const requestOutlook = useSensorStore((s) => s.requestOutlook);
   if (!object) return null;
 
   // 저장된 type 필드 우선. (구버전 id 접두어 추정은 'HMM ...' 선박을 오판하므로 폴백만)
@@ -47,18 +49,28 @@ export default function InfoPopup({ object, onClose }) {
   const berthInfo = type === 'Berth' ? ONSAN_BERTHS[object.id] : null;
   const adjacents = berthInfo ? onsanAdjacentBerthNames(berthInfo.name) : [];
 
-  // 정밀 검토(Omniverse) 지목 — 선석에 붙은 배, 또는 선석 자체.
-  // Omniverse 장면에는 온산 액체화물 부두 11곳만 있어 그 밖의 선석은 보여줄 자리가 없다.
-  const omniBerthId = type === 'Ship' ? object.berth : type === 'Berth' ? object.id : null;
-  const omniReady = Boolean(omniBerthId) && OMNIVERSE_BERTH_IDS.has(omniBerthId);
-  const omniBerthName = type === 'Ship'
+  // 앞으로 72시간 판정 흐름 — 선석에 붙은 배, 또는 선석 자체 (2026-09-27: Omniverse 지목에서 이 화면 안으로).
+  // 이 3D 장면에 있는 선석만 색을 바꿀 수 있다. Omniverse 장면(11곳)에도 있으면 보조로 Omniverse 도 연다.
+  const focusBerthId = type === 'Ship' ? object.berth : type === 'Berth' ? object.id : null;
+  const sceneReady = Boolean(focusBerthId) && Boolean(ONSAN_BERTHS_3D[focusBerthId]);
+  const omniReady = Boolean(focusBerthId) && OMNIVERSE_BERTH_IDS.has(focusBerthId);
+  const focusBerthName = type === 'Ship'
     ? (object.berth_name || ONSAN_BERTHS[object.berth]?.name)
     : berthInfo?.name;
-  let omniNote = '이 선석의 기상 예보 72시간을 판정 규칙대로 돌려, 하역이 언제 막히는지 3D로 보여줍니다.';
-  if (!omniReady) {
-    omniNote = type === 'Ship' && !object.berth
+  const focusPayload = {
+    berth: focusBerthName,
+    berthId: focusBerthId,
+    call_sign: type === 'Ship' ? (object.callsgn || null) : null,
+    // 선석 클릭은 선석만 지목한다 — mooredShip 은 '이름 (화물)' 표시용 문자열이라
+    // 호출부호가 없어 흘수를 붙일 수 없다. 배를 보려면 배를 누르면 된다.
+    vessel_name: type === 'Ship' ? object.id : null,
+    omniOk: omniReady,
+  };
+  let outlookNote = '이 선석의 앞으로 72시간을 판정 규칙대로 돌립니다. 이 화면의 선석 색이 시각마다 바뀌어 하역이 언제 막히는지 보입니다.';
+  if (!sceneReady) {
+    outlookNote = type === 'Ship' && !object.berth
       ? '선석에 붙은 배만 볼 수 있습니다 — 이 배는 항해 중이거나 정박지에서 대기 중입니다.'
-      : '이 선석은 Omniverse 장면에 없습니다 — 장면은 온산 액체화물 부두 11곳만 재현합니다.';
+      : '이 선석은 3D 장면에 없습니다 — 장면은 온산 부두만 재현합니다.';
   }
 
   return (
@@ -172,27 +184,34 @@ export default function InfoPopup({ object, onClose }) {
               <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                 <button
                   type="button"
-                  disabled={!omniReady}
-                  onClick={() => requestOmniverse({
-                    berth: omniBerthName,
-                    call_sign: type === 'Ship' ? (object.callsgn || null) : null,
-                    // 선석 클릭은 선석만 지목한다 — mooredShip 은 '이름 (화물)' 표시용 문자열이라
-                    // 호출부호가 없어 흘수를 붙일 수 없다. 배를 보려면 배를 누르면 된다.
-                    vessel_name: type === 'Ship' ? object.id : null,
-                  })}
+                  disabled={!sceneReady}
+                  onClick={() => requestOutlook(focusPayload)}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                     padding: '8px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 800,
                     fontFamily: 'inherit',
-                    cursor: omniReady ? 'pointer' : 'not-allowed',
-                    background: omniReady ? 'rgba(16, 185, 129, 0.18)' : 'rgba(148, 163, 184, 0.1)',
-                    color: omniReady ? '#10b981' : '#64748b',
-                    border: `1px solid ${omniReady ? 'rgba(16, 185, 129, 0.6)' : 'rgba(148, 163, 184, 0.3)'}`,
+                    cursor: sceneReady ? 'pointer' : 'not-allowed',
+                    background: sceneReady ? 'rgba(56, 189, 248, 0.16)' : 'rgba(148, 163, 184, 0.1)',
+                    color: sceneReady ? '#38bdf8' : '#64748b',
+                    border: `1px solid ${sceneReady ? 'rgba(56, 189, 248, 0.6)' : 'rgba(148, 163, 184, 0.3)'}`,
                   }}
                 >
-                  <FaPlay /> Omniverse 정밀 검토 — 앞으로 72시간
+                  <FaPlay /> 앞으로 72시간 판정 흐름
                 </button>
-                <div style={{ marginTop: '6px', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.5 }}>{omniNote}</div>
+                <div style={{ marginTop: '6px', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.5 }}>{outlookNote}</div>
+                {omniReady && (
+                  <button
+                    type="button"
+                    onClick={() => requestOmniverse(focusPayload)}
+                    title="같은 72시간을 Omniverse 로 봅니다 — 고사양 PC 전용, 기동 1~2분"
+                    style={{
+                      marginTop: '6px', background: 'none', border: 'none', padding: 0, color: '#64748b',
+                      fontSize: '11px', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
+                    }}
+                  >
+                    Omniverse 로 보기 (고사양 PC)
+                  </button>
+                )}
               </div>
             )}
 

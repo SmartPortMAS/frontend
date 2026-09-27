@@ -1,22 +1,53 @@
 import { useEffect, useState } from 'react';
 import useHardwareData from '../../hooks/useHardwareData';
+import HelpTip from '../common/HelpTip';
 import { COLORS } from '../../utils/constants';
-import { FaLock, FaLockOpen, FaPlug, FaExclamationTriangle, FaFlask } from 'react-icons/fa';
+import { FaLock, FaLockOpen, FaPlug, FaExclamationTriangle, FaFlask, FaShip } from 'react-icons/fa';
 
 // 하역 개시 인터락 — 선석 A·B 게이트 실물(라즈베리파이 + 릴레이 + 상시닫힘 밸브 + LCD).
-// 계약: 하드웨어/UI연동_전달사항_20260922.md. 판정은 백엔드가 기상 규칙으로 내려 장치에 보내고,
+// 계약: 하드웨어/UI연동_전달사항_20260922.md. 판정은 백엔드가 기상 규칙·하역중 판정으로 내려 장치에 보내고,
 // 장치는 잠긴 동안 어떤 열기 요청도 거부한다. 이 화면은 그 사실을 보여줄 뿐 판단하지 않는다.
+//
+// 2026-09-27 가독성 정리: 카드에는 상태 한 단어 + 근거 한 줄 + 배 한 줄만 두고, 기준·전체 근거·
+// 장치 마지막 보고·원칙 설명은 (?) 도움말로 옮겼다(카드마다 6~7줄이라 발표 화면에서 안 읽혔다).
+
+// 백엔드 LCD 용 근거 코드(bridge._short_reason) → 화면 핵심어
+function shortReason(sent) {
+  const r = sent?.reason || '';
+  let m = r.match(/^WIND ([\d.]+)m\/s>=([\d.]+)/);
+  if (m) return `풍속 ${m[1]} ≥ ${m[2]} m/s`;
+  m = r.match(/^WAVE ([\d.]+)m>=([\d.]+)/);
+  if (m) return `파고 ${m[1]} ≥ ${m[2]} m`;
+  if (r.startsWith('VERDICT UNFIT')) return '하역 중 판정 부적합';
+  if (r.startsWith('VERDICT UNKNOWN')) return '하역 중 판정불가';
+  if (r.startsWith('NO WEATHER')) return '기상 자료 없음';
+  if (r.startsWith('NO JUDGEMENT')) return '판정 전';
+  return r || null;
+}
 
 function Lamp({ on, color, label }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
       <span style={{
-        width: '18px', height: '18px', borderRadius: '50%',
+        width: '20px', height: '20px', borderRadius: '50%',
         background: on ? color : COLORS.card, border: `1px solid ${on ? color : COLORS.border}`,
         boxShadow: on ? `0 0 12px ${color}` : 'none', transition: 'all 0.3s',
       }} />
-      <span style={{ fontSize: '10px', color: COLORS.textDim }}>{label}</span>
+      <span style={{ fontSize: '10.5px', color: COLORS.textDim }}>{label}</span>
     </div>
+  );
+}
+
+function Chip({ color, children, strong = false }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap',
+      fontSize: '11.5px', fontWeight: strong ? 800 : 600, color: strong ? '#FFFFFF' : color,
+      background: strong ? color : 'transparent', border: `1px solid ${color}`,
+      borderRadius: '999px', padding: '2px 9px',
+    }}>
+      {children}
+    </span>
   );
 }
 
@@ -45,79 +76,77 @@ function GateCard({ gate, onCommand }) {
   };
 
   const edge = gate.offline ? COLORS.textDim : locked ? COLORS.red : valveOpen ? COLORS.teal : COLORS.yellow;
-  const reasonKo = sent?.reason_ko || null;
+  const word = gate.offline ? '연결 끊김' : locked ? '잠김' : valveOpen ? '하역 중' : '해제';
+  const wordColor = gate.offline ? COLORS.textDim : locked ? COLORS.red : COLORS.teal;
+  const reason = locked ? shortReason(sent) : null;
+  const both = sent?.lock_by?.weather && sent?.lock_by?.assessment;
+  const vessel = Array.isArray(gate.vessels) && gate.vessels[0];
+  const dv = gate.demo_verdict;
 
   return (
     <div className="sensor-card" style={{ borderLeft: `3px solid ${edge}`, opacity: gate.offline ? 0.75 : 1 }}>
       <div className="sensor-card-header">
         <span className="sensor-id">{gate.label} · {gate.berth}</span>
-      </div>
-      {gate.thresholds && (
-        <div style={{ fontSize: '11px', color: COLORS.textDim, marginTop: '2px' }}>
-          이 부두의 하역 중단 기준 — 풍속 {gate.thresholds.stop_wind_ms ?? '없음'} m/s
-          {gate.thresholds.stop_wave_m != null ? ` · 파고 ${gate.thresholds.stop_wave_m} m` : ' · 파고 기준 없음'}
-        </div>
-      )}
-      {/* 지금 이 선석에 붙어 있는 배와 그 배의 하역중 판정. 부적합·판정불가면 게이트가 잠긴다. */}
-      {gate.demo_verdict && (
-        <div style={{ fontSize: '11.5px', marginTop: '3px', color: ['부적합', '판정불가'].includes(gate.demo_verdict.level) ? COLORS.red : COLORS.yellow, fontWeight: 700 }}>
-          시연 판정 <strong>{gate.demo_verdict.level}</strong>
-          {gate.demo_verdict.reason && <span> — {gate.demo_verdict.reason}</span>}
-          <span style={{ fontWeight: 400, color: COLORS.textDim }}> (아래 실측 판정 대신 사용 중)</span>
-        </div>
-      )}
-      {Array.isArray(gate.vessels) && (
-        <div style={{ fontSize: '11.5px', marginTop: '3px', color: COLORS.textSecondary, opacity: gate.demo_verdict ? 0.6 : 1 }}>
-          {gate.vessels.length === 0 ? (
-            <span style={{ color: COLORS.textDim }}>접안 선박 없음 — 기상 기준만 적용</span>
-          ) : (
-            gate.vessels.map((v) => (
-              <div key={v.call_sign} style={{ color: v.blocking ? COLORS.red : COLORS.textSecondary }}>
-                접안 선박 {v.vessel_name || v.call_sign} · 하역중 판정 <strong>{v.level || '아직 없음'}</strong>
-                {v.blocking && v.reasons?.[0] && <span> — {v.reasons[0]}</span>}
-              </div>
-            ))
+        <HelpTip title={`${gate.label} · ${gate.berth}`} align="right">
+          {gate.thresholds && (
+            <div>하역 중단 기준 — 풍속 {gate.thresholds.stop_wind_ms ?? '없음'} m/s
+              {gate.thresholds.stop_wave_m != null ? ` · 파고 ${gate.thresholds.stop_wave_m} m` : ' · 파고 기준 없음'}</div>
           )}
-        </div>
-      )}
+          {sent?.reason_ko && <div>잠금 근거 — {sent.reason_ko}</div>}
+          {Array.isArray(gate.vessels) && (gate.vessels.length === 0
+            ? <div>접안 선박 없음 — 기상 기준만 적용</div>
+            : gate.vessels.map((v) => (
+              <div key={v.call_sign}>접안 선박 {v.vessel_name || v.call_sign} · 하역 중 판정 {v.level || '아직 없음'}
+                {v.reasons?.[0] ? ` — ${v.reasons[0]}` : ''}</div>
+            )))}
+          {dv && <div>시연 판정 {dv.level}{dv.reason ? ` — ${dv.reason}` : ''} (실측 판정 대신 사용 중)</div>}
+          {st.last_result && <div>장치 마지막 보고 — {st.last_result}</div>}
+          <div style={{ marginTop: 6, color: COLORS.textSecondary }}>
+            잠그는 근거는 부두별 기상 기준과 그 선석 배의 하역 중 판정(부적합·판정불가)입니다. "주의"는 잠그지 않습니다.
+            잠긴 동안의 하역 개시 요청은 장치가 거부합니다.
+          </div>
+        </HelpTip>
+      </div>
 
       {gate.offline ? (
-        <div style={{ margin: '12px 0', padding: '10px 12px', borderRadius: '8px', background: COLORS.card, color: COLORS.textSecondary, fontSize: '12.5px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <FaPlug /> 게이트 연결 끊김 — 장치 응답이 15초 넘게 없습니다 (전원·Wi-Fi·브로커 확인)
-          {st.interlock && <span style={{ color: COLORS.textDim }}> · 마지막 상태 {st.interlock === 'LOCKED' ? '잠김' : '해제'} / 밸브 {valveOpen ? '열림' : '닫힘'}</span>}
+        <div style={{ margin: '12px 0', display: 'flex', gap: '8px', alignItems: 'center', color: COLORS.textSecondary, fontSize: '14px', fontWeight: 700 }}>
+          <FaPlug /> 연결 끊김
+          <span style={{ fontSize: '12px', fontWeight: 400, color: COLORS.textDim }}>전원 · Wi-Fi · 중계 확인</span>
         </div>
       ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '18px', margin: '12px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', margin: '12px 0 10px' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
             <Lamp on={st.lamp === 'ON'} color={COLORS.red} label="잠금" />
             <Lamp on={st.ok_lamp === 'ON'} color={COLORS.teal} label="열림" />
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: locked ? COLORS.red : COLORS.teal, fontSize: '17px', fontWeight: 800 }}>
-              {locked ? <FaLock /> : <FaLockOpen />} {locked ? '인터락 잠김 — 하역 개시 불가' : '인터락 해제'}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: wordColor, fontSize: '22px', fontWeight: 800, lineHeight: 1.2 }}>
+              {locked ? <FaLock size={18} /> : <FaLockOpen size={18} />} {word}
             </div>
-            <div style={{ fontSize: '12.5px', color: COLORS.textPrimary, marginTop: '5px' }}>
-              밸브 <strong>{valveOpen ? '열림 — 하역 중' : '닫힘'}</strong>
-              {st.last_result && <span style={{ color: COLORS.textSecondary }}> · {st.last_result}</span>}
+            <div style={{ fontSize: '13px', marginTop: '4px', color: locked ? COLORS.red : COLORS.textSecondary, fontWeight: locked ? 700 : 400 }}>
+              {locked ? (reason || '잠금') : `밸브 ${valveOpen ? '열림' : '닫힘'}`}
+              {locked && both && <span style={{ fontWeight: 400 }}> 외 1</span>}
             </div>
-            {locked && reasonKo && (
-              <div style={{ fontSize: '12px', color: COLORS.red, marginTop: '4px' }}>근거: {reasonKo}</div>
-            )}
-            {st.simulate && (
-              <div style={{ fontSize: '11px', color: COLORS.yellow, marginTop: '4px' }}>모의 장치 — 실물 없이 노트북에서 돌고 있습니다</div>
-            )}
           </div>
         </div>
       )}
 
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+        {vessel
+          ? <Chip color={vessel.blocking ? COLORS.red : COLORS.textSecondary}><FaShip size={10} />{vessel.vessel_name || vessel.call_sign} · {vessel.level || '판정 전'}</Chip>
+          : Array.isArray(gate.vessels) && <Chip color={COLORS.textDim}>접안 선박 없음</Chip>}
+        {dv && <Chip color={['부적합', '판정불가'].includes(dv.level) ? COLORS.red : COLORS.yellow} strong>시연 판정 {dv.level}</Chip>}
+        {st.simulate && <Chip color={COLORS.yellow}>모의 장치</Chip>}
+      </div>
+
       {st.denied && !gate.offline && (
-        <div style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: '8px', background: 'rgba(196, 50, 46, 0.10)', border: `1px solid ${COLORS.red}`, color: COLORS.red, fontSize: '12.5px', fontWeight: 700, display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <FaExclamationTriangle /> 요청 거부 — 인터락이 잠긴 상태라 장치가 열지 않았습니다.
+        <div style={{ margin: '0 0 10px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(196, 50, 46, 0.10)', border: `1px solid ${COLORS.red}`, color: COLORS.red, fontSize: '13px', fontWeight: 800, display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <FaExclamationTriangle /> 요청 거부 — 장치가 열지 않음
         </div>
       )}
       {pending && !st.denied && (
         <div style={{ margin: '0 0 10px', fontSize: '12px', color: COLORS.info }}>
-          {pending === 'OPEN' ? '하역 개시 요청' : '하역 중단'} 보냄 — 장치 응답 기다리는 중
+          {pending === 'OPEN' ? '하역 개시 요청' : '하역 중단'} 보냄…
         </div>
       )}
       {error && <div style={{ margin: '0 0 10px', fontSize: '12px', color: COLORS.yellow }}>보내지 못했습니다: {error}</div>}
@@ -128,7 +157,7 @@ function GateCard({ gate, onCommand }) {
           onClick={() => send('OPEN')}
           disabled={gate.offline}
           style={{
-            flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 'bold',
+            flex: 1, padding: '9px', borderRadius: '8px', border: 'none', fontWeight: 'bold',
             cursor: gate.offline ? 'not-allowed' : 'pointer',
             background: gate.offline ? COLORS.card : COLORS.teal, color: gate.offline ? COLORS.textDim : '#FFFFFF',
           }}
@@ -139,7 +168,7 @@ function GateCard({ gate, onCommand }) {
           onClick={() => send('CLOSE')}
           disabled={gate.offline}
           style={{
-            flex: 1, padding: '8px', borderRadius: '8px', border: `1px solid ${COLORS.red}`, fontWeight: 'bold',
+            flex: 1, padding: '9px', borderRadius: '8px', border: `1px solid ${COLORS.red}`, fontWeight: 'bold',
             cursor: gate.offline ? 'not-allowed' : 'pointer', background: 'transparent', color: COLORS.red,
           }}
         >
@@ -155,12 +184,28 @@ function GateCard({ gate, onCommand }) {
 // 시연 판정 보기 — 시스템이 실제로 내는 판정 축(기상·흘수·혼재·근거 부족)에서 골랐다.
 // 기상은 위 풍속·파고로 넣으므로 여기엔 없다. 인접 선석 부적합은 산적 호환성 충돌로 든다 —
 // IMDG 격리표는 선내 적재 규정이라 부두 간 판정에 쓰지 않는다(rule_engine.compute_imdg_berth_adjacency_floor).
+// label 은 화면용 짧은 이름, reason 은 판정 근거로 백엔드에 보내는 문장.
 const VERDICT_PRESETS = [
-  { key: 'fit', level: '적합', reason: '흘수·혼재 모두 기준 안 — 하역 개시 가능' },
-  { key: 'ukc', level: '부적합', reason: '흘수 여유 부족 — 저조 시 가용수심 < 흘수 + 10%' },
-  { key: 'seg', level: '부적합', reason: '인접 선석 화물과 반응 위험 조합(산적 호환성 충돌)' },
-  { key: 'unk', level: '판정불가', reason: '흘수 미신고 — 판단 근거 없음' },
+  { key: 'fit', level: '적합', label: '적합', reason: '흘수·혼재 모두 기준 안 — 하역 개시 가능' },
+  { key: 'ukc', level: '부적합', label: '부적합 · 흘수 여유 부족', reason: '흘수 여유 부족 — 저조 시 가용수심 < 흘수 + 10%' },
+  { key: 'seg', level: '부적합', label: '부적합 · 산적 호환성 충돌', reason: '인접 선석 화물과 반응 위험 조합(산적 호환성 충돌)' },
+  { key: 'unk', level: '판정불가', label: '판정불가 · 흘수 미신고', reason: '흘수 미신고 — 판단 근거 없음' },
 ];
+
+const inputBox = {
+  width: '58px', marginLeft: '4px', padding: '5px 6px', borderRadius: '6px',
+  border: `1px solid ${COLORS.border}`, background: COLORS.card, color: COLORS.textPrimary,
+};
+const selectBox = {
+  padding: '5px 6px', borderRadius: '6px', border: `1px solid ${COLORS.border}`,
+  background: COLORS.card, color: COLORS.textPrimary, fontSize: '12.5px',
+};
+const primaryBtn = { padding: '6px 12px', borderRadius: '8px', border: 'none', background: COLORS.yellow, color: '#FFFFFF', fontWeight: 700, cursor: 'pointer' };
+const ghostBtn = (on) => ({
+  padding: '6px 12px', borderRadius: '8px', border: `1px solid ${COLORS.border}`, background: 'transparent',
+  color: on ? COLORS.textPrimary : COLORS.textDim, fontWeight: 700, cursor: on ? 'pointer' : 'not-allowed',
+});
+const rowLabel = { width: '34px', flexShrink: 0, fontSize: '12.5px', fontWeight: 800, color: COLORS.textSecondary };
 
 function DemoControl({ demo, demoVerdict, gates, onApply, onClear, onVerdict, onVerdictClear }) {
   const [wind, setWind] = useState(demo?.wind_ms ?? 16);
@@ -177,64 +222,67 @@ function DemoControl({ demo, demoVerdict, gates, onApply, onClear, onVerdict, on
   return (
     <div className="sensor-card" style={{ borderLeft: `3px solid ${anyDemo ? COLORS.yellow : COLORS.border}` }}>
       <div className="sensor-card-header">
-        <span className="sensor-id"><FaFlask style={{ marginRight: '6px' }} />시연 입력 — 기상·판정</span>
+        <span className="sensor-id" style={{ display: 'inline-flex', alignItems: 'center' }}>
+          <FaFlask style={{ marginRight: '6px' }} />시연 입력
+          <HelpTip title="시연 입력">
+            <div>시연장에서는 날씨와 판정이 바뀌기를 기다릴 수 없어 값을 넣습니다. <strong>잠금 규칙은 실제와 같고</strong>, 넣은 판정은 판정 기록에 남지 않습니다. 해제하면 실측으로 돌아갑니다.</div>
+            <div style={{ marginTop: 6 }}>판정 보기</div>
+            <ul style={{ margin: '2px 0 0', paddingLeft: 18 }}>
+              {VERDICT_PRESETS.map((p) => <li key={p.key}>{p.label} — {p.reason}</li>)}
+            </ul>
+          </HelpTip>
+        </span>
         {anyDemo && (
           <span style={{ fontSize: '11px', fontWeight: 800, color: '#FFFFFF', background: COLORS.yellow, padding: '2px 8px', borderRadius: '999px' }}>
             시연 입력 중
           </span>
         )}
       </div>
-      <div style={{ fontSize: '12px', color: COLORS.textSecondary, margin: '8px 0 10px', lineHeight: 1.5 }}>
-        {demo
-          ? `지금 판정은 주입값(풍속 ${demo.wind_ms ?? '실측'} m/s · 파고 ${demo.wave_m ?? '실측'} m)으로 돌고 있습니다. 판정 규칙은 실제와 같습니다.`
-          : '해제 상태 — 판정은 실측(기상·파고 관측)으로 돕니다.'}
-      </div>
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <label style={{ fontSize: '12px', color: COLORS.textSecondary }}>
-          풍속 <input type="number" step="1" min="0" max="60" value={wind} onChange={(e) => setWind(Number(e.target.value))}
-            style={{ width: '64px', marginLeft: '4px', padding: '4px 6px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, background: COLORS.card, color: COLORS.textPrimary }} /> m/s
+
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '12px' }}>
+        <span style={rowLabel}>기상</span>
+        <label style={{ fontSize: '12.5px', color: COLORS.textSecondary }}>
+          풍속<input type="number" step="1" min="0" max="60" value={wind} onChange={(e) => setWind(Number(e.target.value))} style={inputBox} />
         </label>
-        <label style={{ fontSize: '12px', color: COLORS.textSecondary }}>
-          파고 <input type="number" step="0.1" min="0" max="15" value={wave} onChange={(e) => setWave(Number(e.target.value))}
-            style={{ width: '64px', marginLeft: '4px', padding: '4px 6px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, background: COLORS.card, color: COLORS.textPrimary }} /> m
+        <label style={{ fontSize: '12.5px', color: COLORS.textSecondary }}>
+          파고<input type="number" step="0.1" min="0" max="15" value={wave} onChange={(e) => setWave(Number(e.target.value))} style={inputBox} />
         </label>
-        <button disabled={busy} onClick={() => run(() => onApply({ wind_ms: wind, wave_m: wave }))}
-          style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: COLORS.yellow, color: '#FFFFFF', fontWeight: 700, cursor: 'pointer' }}>
-          적용
-        </button>
-        <button disabled={busy || !demo} onClick={() => run(onClear)}
-          style={{ padding: '6px 12px', borderRadius: '8px', border: `1px solid ${COLORS.border}`, background: 'transparent', color: demo ? COLORS.textPrimary : COLORS.textDim, fontWeight: 700, cursor: demo ? 'pointer' : 'not-allowed' }}>
-          해제 (실측으로)
-        </button>
+        <button disabled={busy} onClick={() => run(() => onApply({ wind_ms: wind, wave_m: wave }))} style={primaryBtn}>적용</button>
+        <button disabled={busy || !demo} onClick={() => run(onClear)} style={ghostBtn(Boolean(demo))}>해제 (실측으로)</button>
       </div>
-      <div style={{ borderTop: `1px solid ${COLORS.border}`, marginTop: '12px', paddingTop: '10px' }}>
-        <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginBottom: '8px', lineHeight: 1.5 }}>
-          하역중 판정 — 실제로는 판정 감시가 정하는 값입니다. 부적합·판정불가면 게이트가 잠깁니다(규칙은 실제와 같고, 판정 기록엔 남지 않습니다).
-        </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <select value={vGate} onChange={(e) => setVGate(e.target.value)}
-            style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, background: COLORS.card, color: COLORS.textPrimary, fontSize: '12px' }}>
-            {(gates || []).map((g) => <option key={g.gate_id} value={g.gate_id}>{g.label} · {g.berth}</option>)}
-          </select>
-          <select value={vKey} onChange={(e) => setVKey(e.target.value)}
-            style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, background: COLORS.card, color: COLORS.textPrimary, fontSize: '12px', maxWidth: '100%' }}>
-            {VERDICT_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.level} — {p.reason}</option>)}
-          </select>
-          <button disabled={busy} onClick={() => {
-            const p = VERDICT_PRESETS.find((x) => x.key === vKey);
-            run(() => onVerdict({ gate_id: vGate, level: p.level, reason: p.reason }));
-          }}
-            style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', background: COLORS.yellow, color: '#FFFFFF', fontWeight: 700, cursor: 'pointer' }}>
-            판정 적용
-          </button>
-          <button disabled={busy || !demoVerdict} onClick={() => run(() => onVerdictClear(null))}
-            style={{ padding: '6px 12px', borderRadius: '8px', border: `1px solid ${COLORS.border}`, background: 'transparent', color: demoVerdict ? COLORS.textPrimary : COLORS.textDim, fontWeight: 700, cursor: demoVerdict ? 'pointer' : 'not-allowed' }}>
-            실측 판정으로
-          </button>
-        </div>
+      <div style={{ fontSize: '11.5px', color: demo ? COLORS.yellow : COLORS.textDim, margin: '4px 0 0 42px' }}>
+        {demo ? `주입 중 — 풍속 ${demo.wind_ms ?? '실측'} · 파고 ${demo.wave_m ?? '실측'}` : '실측 기상'}
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${COLORS.border}` }}>
+        <span style={rowLabel}>판정</span>
+        <select value={vGate} onChange={(e) => setVGate(e.target.value)} style={selectBox} aria-label="선석">
+          {(gates || []).map((g) => <option key={g.gate_id} value={g.gate_id}>{g.label}</option>)}
+        </select>
+        <select value={vKey} onChange={(e) => setVKey(e.target.value)} style={selectBox} aria-label="판정">
+          {VERDICT_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+        </select>
+        <button disabled={busy} onClick={() => {
+          const p = VERDICT_PRESETS.find((x) => x.key === vKey);
+          run(() => onVerdict({ gate_id: vGate, level: p.level, reason: p.reason }));
+        }} style={primaryBtn}>
+          판정 적용
+        </button>
+        <button disabled={busy || !demoVerdict} onClick={() => run(() => onVerdictClear(null))} style={ghostBtn(Boolean(demoVerdict))}>
+          실측 판정으로
+        </button>
       </div>
       {error && <div style={{ marginTop: '6px', fontSize: '12px', color: COLORS.red }}>{error}</div>}
     </div>
+  );
+}
+
+function ConnChip({ ok, warn, label }) {
+  const color = ok ? COLORS.teal : warn ? COLORS.yellow : COLORS.red;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />{label}
+    </span>
   );
 }
 
@@ -243,20 +291,25 @@ export default function HardwarePanel() {
     snapshot, wsState, sendGateCommand, setDemoWeather, clearDemoWeather, setDemoVerdict, clearDemoVerdict,
   } = useHardwareData();
   const broker = snapshot?.broker;
+  const serverOk = wsState === 'open' || wsState === 'polling';
 
   return (
     <>
-      <h3 style={{ fontSize: '16px', margin: '24px 0 6px', color: 'var(--teal)' }}>
-        하역 개시 인터락 — 선석 A·B 게이트 (실물)
-      </h3>
-      <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginBottom: '14px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-        <span>화면 ↔ 관제 서버: <strong style={{ color: (wsState === 'open' || wsState === 'polling') ? COLORS.teal : COLORS.yellow }}>{wsState === 'open' ? '연결됨' : wsState === 'polling' ? '연결됨 (1초 조회)' : wsState === 'connecting' ? '연결 중' : '끊김 — 다시 연결 중'}</strong></span>
-        {broker && (
-          <span>관제 서버 ↔ 장치 중계: <strong style={{ color: broker.connected ? COLORS.teal : COLORS.red }}>{broker.connected ? '연결됨' : '끊김'}</strong>
-            {!broker.connected && <span style={{ color: COLORS.textDim }}> (브로커가 꺼져 있습니다)</span>}
-          </span>
-        )}
-        <span style={{ color: COLORS.textDim }}>잠긴 동안의 열기 요청은 장치가 거부합니다 — 화면은 판단하지 않습니다</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', margin: '24px 0 14px' }}>
+        <h3 style={{ fontSize: '16px', margin: 0, color: 'var(--teal)', display: 'inline-flex', alignItems: 'center' }}>
+          하역 개시 인터락 — 선석 A·B (실물)
+          <HelpTip title="하역 개시 인터락">
+            <div>선석 A·B 게이트는 실물(라즈베리파이 · 릴레이 · 12V 상시닫힘 밸브)입니다.</div>
+            <div style={{ marginTop: 4 }}>관제 서버가 부두별 기상 기준과 그 선석에 붙은 배의 하역 중 판정으로 잠금을 정해 장치에 보냅니다. 잠긴 동안의 하역 개시 요청은 <strong>장치가 거부</strong>하고, 화면은 결과만 보여 줍니다.</div>
+            <div style={{ marginTop: 4 }}>판정을 받기 전이나 통신이 끊긴 뒤에는 열지 않으며, 전원이 끊기면 밸브가 닫힙니다.</div>
+            <div style={{ marginTop: 6, color: COLORS.textSecondary }}>
+              화면 ↔ 관제 서버: {wsState === 'open' ? '연결됨' : wsState === 'polling' ? '연결됨 (1초 조회)' : wsState === 'connecting' ? '연결 중' : '끊김'}
+              {broker && <> · 관제 서버 ↔ 장치 중계: {broker.connected ? '연결됨' : '끊김(중계 꺼짐)'}</>}
+            </div>
+          </HelpTip>
+        </h3>
+        <ConnChip ok={serverOk} warn={wsState === 'connecting'} label={serverOk ? '서버 연결' : wsState === 'connecting' ? '서버 연결 중' : '서버 끊김'} />
+        {broker && <ConnChip ok={broker.connected} label={broker.connected ? '장치 중계 연결' : '장치 중계 끊김'} />}
       </div>
 
       {!snapshot ? (

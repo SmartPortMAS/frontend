@@ -103,6 +103,15 @@ const useSensorStore = create((set, get) => ({
   // 트윈 화면이 요청을 처리하면 비운다 — 남겨 두면 다음에 화면을 열 때마다 같은 지목을 다시 보낸다
   clearOmniverseRequest: () => set({ omniverseRequest: null }),
 
+  // 3D 관제 화면 안 "앞으로 72시간" 판정 흐름(2026-09-27) — 정보창·연결 바가 요청한다.
+  // Omniverse 지목과 같은 모양({berth, berthId, call_sign, vessel_name})이지만 Kit 없이 이 화면이 그린다.
+  outlookRequest: null,
+  requestOutlook: (focus) => set({ outlookRequest: { ...(focus || {}), at: Date.now() } }),
+  clearOutlookRequest: () => set({ outlookRequest: null }),
+  // 시간축 커서가 가리키는 시각의 판정 — Port 가 그 선석의 색·라벨을 이 값으로 바꾼다.
+  outlookPreview: null,
+  setOutlookPreview: (v) => set({ outlookPreview: v }),
+
   // 경고 → 안전 심사 연결. 경고 카드에서 선석을 고르면 그 경고의 내용이 여기 담기고,
   // 안전 심사 폼(SafetyGatesPanel)이 받아서 폼을 채운다.
   //

@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Scene from '../components/three/Scene';
-import { findBerthIdByName } from '../utils/geoUtils';
+import { findBerthIdByName, ONSAN_BERTHS, ONSAN_BERTHS_3D, OMNIVERSE_BERTH_IDS } from '../utils/geoUtils';
+import HelpTip from '../components/common/HelpTip';
 import PortMap from '../components/dashboard/PortMap';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import RadarMap from '../components/three/hud/RadarMap';
 import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import BerthStatusBar from '../components/three/hud/BerthStatusBar';
+import OutlookTimeline from '../components/three/hud/OutlookTimeline';
 import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
 import { BACKEND_BASE, postTwinFocus } from '../api/backendAdapter';
-import { FaMap, FaPlay, FaForward, FaFastForward, FaExclamationTriangle } from 'react-icons/fa';
+import { FaMap, FaPlay, FaExclamationTriangle, FaArrowRight } from 'react-icons/fa';
 import { alertSubject, levelStyle, typeLabel } from '../utils/alertUtils';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
@@ -41,6 +43,8 @@ export default function DigitalTwinPage() {
   // 그때 "빨간 링이 대상 선석"이라고 안내하면 있지도 않은 링을 찾게 만든다.
   const focusInScene = focusBerth ? Boolean(findBerthIdByName(focusBerth)) : false;
   const wantOmniverse = searchParams.get('omniverse') === '1';
+  //   ?outlook=OTK 1부두   → 그 선석의 "앞으로 72시간" 판정 흐름을 바로 연다 (시연 영상·캡처용)
+  const wantOutlook = searchParams.get('outlook') || null;
 
   // 상단 띠에 흘릴 실경고 — 심각한 것부터 최대 6건. 화면 폭이 한정돼 있어
   // 전부 흘리면 한 바퀴가 너무 길어진다(현재 36건).
@@ -85,8 +89,56 @@ export default function DigitalTwinPage() {
     }
     setStreamStatus('unreachable');
   };
-  const predictionOffset = useSensorStore(state => state.predictionOffset);
-  const setPredictionOffset = useSensorStore(state => state.setPredictionOffset);
+  // 3D 화면에서 고른 배·선석 → 정밀 검토 지목 (InfoPopup 의 [정밀 검토] 버튼과 같은 규칙).
+  // 장면에는 온산 액체화물 부두 11곳만 있어 그 밖의 선석은 지목할 수 없다.
+  const selectedObject = useSensorStore((s) => s.selectedObject);
+  const focusFromSelection = (obj) => {
+    if (!obj) return null;
+    const type = obj.type;
+    const berthId = type === 'Ship' ? obj.berth : type === 'Berth' ? obj.id : null;
+    // 이 3D 장면에 있는 선석만 — 장면 밖(가스부두·SK 등)은 색을 바꿀 자리가 없다.
+    if (!berthId || !ONSAN_BERTHS_3D[berthId]) return null;
+    const berthName = type === 'Ship' ? (obj.berth_name || ONSAN_BERTHS[obj.berth]?.name) : ONSAN_BERTHS[obj.id]?.name;
+    if (!berthName) return null;
+    return {
+      berth: berthName,
+      berthId,
+      call_sign: type === 'Ship' ? (obj.callsgn || null) : null,
+      vessel_name: type === 'Ship' ? obj.id : null,
+      // Omniverse 장면(11곳)에도 있는 선석이면 보조로 Omniverse 도 볼 수 있다
+      omniOk: OMNIVERSE_BERTH_IDS.has(berthId),
+    };
+  };
+  const selectionFocus = focusFromSelection(selectedObject);
+  const selectionLabel = selectedObject
+    ? (selectedObject.type === 'Ship' ? selectedObject.id : ONSAN_BERTHS[selectedObject.id]?.name || selectedObject.id)
+    : null;
+  const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
+
+  // ── 앞으로 72시간 — 이 화면 안의 판정 흐름 (2026-09-27) ────────────────────
+  // 정보창·연결 바·?outlook= 에서 요청한다. 열리면 카메라가 그 선석으로 가고(BerthFocus, 링은 끔),
+  // 시간축 커서에 따라 Port 가 선석 색·라벨을 바꾼다. Omniverse 는 보조("Omniverse 로 보기").
+  const [outlookFocus, setOutlookFocus] = useState(null);
+  const outlookRequest = useSensorStore((s) => s.outlookRequest);
+  const clearOutlookRequest = useSensorStore((s) => s.clearOutlookRequest);
+  useEffect(() => {
+    if (!outlookRequest) return;
+    const { at, ...focus } = outlookRequest;   // eslint-disable-line no-unused-vars
+    setShowOmniverseStream(false);
+    setShowMap(false);
+    setOutlookFocus(focus);
+    clearOutlookRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outlookRequest?.at]);
+  useEffect(() => {
+    if (!wantOutlook) return;
+    const id = findBerthIdByName(wantOutlook);
+    if (id && ONSAN_BERTHS_3D[id]) {
+      setOutlookFocus({ berth: ONSAN_BERTHS[id].name, berthId: id, call_sign: null, vessel_name: null, omniOk: OMNIVERSE_BERTH_IDS.has(id) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantOutlook]);
+
   
 
   // 선박 상세의 계류 물리 검증에서 '정밀 검토'로 넘어온 경우 바로 켠다.
@@ -150,11 +202,11 @@ export default function DigitalTwinPage() {
 
   return (
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-      <Scene focusBerth={focusBerth} />
+      <Scene focusBerth={outlookFocus ? outlookFocus.berth : focusBerth} focusRings={!outlookFocus} />
 
       {/* 어느 선석을 보러 왔는지 알려준다.
           카메라만 옮기면 사용자는 '왜 여기가 비춰지는지' 모른다. */}
-      {focusBerth && !showOmniverseStream && (
+      {focusBerth && !showOmniverseStream && !outlookFocus && (
         <div style={{
           position: 'absolute', top: 46, left: '50%', transform: 'translateX(-50%)',
           zIndex: 840, display: 'flex', alignItems: 'center', gap: '10px',
@@ -242,12 +294,13 @@ export default function DigitalTwinPage() {
           className="action-btn"
           onClick={() => {
             const next = !showOmniverseStream;
+            if (next && selectionFocus?.omniOk) { requestOmniverse(selectionFocus); return; }
             setShowOmniverseStream(next);
             if (next) checkStream();
           }}
           style={{ 
             padding: '10px 16px', background: showOmniverseStream ? 'rgba(16, 185, 129, 0.8)' : 'rgba(15, 23, 42, 0.8)', 
-            backdropFilter: 'blur(10px)', color: showOmniverseStream ? '#fff' : '#10b981', border: '1px solid rgba(16, 185, 129, 0.5)',
+            backdropFilter: 'blur(10px)', color: showOmniverseStream ? '#fff' : '#94a3b8', border: '1px solid rgba(148, 163, 184, 0.45)',
             borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold'
           }}
         >
@@ -255,7 +308,9 @@ export default function DigitalTwinPage() {
               바로 위 3D 화면도 실시간이라, 예전 문구로는 두 화면이 무엇이 다른지
               알 수 없었다(2026-09-03 IA 정리). 목적(정밀 검토)과 대가(기동 시간)를
               문구에 함께 담아 사용자가 누를지 말지 판단할 수 있게 한다. */}
-          <FaPlay /> {showOmniverseStream ? '정밀 검토 닫기' : '정밀 검토 (Omniverse · 기동 1~2분)'}
+          {/* [2026-09-27] 보조 버튼으로 내렸다 — 72시간 판정 흐름은 이 화면 안(OutlookTimeline)이 기본이고,
+              Omniverse 는 장면이 달라 이어지지 않는 데다 시연 PC 를 발열로 끈다. 고사양 PC 에서만 켠다. */}
+          <FaPlay /> {showOmniverseStream ? 'Omniverse 닫기' : 'Omniverse (고사양 PC · 기동 1~2분)'}
         </button>
 
         <button 
@@ -290,10 +345,13 @@ export default function DigitalTwinPage() {
                 : '순환 재생'}
             </span>
             <span style={{ color: '#94a3b8' }}>
-              {omniFocus
-                ? '— 앞으로 72시간 (기상청 단기예보 · 국립해양조사원 조석예보 · 판정 규칙 그대로)'
-                : '— 조감 → 과거 사례 · 3D 관제 화면에서 배나 선석을 누르면 그곳을 봅니다'}
+              {omniFocus ? '· 앞으로 72시간' : '· 지목 없음 — 3D 화면에서 배나 선석을 누르세요'}
             </span>
+            <HelpTip title="정밀 검토">
+              <div>지목한 선석의 <strong>앞으로 72시간</strong>을 기상청 단기예보 · 국립해양조사원 조석예보로 한 시각씩 판정합니다. 판정 규칙은 관제 화면과 같습니다.</div>
+              <div style={{ marginTop: 4 }}>지목이 없으면 조감 → 과거 사례를 순환합니다. 3D 관제 화면에서 배나 선석을 누르고 [Omniverse 로 보기]를 누르면 그곳을 봅니다. 시연 PC 에서는 발열 때문에 이 화면 안의 [앞으로 72시간 판정 흐름]을 씁니다.</div>
+              <div style={{ marginTop: 4 }}>선박 이동·하역 진행은 예측 근거(유량계·소요시간 모델)가 없어 재현하지 않습니다.</div>
+            </HelpTip>
             {replayCases.map((r) => (
               <button
                 key={r.id}
@@ -412,60 +470,53 @@ export default function DigitalTwinPage() {
       {/* 선박 상세 패널 (2D 지도 마커 클릭 시) */}
       <VesselDetailPanel />
 
-      {/* Time Travel Slider with Media Controls — 스트리밍 중에는 숨김 */}
-      {!showOmniverseStream && (
-      <div className="time-slider-container" style={{ 
-        position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)', 
-        width: '600px', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(10px)',
-        padding: '16px 24px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)',
-        display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 1000 
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {/* [2026-09-24] 시간 재생은 자리만 둔다. 예전 오토플레이는 접안 4시간 뒤 출항 같은
-                미래 이동을 지어내 재생했다 — 실측이 아닌 것을 실측처럼 보이게 하지 않는다.
-                선박위치 이력(upa_vessel_position)을 되감는 기능으로 바꿀 때 이 자리를 쓴다.
-                앞으로의 기상·조위는 정밀 검토(Omniverse)가 예보로 보여준다. */}
-            <button type="button" disabled title="위치 이력 되감기 — 연결 예정" style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 12px', cursor: 'not-allowed', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <FaPlay /> 시간 재생
-            </button>
-            <button type="button" disabled style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'not-allowed' }}>1x</button>
-            <button type="button" disabled style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'not-allowed' }}><FaForward /></button>
-            <button type="button" disabled style={{ background: '#334155', color: '#94a3b8', border: 'none', borderRadius: '4px', padding: '6px 10px', cursor: 'not-allowed' }}><FaFastForward /></button>
-          </div>
+      {/* 앞으로 72시간 — 이 화면 안의 판정 흐름. 2D 지도·Omniverse 위에는 띄우지 않는다 */}
+      {outlookFocus && !showOmniverseStream && !showMap && (
+        <OutlookTimeline
+          focus={outlookFocus}
+          onClose={() => setOutlookFocus(null)}
+          onOmniverse={outlookFocus.omniOk ? () => requestOmniverse(outlookFocus) : null}
+        />
+      )}
 
-          <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 'bold' }}>
-            실시간 관제 중 <span style={{ color: '#94a3b8', fontWeight: 'normal', fontSize: '11.5px' }}>· 되감기는 위치 이력 연결 뒤 제공</span>
+      {/* 시간축 — 지금(이 화면, 실측) ↔ 앞으로 72시간(예보). 스트리밍·판정 흐름 중에는 숨김.
+          [2026-09-24] 예전 재생 슬라이더는 미래 이동을 지어내 재생해 껐다(실측이 아닌 것을 실측처럼 보이지 않게).
+          [2026-09-27] 빈 슬라이더 대신 두 화면을 잇는 한 줄로. 밤에 다시: 앞으로 72시간도 이 화면 안에서(OutlookTimeline) — Omniverse 는 보조.
+          위치 이력 되감기는 이력 연결 뒤 이 자리에 붙인다. */}
+      {!showOmniverseStream && !outlookFocus && (
+      <div className="time-slider-container" style={{
+        position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)',
+        width: '640px', maxWidth: 'calc(100% - 40px)', background: 'rgba(15, 23, 42, 0.82)', backdropFilter: 'blur(10px)',
+        padding: '12px 18px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)',
+        display: 'flex', alignItems: 'center', gap: '14px', zIndex: 1000,
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
+          <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 800 }}>● 지금</span>
+          <span style={{ color: '#94a3b8', fontSize: '11px' }}>실측 · 이 화면</span>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          <div style={{ flex: 1, height: '3px', background: 'linear-gradient(90deg, #10b981, #38bdf8)', borderRadius: '2px' }} />
+          <FaArrowRight color="#38bdf8" size={12} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0, alignItems: 'flex-end' }}>
+          <button
+            type="button"
+            disabled={!selectionFocus}
+            onClick={() => { if (selectionFocus) setOutlookFocus(selectionFocus); }}
+            title={selectionFocus ? `${selectionLabel} 의 앞으로 72시간 판정을 이 화면에서 봅니다` : '배나 선석을 고른 뒤 누르면 그곳의 앞으로 72시간을 봅니다'}
+            style={{
+              background: 'rgba(56, 189, 248, 0.16)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.55)',
+              borderRadius: '6px', padding: '6px 12px', cursor: selectionFocus ? 'pointer' : 'not-allowed', opacity: selectionFocus ? 1 : 0.6,
+              fontWeight: 800, fontSize: '13px', whiteSpace: 'nowrap',
+            }}
+          >
+            앞으로 72시간 판정 흐름{selectionFocus ? ` (${selectionLabel})` : ''}
+          </button>
+          <span style={{ color: '#64748b', fontSize: '10.5px' }}>
+            {selectedObject && !selectionFocus ? '이 대상은 장면 밖 — 온산 부두의 배·선석을 고르세요'
+              : selectionFocus ? '이 화면 안에서 · 선석 색이 시각마다 바뀝니다' : '배나 선석을 먼저 고르세요 · 위치 이력 되감기는 예정'}
           </span>
         </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '11px', marginTop: '-4px' }}>
-          <span>지금 (실측)</span>
-          <span>이력 되감기 — 예정</span>
-        </div>
-
-        {/* 슬라이더를 밀면 실AIS 선박이 움직인다. 무엇이 실측이고 무엇이 연출인지
-            밝혀 둔다 — 하역 소요시간 예측 모델은 아직 없다. 현재 위치·상태는 실측이고,
-            미래 이동(접안→출항)은 시나리오 애니메이션이다. */}
-        {predictionOffset > 0 && (
-          <div style={{
-            fontSize: '11px', color: '#fbbf24', background: 'rgba(251,191,36,0.10)',
-            border: '1px solid rgba(251,191,36,0.35)', borderRadius: '6px',
-            padding: '6px 10px', lineHeight: 1.5, marginTop: '-2px',
-          }}>
-            ※ 선박의 <strong>현재 위치·항해상태는 실측(AIS)</strong>이지만, 미래 이동은
-            데모 시나리오입니다 — 하역 소요시간 예측 모델은 아직 없습니다.
-            일조/조명 변화만 시각 기준으로 실제 반영됩니다.
-          </div>
-        )}
-        
-        <input
-          type="range" min="0" max="720" step="10" disabled
-          value={predictionOffset}
-          readOnly
-          title="위치 이력 되감기 — 연결 예정"
-          style={{ width: '100%', cursor: 'not-allowed', accentColor: '#64748b' }}
-        />
       </div>
       )}
     </div>
