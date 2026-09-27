@@ -213,7 +213,7 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ color: '#38bdf8' }}>●</span>
         <strong style={{ fontSize: 14 }}>{focus.berth}{focus.vessel_name ? ` · ${focus.vessel_name}` : ''}</strong>
-        <span style={{ fontWeight: 800, color: '#38bdf8' }}>앞으로 72시간</span>
+        <span style={{ fontWeight: 800, color: '#38bdf8' }}>앞으로 {data ? spanH : 72}시간</span>
         <HelpTip title="앞으로 72시간">
           <div>이 선석의 <strong>앞으로 72시간</strong>을 기상청 단기예보 · 국립해양조사원 조석예보로 한 시각씩 판정합니다. 판정 규칙은 관제 화면과 같습니다.</div>
           <div style={{ marginTop: 4 }}>시간축을 누르거나 재생하면 3D 화면의 선석 색과 라벨이 그 시각의 판정으로 바뀝니다. 빨간 선이 첫 변화입니다.</div>
@@ -279,7 +279,7 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
                 {pts.map((p, i) => (i % 12 === 0 ? (
                   <span key={p.at_utc} style={{ position: 'absolute', left: `${(i / n) * 100}%`, whiteSpace: 'nowrap' }}>{tickLabel(p.at_utc)}</span>
                 ) : null))}
-                <span style={{ position: 'absolute', right: 0 }}>+{n}시간</span>
+                <span style={{ position: 'absolute', right: 0 }}>+{spanH}시간</span>
                 {firstIdx != null && (
                   <span style={{ position: 'absolute', left: `${(firstIdx / n) * 100}%`, top: -30, transform: 'translateX(-50%)', color: '#ff8a80', fontWeight: 800, whiteSpace: 'nowrap', fontSize: 11 }}>첫 변화</span>
                 )}
