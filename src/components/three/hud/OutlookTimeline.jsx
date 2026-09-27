@@ -162,7 +162,7 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
   const nowBlocked = Boolean(cur?.level) && cur.level !== '적합';
   let summary = first
     ? `첫 변화 ${whenLabel(first.at_utc)} — ${first.headline || first.status}`
-    : `예보로는 앞으로 ${n}시간 하역이 막히지 않음`;
+    : `예보로는 앞으로 ${spanH}시간 하역이 막히지 않음`;
   if (nowBlocked) summary = `지금은 실측으로 ${cur.headline || cur.status} · ${summary}`;
   const waveNow = nowBlocked && (cur.reasons || []).some((r) => /파고/.test(r) && />=/.test(r));
   const sources = data
@@ -276,7 +276,8 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
                 )}
               </div>
               <div style={{ position: 'relative', height: 14, fontSize: 10.5, color: '#aab8be' }}>
-                {pts.map((p, i) => (i % 12 === 0 ? (
+                {/* 눈금은 12점마다. 오른쪽 끝 "+N시간"과 겹치는 마지막 눈금(90% 이후)은 뺀다 */}
+                {pts.map((p, i) => (i % 12 === 0 && i / n < 0.9 ? (
                   <span key={p.at_utc} style={{ position: 'absolute', left: `${(i / n) * 100}%`, whiteSpace: 'nowrap' }}>{tickLabel(p.at_utc)}</span>
                 ) : null))}
                 <span style={{ position: 'absolute', right: 0 }}>+{spanH}시간</span>
