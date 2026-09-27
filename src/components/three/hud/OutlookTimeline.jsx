@@ -73,6 +73,9 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
 
   const pts = useMemo(() => data?.forecast ?? [], [data]);
   const n = pts.length;
+  // 예보 점 수 ≠ 시간 수 — 기상청 단기예보는 뒤로 갈수록 3시간 간격이라 66점이 72시간을 덮기도 한다.
+  // 띠 오른쪽 끝과 머리말은 마지막 점의 시각으로 말한다(9/27 캡처: "+66시간"과 "72시간"이 나란히 떠 어긋나 보였다).
+  const spanH = n ? Math.max(1, offsetHours(pts[n - 1].at_utc)) : 72;
   const firstIdx = useMemo(() => {
     const f = data?.first_change;
     if (!f) return null;

@@ -61,7 +61,9 @@ export default function DashboardPage() {
     const t = setInterval(load, 60000);
     return () => { alive = false; clearInterval(t); };
   }, []);
-  const onsanBerthRows = (berthRows ?? []).filter((b) => b.port_name === '온산항');
+  // 좌표 있는 선석만 — 선박 판정 화면의 지도가 세는 것("선석 12개")과 같은 범위. 좌표 없는 3곳(부이·돌핀)을
+  // 여기서만 더 세면 "15곳 중" vs "12개"로 또 어긋난다(9/27 캡처).
+  const onsanBerthRows = (berthRows ?? []).filter((b) => b.port_name === '온산항' && b.latitude != null);
   const occupiedBerths = onsanBerthRows.filter((b) => (b.slots || []).some((s) => s.call_sign)).length;
 
   return (
