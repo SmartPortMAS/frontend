@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import BerthAssignmentMap from '../components/dashboard/BerthAssignmentMap';
-import { fetchBerthAssignments } from '../api/backendAdapter';
-import { COLORS } from '../utils/constants';
-import { cargoSummary } from '../utils/cargoText';
-import useSensorStore from '../stores/useSensorStore';
+import { fetchBerthAssignments } from '../../api/backendAdapter';
+import { COLORS } from '../../utils/constants';
+import { cargoSummary } from '../../utils/cargoText';
+import HelpTip from '../common/HelpTip';
+import useSensorStore from '../../stores/useSensorStore';
 
 function formatKST(iso) {
   return new Date(iso).toLocaleString('ko-KR', { hour12: false, timeZone: 'Asia/Seoul' });
@@ -83,7 +83,8 @@ function overdueDays(row) {
 // 것과 같은 이유다. 이 목록도 지도와 같은 질문("지금 뭐가 배정돼 있나")에
 // 맞춰 GET /dashboard/berth-assignments 기준 점유 목록으로 바꿨다.
 
-function OccupiedList({ scope }) {
+// [2026-09-27] 선석 현황 페이지의 목록을 부품으로 떼어 선박 판정 화면(붙어 있는 배)에 붙였다.
+export default function BerthOccupiedList({ scope }) {
   const [berths, setBerths] = useState([]);
   const [error, setError] = useState(null);
 
@@ -129,7 +130,13 @@ function OccupiedList({ scope }) {
   return (
     <div className="glass-card">
       <div className="glass-card-header">
-        <h3 className="glass-card-title">선석 점유 목록 ({rows.length}건)</h3>
+        <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
+          선석 점유 목록 ({rows.length}건)
+          <HelpTip title="선석 점유 목록">
+            지금 선석에 붙어 있는 배(항만공사 선박위치 기준)입니다. 판정 칸은 이 배의 최근 판정 등급, 확인자는 그 판정을 본 관제사입니다.
+            판정이 아직 없으면 [판단 과정 →]로 우하단 에이전트 판단 과정이 이 배로 열립니다.
+          </HelpTip>
+        </h3>
       </div>
       {error && <p style={{ color: COLORS.red, fontSize: '13px' }}>{error}</p>}
       {rows.length === 0 ? (
@@ -182,14 +189,14 @@ function OccupiedList({ scope }) {
                         chem_id: row.cargo_chem_id,
                         name: row.cargo_name,
                       })}
-                      title={`${row.vessel_name || row.call_sign} 을(를) 판단 과정 로그에서 판정`}
+                      title={`${row.vessel_name || row.call_sign} 을(를) 우하단 에이전트 판단 과정에서 판정 — 입항 예정 표의 [판정 요청]과 달리 판단 과정을 보면서 기록합니다`}
                       style={{
                         border: `1px solid ${COLORS.yellow}`, background: 'transparent',
                         color: COLORS.yellow, borderRadius: '6px', padding: '2px 8px',
                         fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
                       }}
                     >
-                      판정 전 — 판단 과정 로그 →
+                      판단 과정 →
                     </button>
                   ) : (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -218,27 +225,6 @@ function OccupiedList({ scope }) {
           </tbody>
         </table>
       )}
-    </div>
-  );
-}
-
-export default function BerthAssignmentPage() {
-  // 기본 스코프는 온산항 — 이 시스템의 관제 대상(2026-08-23 피드백)
-  const [scope, setScope] = useState('onsan');
-  return (
-    <div className="dashboard-page">
-      <div className="glass-card dash-section">
-        <div className="glass-card-header">
-          <h3 className="glass-card-title">선석 배정현황</h3>
-        </div>
-        <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
-          <BerthAssignmentMap scope={scope} onScopeChange={setScope} />
-        </div>
-      </div>
-
-      <div className="dash-section">
-        <OccupiedList scope={scope} />
-      </div>
     </div>
   );
 }

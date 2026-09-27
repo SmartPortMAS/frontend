@@ -102,7 +102,7 @@ export default function BerthWeatherPanel() {
     >
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 className="glass-card-title"><FaAnchor style={{ marginRight: '8px', color: COLORS.teal }} />선석별 하역 가능 판정<AgentChip agent="weather" /></h3>
-        <span style={{ fontSize: '12px', color: COLORS.textDim }}>터미널 입항정보 9.8 실측 임계 · 정상→하역중단→이안→호스분리 4단계</span>
+        <span style={{ fontSize: '12px', color: COLORS.textDim }}>부두그룹별 실측 기준 · 정상 → 하역중단 → 이안 → 호스분리 4단계</span>
       </div>
 
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '16px' }}>
@@ -124,14 +124,17 @@ export default function BerthWeatherPanel() {
             onChange={(e) => setWindSpeed(e.target.value)} style={disabledInputStyle} />
         </label>
         )}
+        {/* 파고도 풍속과 같은 폴백 입력 — 백엔드가 붙어 있을 때 이 칸만 남아 있어
+            "값을 바꿔도 판정이 안 바뀐다"고 오해를 샀다(2026-09-26 캡처). */}
+        {!usingBackend && (
         <label
           style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: COLORS.textSecondary }}
-          title={usingBackend ? '서버가 DB 실측 관측치로 직접 판정 중 — 이 입력은 백엔드 미응답(폴백) 시에만 사용됩니다' : undefined}
         >
           파고 (m)
-          <input type="number" step="0.1" value={waveHeight} disabled={usingBackend}
+          <input type="number" step="0.1" value={waveHeight}
             onChange={(e) => setWaveHeight(e.target.value)} style={disabledInputStyle} />
         </label>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12.5px' }}>
           <label style={{
             display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer',
@@ -213,7 +216,7 @@ export default function BerthWeatherPanel() {
             <div style={{ fontSize: '11px', color: COLORS.textDim }}>
               {verdict.is_local_fallback
                 ? '※ 관측값을 받지 못해 위 입력값으로 계산한 결과입니다'
-                : '※ 실측 관측값으로 판정했습니다 (위 입력칸은 참고용)'}
+                : '※ 실측 관측값으로 판정했습니다'}
             </div>
             {verdict.forecast_warning && (
               <div style={{ fontSize: '13px', color: COLORS.yellow, display: 'flex', gap: '6px', alignItems: 'center' }}>

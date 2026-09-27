@@ -21,7 +21,8 @@ const FOCUS_BACK = 120;       // 선석에서 물러나는 거리
 const EASE = 0.06;            // 카메라 이동 감쇠 (1에 가까울수록 즉시)
 const SNAP_DIST = 1.2;        // 이만큼 가까워지면 이동을 끝낸다
 
-export default function BerthFocus({ berthName }) {
+// showRings=false: 카메라만 옮긴다 — '앞으로 72시간'은 Port 가 선석 자체를 등급 색으로 칠하므로 링이 겹치면 두 색이 싸운다.
+export default function BerthFocus({ berthName, showRings = true }) {
   const { camera, controls } = useThree();
   const target = useRef(null);      // { camPos: Vector3, lookAt: Vector3 }
   const rings = useRef([]);
@@ -71,7 +72,7 @@ export default function BerthFocus({ berthName }) {
     if (camera.position.distanceTo(t.camPos) < SNAP_DIST) target.current = null;
   });
 
-  if (!berthName || rings.current.length === 0) return null;
+  if (!berthName || !showRings || rings.current.length === 0) return null;
 
   return (
     <group>

@@ -33,7 +33,7 @@ function freshness(ph) {
   if (ph.source_age_min != null && ph.source_age_min > 60 * 24) {
     return { color: '#f59e0b', label: `원천 정지 ${ageLabel(ph.source_age_min)}`, detail: '수집기는 정상 — 공공데이터포털 원천 데이터가 갱신되지 않고 있습니다' };
   }
-  return { color: '#20e3b2', label: '수집 정상', detail: `원천 관측 ${ageLabel(ph.source_age_min)} · 수집 ${ageLabel(ph.collect_age_min)}` };
+  return { color: '#20e3b2', label: `수집 정상 · ${ageLabel(ph.collect_age_min)}`, detail: `원천 관측 ${ageLabel(ph.source_age_min)} · 수집 ${ageLabel(ph.collect_age_min)}` };
 }
 
 export default function Header() {
@@ -88,10 +88,10 @@ export default function Header() {
 
         <div
           className="header-badge"
-          title={connected ? '실시간 연동 정상 (3분 주기 갱신)' : `데이터 수신 실패: ${error || '서버 응답 없음'}`}
+          title={connected ? '관제 서버와 연결됨 (3분 주기 갱신)' : `데이터 수신 실패: ${error || '서버 응답 없음'}`}
         >
           <div className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></div>
-          <span>{connected ? '실시간 연동 중' : '연결 끊김'}</span>
+          <span>{connected ? '관제 서버 연결됨' : '연결 끊김'}</span>
         </div>
 
         <div className="header-badge" style={{ fontFamily: 'monospace' }}>

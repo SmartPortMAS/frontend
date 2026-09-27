@@ -85,7 +85,7 @@ function VesselPopup({ vessel }) {
         {' '}· <strong>속력</strong> {vessel.sog} kn
       </p>
       <p style={{ margin: '2px 0' }}>
-        <strong>{vessel.position_source === 'REAL_AIS' ? 'AIS 수신' : '입항'}</strong>{' '}
+        <strong>{vessel.position_source === 'REAL_AIS' ? '위치 수신' : '입항'}</strong>{' '}
         {formatKST(vessel.arrival_at_utc)} (KST)
       </p>
       {vessel.cargo && (
@@ -104,7 +104,7 @@ function VesselPopup({ vessel }) {
       {vessel.position_source === 'REAL_AIS' && (
         <p style={{ margin: '4px 0 0', fontSize: '11px', color: COLORS.textDim }}>
           {vessel.cargo_source === 'REAL'
-            ? '선박·위치·화물 모두 실측 (AIS + 재항 신고 위험물)'
+            ? '선박·위치·화물 모두 실측 (항만공사 선박위치 + 재항 신고 위험물)'
             : '선박 위치는 실측 · 화물은 시나리오 가정 (화물 신고 자료 미확보)'}
         </p>
       )}
@@ -516,7 +516,7 @@ export default function PortMap() {
             {/* 라벨은 짧게 — 배 수가 세 자리가 되어도 한 줄에 들어와야 한다.
                 상한(200척)에 걸렸을 때만 "표시/전체"를 함께 보여준다. */}
             <span style={{ whiteSpace: 'nowrap' }}>
-              실선박 AIS {realTraffic.length}
+              실선박 위치 {realTraffic.length}
               {aisTotal > realTraffic.length && (
                 <span style={{ color: COLORS.textDim }}>/{aisTotal}</span>
               )}
@@ -536,16 +536,12 @@ export default function PortMap() {
         padding: '10px 14px', color: COLORS.textPrimary, fontSize: '12px',
       }}>
         <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>
-          관제 중 {vessels.length}척 · 위험물선 <span style={{ color: COLORS.red }}>{liquidCount}척</span>
+          {vessels.length === liquidCount
+            ? <>액체화물선 <span style={{ color: COLORS.red }}>{liquidCount}척</span> 표시</>
+            : <>표시 {vessels.length}척 · 액체화물선 <span style={{ color: COLORS.red }}>{liquidCount}척</span></>}
         </div>
-        {occupiedCount > 0 && (
-          <div style={{ marginBottom: '6px', fontSize: '11px', color: COLORS.textSecondary }}>
-            온산 선석 점유 <strong style={{ color: COLORS.yellow }}>{occupiedCount}</strong>
-            /{onsanBerths.length}
-            {anchorWaiting > 0 && <> · 정박지 대기 <strong>{anchorWaiting}</strong>척</>}
-            <span style={{ color: COLORS.textDim }}> (실측)</span>
-          </div>
-        )}
+        {/* 점유·정박지 대기 줄은 뺐다(2026-09-27) — 위 타일(선박 판정 화면과 같은 기준)이 말한다.
+            여기서 계류시설 20곳 기준으로 다른 숫자를 또 적으면 두 숫자가 싸운다. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', maxWidth: '250px' }}>
           {[...LEGEND_BASE, ...(showAis ? LEGEND_AIS : [])].map((item) => (
             <span key={item.label} title={item.hint || item.label}

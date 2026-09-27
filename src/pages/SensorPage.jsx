@@ -2,6 +2,7 @@ import useSensorStore from '../stores/useSensorStore';
 import HardwarePanel from '../components/sensor/HardwarePanel';
 import { TankModel, PipeModel } from '../components/sensor/EquipmentModels';
 import { COLORS } from '../utils/constants';
+import HelpTip from '../components/common/HelpTip';
 import { } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,9 +28,15 @@ export default function SensorPage() {
     <div className="page-content" style={{ padding: '0' }}>
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
         <div>
-          <h2 style={{ fontSize: '20px', marginBottom: '8px' }}>현장 설비 — 하역 개시 게이트 · 탱크 · 배관</h2>
+          <h2 style={{ fontSize: '20px', marginBottom: '6px', display: 'flex', alignItems: 'center' }}>
+            현장 설비
+            <HelpTip title="현장 설비">
+              하역 개시 인터락 게이트는 실물(라즈베리파이·밸브)과 연결됩니다. 탱크·배관 계측값은 아직 계측기가 없어
+              예시값이며, 터미널 유량계·탱크 레벨 계측이 연결될 자리입니다.
+            </HelpTip>
+          </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: 0 }}>
-            하역 개시 인터락 게이트는 실물(라즈베리파이·밸브)과 연결됩니다. 탱크·배관 계측값은 아직 계측기가 없어 모형입니다.
+            게이트 <strong>실물</strong> · 탱크·배관 <strong>예시값</strong>
           </p>
         </div>
         {/* '시뮬레이션 모드' 배지도 내렸다(2026-08-23) — 시연 UI 는 도입 후 제품

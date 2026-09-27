@@ -209,12 +209,20 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns, cargoListByCallsgn) {
 /** /dashboard/history 행 → GanttChart의 HistoryGantt 계약(job_id/vessel_name/berth/begin_utc/end_utc).
  * GanttChart.jsx는 이미 ops.filter(is_real_record) 로 이 모양을 기다리고 있었다 — 지금까지
  * 채워주는 API 호출이 없어 항상 빈 배열이었다. */
+// 정박지·묘박지·자동차부두 등 액체화물 관제 대상이 아닌 시설은 접안 이력 막대에서 뺀다.
+const NON_LIQUID_FACILITY = /(정박지|묘박지|자동차|컨테이너|여객)/;
+
+function isLiquidHistoryRecord(row) {
+  return Boolean(row.facility_name) && !NON_LIQUID_FACILITY.test(row.facility_name);
+}
+
 function mapHistoryRecord(row) {
   return {
     job_id: `HIST_${row.callsgn || row.vessel_name}_${row.arrival_at_utc}`,
     vessel_name: row.vessel_name,
     callsgn: row.callsgn,
-    berth: row.facility_name,
+    // "SK2부두 01" 의 슬롯 번호는 관제 화면에서 뜻이 없다 — 부두 이름만
+    berth: String(row.facility_name).replace(/\s+\d{1,2}$/, ''),
     begin_utc: row.arrival_at_utc,
     end_utc: row.departure_at_utc,
     is_real_record: true,
@@ -373,7 +381,7 @@ export async function fetchBackendDashboard() {
     // NOT_ALLOWED/MARGINAL/UNKNOWN 판정은 뷰 안에서 이미 끝나 있어 여기선 가공하지 않는다.
     draughtChecks: draughtCheck ?? [],
     // 완료된 접안 이력 — GanttChart의 "온산 선석 실제 접안 이력" 섹션용
-    history: (history ?? []).map(mapHistoryRecord),
+    history: (history ?? []).filter(isLiquidHistoryRecord).map(mapHistoryRecord),
     // 수집기 생존 신호 — Header 신선도 배지(mart.pipeline_health)
     pipelineHealth: pipelineHealth ?? null,
     // total_port_calls/port_calls_by_facility_type/liquid_callsgns
@@ -454,6 +462,42 @@ export async function fetchAlternativeBerths({ draught_m, chem_id, cas_no, name_
 export async function fetchUpcomingArrivals({ aheadHours = 72, pastHours = 12 } = {}) {
   const res = await fetch(`${BACKEND_BASE}/arrivals/upcoming?ahead_hours=${aheadHours}&past_hours=${pastHours}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+/**
+ * 화면에서 바로 판정 요청 — POST /orchestrator/assess-and-record.
+ * 판정 감시 작업(10분 주기)이 아직 안 훑은 배를 관제사가 지금 판정받을 때 쓴다.
+ * 결과는 판정 이력(assessment_history)에 남고, 입항 예정 표가 다시 읽는다.
+ * 흘수를 모르면 부르지 않는다(백엔드가 흘수 > 0 을 요구하고, 지어내면 판정이 거짓이 된다).
+ */
+export async function postAssessAndRecord({
+  callSign, vesselName, draughtM, dwtT, chemId, casNo, cargoName, wharfName, hours = 8,
+}) {
+  if (!wharfName) throw new Error('계류시설이 확인되지 않아 판정할 수 없습니다');
+  if (!(Number(draughtM) > 0)) throw new Error('흘수가 없어 판정할 수 없습니다(판정불가)');
+  const cargo = chemId ? { chem_id: chemId, name_hint: cargoName }
+    : casNo ? { cas_no: casNo, name_hint: cargoName } : null;
+  if (!cargo) throw new Error('화물이 확인되지 않아 판정할 수 없습니다(판정불가)');
+  const now = Date.now();
+  const res = await fetch(`${BACKEND_BASE}/orchestrator/assess-and-record`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      vessel: { draught_m: Number(draughtM), dwt_t: dwtT ? Number(dwtT) : null, name_hint: vesselName, call_sign: callSign },
+      cargo,
+      window_start: new Date(now).toISOString(),
+      window_end: new Date(now + hours * 3600 * 1000).toISOString(),
+      assigned_wharf_name: wharfName,
+      call_sign: callSign,
+      vessel_name: vesselName,
+    }),
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { const j = await res.json(); detail = j.detail ? String(j.detail).slice(0, 140) : detail; } catch { /* 본문 없음 */ }
+    throw new Error(detail);
+  }
   return res.json();
 }
 
@@ -605,6 +649,23 @@ export async function postTwinFocus({ berth = null, call_sign = null, vessel_nam
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * 선석의 지금 판정과 앞으로 72시간 예보 판정 — GET /twin/outlook (backend twin.py).
+ * Omniverse 정보판이 읽던 응답을 3D 관제 화면이 직접 그린다(2026-09-27, OutlookTimeline).
+ * 판정은 백엔드가 이미 내렸다(기상 에이전트 규칙 + 조위 반영 흘수 여유) — 화면은 그리기만 한다.
+ */
+export async function fetchTwinOutlook({ berth, call_sign = null, hours = 72 }) {
+  const q = new URLSearchParams({ berth, hours: String(hours) });
+  if (call_sign) q.set('call_sign', call_sign);
+  const res = await fetch(`${BACKEND_BASE}/twin/outlook?${q}`);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { detail = (await res.json()).detail || detail; } catch { /* 본문 없음 */ }
+    throw new Error(detail);
   }
   return res.json();
 }

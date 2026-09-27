@@ -11,10 +11,18 @@ import { BACKEND_BASE } from '../api/backendAdapter';
 //
 // 요청은 보내기만 한다. "하역 개시 요청"을 눌렀을 때 열어도 되는지는 장치가 정하고,
 // 그 결과가 다음 status 의 denied 로 돌아온다 — 화면이 먼저 거부하지 않는다.
+//
+// [2026-09-25] WebSocket 이 안 되는 배포에서는 1초 폴링으로 같은 상태를 받는다.
+//   Vercel(smartport-mas.vercel.app)은 /api 를 백엔드 EC2 로 넘겨주지만 WebSocket 은
+//   넘기지 못한다(실측: /ws/gate 업그레이드가 101 이 아니라 200 으로 끝남). 백엔드가
+//   도메인·인증서 없이 IP 로만 떠 있어 https 화면에서 ws:// 를 직접 여는 것도 막힌다.
+//   그래서 처음부터 폴링으로 시작하고, WebSocket 이 열리면 폴링을 멈춘다. 끊기면 다시
+//   폴링한다. GET /gate/state 는 /ws/gate 가 미는 것과 같은 한 장(bridge.snapshot)이다.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const WS_PATH = '/ws/gate';
 const RECONNECT_MS = 2000;
+const POLL_MS = 1000;
 
 async function call(path, body, method = 'POST') {
   const res = await fetch(`${BACKEND_BASE}${path}`, {
@@ -31,33 +39,58 @@ async function call(path, body, method = 'POST') {
 
 export default function useHardwareData() {
   const [snapshot, setSnapshot] = useState(null);
-  // 'connecting' | 'open' | 'closed' — 백엔드 WebSocket 자체의 상태(브로커·장치 상태와 별개)
+  // 'connecting' | 'open' | 'polling' | 'closed' — 화면 ↔ 백엔드 연결 상태(브로커·장치 상태와 별개)
+  //   open    : WebSocket 으로 받는 중
+  //   polling : WebSocket 이 없어 1초마다 GET /gate/state 로 받는 중 (연결된 상태다)
+  //   closed  : 둘 다 실패 — 백엔드가 응답하지 않는다
   const [wsState, setWsState] = useState('connecting');
   const wsRef = useRef(null);
 
   useEffect(() => {
     let closed = false;
     let timer = null;
+    let pollTimer = null;
+    let wsOpen = false;
+
+    const stopPolling = () => { clearTimeout(pollTimer); pollTimer = null; };
+    const poll = async () => {
+      if (closed || wsOpen) return;
+      try {
+        const res = await fetch(`${BACKEND_BASE}/gate/state`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        setSnapshot(await res.json());
+        setWsState((prev) => (prev === 'open' ? prev : 'polling'));
+      } catch {
+        setWsState((prev) => (prev === 'open' ? prev : 'closed'));
+      }
+      if (!closed && !wsOpen) pollTimer = setTimeout(poll, POLL_MS);
+    };
+
     const connect = () => {
       if (closed) return;
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const ws = new WebSocket(`${proto}://${window.location.host}${WS_PATH}`);
       wsRef.current = ws;
-      setWsState('connecting');
-      ws.onopen = () => setWsState('open');
+      ws.onopen = () => { wsOpen = true; stopPolling(); setWsState('open'); };
       ws.onmessage = (ev) => {
         try { setSnapshot(JSON.parse(ev.data)); } catch { /* 깨진 한 장은 버린다 */ }
       };
       ws.onclose = () => {
-        setWsState('closed');
-        if (!closed) timer = setTimeout(connect, RECONNECT_MS);
+        wsOpen = false;
+        if (closed) return;
+        // WebSocket 이 없어도 화면은 멈추지 않는다 — 폴링으로 이어 받고, WebSocket 은 계속 다시 시도
+        if (!pollTimer) poll();
+        timer = setTimeout(connect, RECONNECT_MS);
       };
       ws.onerror = () => { /* onclose 가 뒤따른다 */ };
     };
+
+    poll();      // 첫 장은 바로 받는다 — WebSocket 이 열리면 poll 이 스스로 멈춘다
     connect();
     return () => {
       closed = true;
       clearTimeout(timer);
+      stopPolling();
       wsRef.current?.close();
     };
   }, []);
@@ -71,6 +104,17 @@ export default function useHardwareData() {
     [],
   );
   const clearDemoWeather = useCallback(() => call('/gate/demo/weather', null, 'DELETE'), []);
+  // 시연 판정 — 그 선석의 하역중 판정 값만 넣는다(잠금 규칙은 실제와 같고, 판정 이력엔 남지 않는다)
+  const setDemoVerdict = useCallback(
+    ({ gate_id = null, level, reason = '' }) => call('/gate/demo/verdict', { gate_id, level, reason }),
+    [],
+  );
+  const clearDemoVerdict = useCallback(
+    (gateId = null) => call(`/gate/demo/verdict${gateId ? `?gate_id=${gateId}` : ''}`, null, 'DELETE'),
+    [],
+  );
 
-  return { snapshot, wsState, sendGateCommand, setDemoWeather, clearDemoWeather };
+  return {
+    snapshot, wsState, sendGateCommand, setDemoWeather, clearDemoWeather, setDemoVerdict, clearDemoVerdict,
+  };
 }

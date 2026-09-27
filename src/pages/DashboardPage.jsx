@@ -1,17 +1,31 @@
-import GanttChart from '../components/dashboard/GanttChart';
+import { useEffect, useState } from 'react';
 import KPICard from '../components/dashboard/KPICard';
 import WeatherPanel from '../components/dashboard/WeatherPanel';
 import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
 import PortMap from '../components/dashboard/PortMap';
 import PortCallTable from '../components/dashboard/PortCallTable';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
-import useSensorStore from '../stores/useSensorStore';
 import useDashboardData from '../hooks/useDashboardData';
+import { fetchPendingApprovals, fetchBerthAssignments } from '../api/backendAdapter';
 import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt } from 'react-icons/fa';
 
 export default function DashboardPage() {
-  const gateAssessment = useSensorStore((s) => s.gateAssessment);
   const { data } = useDashboardData();
+
+  // 확인 대기 판정 — 판정 감시가 기록한 이력 중 관제사가 아직 보지 않은 것(/approvals/pending).
+  // 예전 4번째 타일은 안전 관제 탭에서 수동 심사를 돌리기 전엔 늘 "심사 전"이라 빈 칸이었다.
+  const [pending, setPending] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetchPendingApprovals().then((rows) => { if (alive) setPending(rows); }).catch(() => { if (alive) setPending(null); });
+    load();
+    const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const countLevel = (lv) => (pending ?? []).filter((r) => r.level === lv).length;
+  const unfitCount = countLevel('부적합');
+  const unknownCount2 = countLevel('판정불가');
+  const cautionCount = countLevel('주의');
 
   // KPI는 실AIS(+실화물 조인) 기준으로 센다 — data.vessels는 데모 시나리오 선박이라
   // 실제 재항 척수와 무관하다.
@@ -34,27 +48,44 @@ export default function DashboardPage() {
   const anchorCount = data?.real_traffic_anchored_total
     ?? vessels.filter((v) => v.nav_status_category === 'AT_ANCHOR').length;
   const unknownNavCount = vessels.filter((v) => v.nav_status_category === 'UNKNOWN').length;
-  const gateHits = gateAssessment?.risk_level_basis?.gate_hits?.length ?? 0;
 
-  // 온산 선석 점유 — 백엔드 /dashboard/berths(UPA 선박위치 판정, 2026-09-17 전엔 upa_port_call).
-  // 예전 "가동 탱크"는 useSensorStore의 하드코딩 탱크 4기를 세던 값이라
-  // 실데이터 화면에 mock 숫자가 섞여 있었다.
-  const onsanBerths = (data?.berth_occupancy ?? []).filter((b) => b.port_name === '온산항');
-  const occupiedBerths = onsanBerths.filter((b) => b.occupancy_status === '점유').length;
+  // 온산 선석 점유 — 선박 판정 화면의 선석 점유(/dashboard/berth-assignments)와 같은 출처로 센다.
+  // [2026-09-27] 예전엔 /dashboard/berths(계류시설 20곳)로 세어 "9/20"이었고 선석 화면은 "7/12"라
+  // 같은 시각에 두 숫자가 보였다(9/26 캡처). 한 시스템이 같은 질문에 두 숫자를 내면 어느 쪽도 못 믿는다.
+  // (예전 "가동 탱크" 타일은 하드코딩 탱크 4기를 세던 값이라 걷어냈다.)
+  const [berthRows, setBerthRows] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetchBerthAssignments().then((rows) => { if (alive) setBerthRows(rows); }).catch(() => {});
+    load();
+    const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const onsanBerthRows = (berthRows ?? []).filter((b) => b.port_name === '온산항');
+  const occupiedBerths = onsanBerthRows.filter((b) => (b.slots || []).some((s) => s.call_sign)).length;
 
   return (
     <div className="dashboard-page">
       <div className="kpi-grid">
         <KPICard title="관제 선박" value={vesselTotal} unit="척" icon={<FaShip />} change={`액체화물선 ${liquidCount}척 · 선종 미확인 ${unknownCount}척`} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
         <KPICard title="접안 중" value={mooredCount} unit="척" icon={<FaAnchor />} change={`정박지 대기 ${anchorCount}척 · 항내 소형선 ${unknownNavCount}척`} trend="neutral" />
-        <KPICard title="온산 선석 점유" value={occupiedBerths} unit="개" icon={<FaWarehouse />} change={`온산 선석 ${onsanBerths.length}개 중 재항 중`} trend="neutral" />
         <KPICard
-          title="최근 안전 심사"
-          value={gateAssessment?.risk_level ?? '심사 전'}
-          unit=""
+          title="온산 선석 점유"
+          value={berthRows ? occupiedBerths : '—'}
+          unit={berthRows ? '개' : ''}
+          icon={<FaWarehouse />}
+          change={berthRows ? `온산 부두 ${onsanBerthRows.length}곳 중 · 선박 판정 화면과 같은 기준` : '선석 점유를 불러오지 못했습니다'}
+          trend="neutral"
+          to="/arrivals#berthed"
+        />
+        <KPICard
+          title="확인 대기 판정"
+          value={pending ? pending.length : '—'}
+          unit={pending ? '건' : ''}
           icon={<FaShieldAlt />}
-          change={gateAssessment ? (gateHits > 0 ? `혼재·격리 위반 ${gateHits}건` : '위반 없음') : '안전 관제 탭에서 실행'}
-          trend={gateAssessment ? (gateHits > 0 ? 'negative' : 'positive') : 'neutral'}
+          change={pending ? `부적합 ${unfitCount} · 판정불가 ${unknownCount2} · 주의 ${cautionCount}` : '판정 이력을 불러오지 못했습니다'}
+          trend={!pending ? 'neutral' : unfitCount > 0 ? 'negative' : 'positive'}
+          to="/arrivals"
         />
       </div>
 
@@ -87,10 +118,8 @@ export default function DashboardPage() {
           스케줄링 발화가 같은 배정 경로(전용/대체/정박지)를 이미 보여준다. 같은
           판정을 두 곳에 그리면 어느 쪽이 정본인지 화면만 봐서는 알 수 없다.
           판정 실행과 결과 표시는 협상 로그 하나로 단일화. */}
-      {/* Gantt Chart (Full Width) */}
-      <div className="dash-section">
-        <GanttChart />
-      </div>
+      {/* 접안 이력 간트는 선박 판정 화면(선석 점유 아래)으로 옮겼다(2026-09-27) — 선석이 축인
+          정보라 그 화면 몫이다. 같이 있던 "진행 중/예정 작업" 모형 진행률 목록은 뺐다(유량계 없음). */}
 
       {/* 입항 선박 목록 (Full Width) */}
       <div className="dash-section">
