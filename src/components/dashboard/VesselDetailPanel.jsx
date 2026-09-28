@@ -484,7 +484,7 @@ export default function VesselDetailPanel() {
               color: '#FFFFFF', fontWeight: 700, cursor: 'pointer', fontSize: '13px',
             }}
           >
-            {candLoading ? '스케줄링 에이전트 조회 중...' : '이 선박의 대체 선석 제안 보기'}
+            {candLoading ? '선석 검증 에이전트 조회 중...' : '이 선박의 대체 선석 제안 보기'}
           </button>
           <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginTop: '6px', lineHeight: 1.6 }}>
             흘수 {vessel.draught_m} m · {vessel.cargos?.length > 1

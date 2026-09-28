@@ -131,9 +131,9 @@ export default function BerthOccupiedList({ scope }) {
     <div className="glass-card">
       <div className="glass-card-header">
         <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
-          선석 점유 목록 ({rows.length}건)
-          <HelpTip title="선석 점유 목록">
-            지금 선석에 붙어 있는 배(항만공사 선박위치 기준)입니다. 판정 칸은 이 배의 최근 판정 등급, 확인자는 그 판정을 본 관제사입니다.
+          접안 선박 목록 ({rows.length}건)
+          <HelpTip title="접안 선박 목록">
+            지금 선석에 접안한 선박(항만공사 선박위치 기준)입니다. 판정 칸은 이 배의 최근 판정 등급, 확인자는 그 판정을 본 관제사입니다.
             판정이 아직 없으면 [판단 과정 →]로 우하단 에이전트 판단 과정이 이 배로 열립니다.
           </HelpTip>
         </h3>

@@ -16,8 +16,10 @@ import GanttChart from '../components/dashboard/GanttChart';
 //
 // 기존 선석 배정(항만공사 선석회의 → PORT-MIS 입항 신고의 계류시설)은 그대로 따른다.
 // 배 한 척을 입항 전 → 접안 직전 → 하역 중 순서로 따라가는 화면이다.
-//   1) 들어오는 배 — 사전배정 계류시설과 판정에 쓰일 사실, 판정 요청
-//   2) 붙어 있는 배 — 선석 슬롯 지도(판정 근거 팝업)와 점유 목록. 9/27 까지 '선석 현황' 메뉴였다.
+//   1) 입항 선박 판정 — 사전배정 계류시설과 판정에 쓰일 사실, 판정 요청
+//   2) 접안 선박 · 선석 점유 — 선석 슬롯 지도(판정 근거 팝업)와 점유 목록. 9/27 까지 '선석 현황' 메뉴였다.
+//   [2026-09-28] '들어오는 배/붙어 있는 배' 같은 입말을 입항·접안 같은 항만 용어로 바꾸고(현우 지적),
+//   범위 단추를 PORT-MIS 계류시설 기준 이름으로, 시점 척수를 고른 범위와 같게, 판정 칸은 결론 대신 이유를 보이게 했다.
 //      하역 중인 배가 1)에도 나와 같은 배가 두 화면에 보였고 판정 칸도 두 곳이라 합쳤다.
 //   3) 부두별 접안 이력(실측) — 대시보드에 있던 간트. 선석이 축인 정보라 이 화면 몫이다.
 //   4) 실제로 있었던 날의 재생 — 세 시점(입항 전 · 접안 직전 · 하역 중) 판정과
@@ -37,6 +39,19 @@ const LEVEL_STYLE = {
   확인요청: { color: COLORS.purple, bg: '#ECE6F6' },
 };
 const STAGE_LABEL = { 입항전: '입항 전', 접안직전: '접안 직전', 하역중: '하역 중' };
+// 시점은 판정이 아니라 사실이다(백엔드 arrivals._stage) — 카드 부제로 기준을 적는다.
+const STAGE_NOTE = {
+  입항전: '입항 예정 시각 전',
+  접안직전: '입항 시각 지남 · 묘박 대기',
+  하역중: '선석 계류(항만공사 선박위치)',
+};
+// 판정 이유의 첫 줄은 대개 결론을 되풀이한다("배정된 선석이 이 선박·화물 조건에 맞습니다/맞지 않습니다").
+// 표에는 그 다음의 구체적인 이유 한 줄을 보인다. 전체 이유는 칩에 마우스를 올리면 보인다.
+const GENERIC_REASON = /^배정된 선석이 이 선박·화물 조건에 맞/;
+function keyReason(reasons) {
+  const list = (reasons || []).map(String).filter(Boolean);
+  return list.find((t) => !GENERIC_REASON.test(t)) || list[0] || null;
+}
 const RECIPIENT_NOTE = {
   '선석 운영 주체': '선석회의 · 재배정 조정 근거',
   VTS: 'VHF 지시의 근거',
@@ -115,30 +130,50 @@ function UpcomingSection() {
   };
 
   const items = data?.items || [];
-  const shown = useMemo(() => items.filter((r) => (
+  // 범위 = PORT-MIS 입항 신고의 계류시설 기준(백엔드 arrivals: facility_type · is_onsan).
+  //   berth  울산항 계류시설 — 부두·돌핀·부이로 신고한 배(정박지·미확인 신고 제외)
+  //   onsan  그중 온산항 계류시설
+  //   all    정박지 포함 전체 — 액체화물선 입항 신고 전부
+  const inScope = useMemo(() => items.filter((r) => (
     scope === 'all' ? true : scope === 'onsan' ? r.is_onsan : r.facility_type === 'BERTH'
   )), [items, scope]);
-  const stageCount = useMemo(() => items.reduce((acc, r) => {
+  // [2026-09-28] 시점 척수를 고른 범위로 센다 — 예전엔 늘 전체로 세어 표와 숫자가 달랐다.
+  const stageCount = useMemo(() => inScope.reduce((acc, r) => {
     acc[r.stage] = (acc[r.stage] || 0) + 1; return acc;
-  }, {}), [items]);
+  }, {}), [inScope]);
+  // 시점 카드를 누르면 그 시점만 본다(다시 누르면 전체)
+  const [stageFilter, setStageFilter] = useState(null);
+  const shown = useMemo(
+    () => (stageFilter ? inScope.filter((r) => r.stage === stageFilter) : inScope),
+    [inScope, stageFilter],
+  );
 
   const scopes = [
-    ['berth', `부두 배정 ${data?.berth_count ?? '-'}`],
-    ['onsan', `온산 ${data?.onsan_count ?? '-'}`],
-    ['all', `전체 ${data?.count ?? '-'}`],
+    ['berth', `울산항 계류시설 ${data?.berth_count ?? '-'}`],
+    ['onsan', `온산 계류시설 ${data?.onsan_count ?? '-'}`],
+    ['all', `정박지 포함 전체 ${data?.count ?? '-'}`],
   ];
 
   return (
     <div className="glass-card">
       <div className="glass-card-header" style={{ flexWrap: 'wrap', gap: 10 }}>
         <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
-          들어오는 배 · 앞으로 72시간
-          <HelpTip title="입항 예정 목록">
-            출처: PORT-MIS 입항 신고(오늘~+3일, 매시 갱신) · 항만공사 선박위치(흘수·항해상태) · 선박제원.
-            신고가 최종이 아니면 입항 시각은 예정입니다. 판정이 없는 배는 [판정 요청]으로 그 자리에서 판정하고, 결과는 판정 이력에 남습니다.
+          입항 선박 판정 · 72시간 이내 입항
+          <HelpTip title="입항 선박 판정">
+            <div>액체화물선 입항 신고(PORT-MIS, 12시간 전 ~ 72시간 뒤 입항)와 판정입니다. 흘수·항해상태는 항만공사 선박위치, 없으면 선박제원을 씁니다.
+            신고 구분이 최종이 아니면 입항 시각은 예정입니다.</div>
+            <div style={{ marginTop: 4 }}>시점은 사실로 정합니다 — 입항 전(입항 예정 시각 전) · 접안 직전(입항 시각이 지났거나 묘박 대기) · 하역 중(선석 계류).
+            카드를 누르면 그 시점만 봅니다.</div>
+            <div style={{ marginTop: 4 }}>판정이 없는 선박은 [판정 요청]으로 그 자리에서 판정하고 결과는 판정 이력에 남습니다. 벗어난 선박은 이유와 조치안 → 받는 곳을 보입니다.</div>
           </HelpTip>
         </h3>
-        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center' }}>
+          <HelpTip title="범위 — 계류시설 기준">
+            <div>PORT-MIS 입항 신고의 계류시설로 나눕니다.</div>
+            <div>· 울산항 계류시설: 부두·돌핀·부이로 신고한 선박(정박지·미확인 신고 제외)</div>
+            <div>· 온산 계류시설: 그중 온산항</div>
+            <div>· 정박지 포함 전체: 액체화물선 입항 신고 전부</div>
+          </HelpTip>
           {scopes.map(([key, label]) => (
             <button
               key={key} type="button" onClick={() => setScope(key)}
@@ -154,14 +189,27 @@ function UpcomingSection() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 12 }}>
-        {['입항전', '접안직전', '하역중'].map((k) => (
-          <div key={k} style={{ borderTop: `3px solid ${COLORS.navy}`, background: COLORS.cardHover, padding: '8px 12px' }}>
-            <div style={{ fontSize: 12, color: COLORS.textDim }}>{STAGE_LABEL[k]}</div>
-            <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'ui-monospace, Consolas, monospace' }}>
-              {data ? (stageCount[k] || 0) : '-'}<span style={{ fontSize: 13, color: COLORS.textDim, marginLeft: 4 }}>척</span>
-            </div>
-          </div>
-        ))}
+        {['입항전', '접안직전', '하역중'].map((k) => {
+          const on = stageFilter === k;
+          return (
+            <button
+              key={k} type="button" aria-pressed={on}
+              onClick={() => setStageFilter((cur) => (cur === k ? null : k))}
+              title={on ? '다시 누르면 모든 시점을 봅니다' : `${STAGE_LABEL[k]} 선박만 봅니다`}
+              style={{
+                textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit',
+                border: `1px solid ${on ? COLORS.navy : 'transparent'}`, borderTop: `3px solid ${COLORS.navy}`,
+                background: on ? '#E6EDF5' : COLORS.cardHover, padding: '8px 12px', borderRadius: 0,
+              }}
+            >
+              <div style={{ fontSize: 12.5, color: COLORS.textSecondary, fontWeight: 600 }}>{STAGE_LABEL[k]}</div>
+              <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'ui-monospace, Consolas, monospace' }}>
+                {data ? (stageCount[k] || 0) : '-'}<span style={{ fontSize: 13, color: COLORS.textDim, marginLeft: 4 }}>척</span>
+              </div>
+              <div style={{ fontSize: 11, color: COLORS.textDim }}>{STAGE_NOTE[k]}</div>
+            </button>
+          );
+        })}
       </div>
 
       {error && (
@@ -175,7 +223,7 @@ function UpcomingSection() {
         </p>
       )}
 
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto' }} id="arrival-table">
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ textAlign: 'left', color: COLORS.textDim, borderBottom: `1px solid ${COLORS.border}` }}>
@@ -188,7 +236,7 @@ function UpcomingSection() {
               <th style={th}>흘수</th>
               <th style={th}>표 수심 여유</th>
               <th style={th}>시점</th>
-              <th style={th}>판정</th>
+              <th style={th}>판정 · 조치안</th>
             </tr>
           </thead>
           <tbody>
@@ -199,7 +247,7 @@ function UpcomingSection() {
                   <div style={{ fontWeight: 600 }}>{r.vessel_name || '(선명 미상)'}</div>
                   <div style={{ fontSize: 11, color: COLORS.textDim }}>{r.ship_kind} · {r.call_sign}</div>
                 </td>
-                <td style={{ ...td, color: r.report_type === '최종' ? COLORS.textPrimary : COLORS.textSecondary }}>{r.report_type || '-'}</td>
+                <td style={{ ...td, whiteSpace: 'nowrap', color: r.report_type === '최종' ? COLORS.textPrimary : COLORS.textSecondary }}>{r.report_type || '-'}</td>
                 {/* 이 입항 건에 단 화물 전부 — 입항 후 위치 화면과 같은 키(입항 건)라 같은 화물이다 */}
                 <td style={td} title={cargoNames(r.cargos).join(', ')}>
                   {r.cargos?.length ? cargoSummary(r.cargos, 3) : <span style={{ color: COLORS.textDim }}>미확인</span>}
@@ -223,11 +271,18 @@ function UpcomingSection() {
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{STAGE_LABEL[r.stage]}</td>
                 <td style={td}>
                   {r.assessment ? (
-                    <div>
+                    <div title={(r.assessment.reasons || []).join('\n')}>
                       <LevelPill level={r.assessment.level} />
-                      {r.assessment.reasons?.[0] && (
-                        <div style={{ fontSize: 11, color: COLORS.textDim, marginTop: 3, maxWidth: 260 }}>
-                          {String(r.assessment.reasons[0]).slice(0, 80)}
+                      {/* 적합은 칩만 — 같은 문장이 줄마다 반복되던 것을 없앴다. 벗어난 배만 이유와 조치안을 보인다. */}
+                      {r.assessment.level !== '적합' && keyReason(r.assessment.reasons) && (
+                        <div style={{ fontSize: 11.5, color: COLORS.textSecondary, marginTop: 3, maxWidth: 280 }}>
+                          {keyReason(r.assessment.reasons).slice(0, 90)}
+                        </div>
+                      )}
+                      {r.assessment.level !== '적합' && r.assessment.action && (
+                        <div style={{ fontSize: 11.5, marginTop: 2, maxWidth: 280 }}>
+                          <span style={{ color: COLORS.textDim }}>조치안</span> {r.assessment.action}
+                          {r.assessment.recipient && <> → <strong>{r.assessment.recipient}</strong></>}
                         </div>
                       )}
                     </div>
@@ -255,7 +310,7 @@ function UpcomingSection() {
               </tr>
             ))}
             {data && shown.length === 0 && (
-              <tr><td style={{ ...td, color: COLORS.textDim }} colSpan={10}>이 범위에 입항 예정 선박이 없습니다.</td></tr>
+              <tr><td style={{ ...td, color: COLORS.textDim }} colSpan={10}>이 범위·시점에 입항 신고 선박이 없습니다.</td></tr>
             )}
           </tbody>
         </table>
@@ -419,10 +474,11 @@ function BerthedSection() {
       <div className="glass-card dash-section" id="berthed">
         <div className="glass-card-header">
           <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
-            붙어 있는 배 — 선석 점유
-            <HelpTip title="선석 점유">
-              항만공사 선박위치로 판정한 "지금 선석에 붙어 있는 배"입니다. 지도의 선석을 누르면 슬롯별 배와 판정 근거가 뜹니다.
-              아래 목록은 같은 배를 선석·화물·입출항·확인자·판정 순으로 보여 줍니다. 위 표의 "하역 중"과 같은 배입니다.
+            접안 선박 · 선석 점유
+            <HelpTip title="접안 선박 · 선석 점유">
+              항만공사 선박위치로 판정한 "지금 선석에 접안한 선박"입니다. 입항 신고가 아니라 실제 위치로 정합니다.
+              지도의 선석을 누르면 슬롯마다 접안 선박 · 판정 · 위치 근거가 뜹니다.
+              아래 목록은 같은 선박을 선석·화물·입출항·확인자·판정 순으로 보여 줍니다. 위 표의 "하역 중"과 같은 선박을 선석 기준으로 본 것입니다.
             </HelpTip>
           </h3>
         </div>
@@ -509,15 +565,38 @@ export default function ArrivalVerificationPage() {
         <h2 style={{ margin: 0, fontSize: 18, display: 'flex', alignItems: 'center' }}>
           선박 판정
           <HelpTip title="선박 판정">
-            <div>기존 선석 배정은 그대로 따릅니다. 배 한 척을 <strong>입항 전 → 접안 직전 → 하역 중</strong> 순서로 따라가며,
+            <div>기존 선석 배정(선석회의 · PORT-MIS 신고)은 그대로 따릅니다. 선박 한 척을 <strong>입항 전 → 접안 직전 → 하역 중</strong> 순서로 다시 판정하고,
             기상·조위·흘수·인접 화물이 기준을 벗어나면 조치안을 만들어 권한 있는 곳 — 선석 운영 주체 · VTS · 터미널 — 에 근거와 함께 넘깁니다.</div>
-            <div style={{ marginTop: 4 }}>위 표는 <strong>들어오는 배와 판정</strong>, 아래는 <strong>지금 선석에 붙어 있는 배</strong>(자리·화물·확인자)입니다.
+            <div style={{ marginTop: 4 }}>위는 <strong>입항 선박 판정</strong>(입항 신고 기준), 아래는 <strong>접안 선박 · 선석 점유</strong>(실제 위치 기준)입니다.
             대시보드의 "확인 대기 판정"을 누르면 이 화면으로 옵니다.</div>
           </HelpTip>
         </h2>
-        <p style={{ margin: 0, fontSize: 13.5, color: COLORS.textSecondary }}>
-          들어오는 배 → 붙어 있는 배 · <strong>입항 전 → 접안 직전 → 하역 중</strong> · 벗어나면 조치안
-        </p>
+        {/* 사용 순서 — 번호는 실제로 따라가는 순서다. 누르면 그 자리로 간다. */}
+        <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 13 }}>
+          {[
+            ['arrival-table', '입항 선박', '시점별 판정 보기'],
+            ['arrival-table', '판정 요청', '판정 없는 선박'],
+            ['arrival-table', '조치안 · 받는 곳', '벗어난 선박'],
+            ['berthed', '접안 선박', '선석별 점유 확인'],
+          ].map(([id, head, sub], i) => (
+            <li key={head} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {i > 0 && <span aria-hidden="true" style={{ color: COLORS.textDim }}>→</span>}
+              <a
+                href={`#${id}`}
+                onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                style={{
+                  display: 'inline-flex', alignItems: 'baseline', gap: 6, padding: '5px 10px',
+                  border: `1px solid ${COLORS.border}`, background: COLORS.cardHover, color: COLORS.textPrimary,
+                  textDecoration: 'none', borderRadius: 4,
+                }}
+              >
+                <span style={{ fontFamily: 'ui-monospace, Consolas, monospace', color: COLORS.navy, fontWeight: 700 }}>{i + 1}</span>
+                <strong>{head}</strong>
+                <span style={{ color: COLORS.textDim, fontSize: 12 }}>{sub}</span>
+              </a>
+            </li>
+          ))}
+        </ol>
       </div>
       <div className="dash-section"><UpcomingSection /></div>
       <BerthedSection />

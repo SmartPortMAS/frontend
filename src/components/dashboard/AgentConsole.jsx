@@ -16,7 +16,7 @@ import { cargoSummary } from '../../utils/cargoText';
 // 멀티 에이전트 협상 콘솔 (우하단 플로팅 탭)
 //
 // "그래서 멀티 에이전트가 어떻게 연동되나?" 에 대한 화면상의 답.
-// 기상 → 스케줄링 → 안전 → 종합 순으로 각 에이전트가 낸 판단과 근거를
+// 선석 → 기상 → 혼재(안전) → 종합 순으로(백엔드 감독자와 같은 순서) 각 에이전트가 낸 판단과 근거를
 // 메신저 대화처럼 시간순으로 보여준다.
 //
 // 데이터는 새로 만들지 않는다 — 백엔드 오케스트레이터 응답에 이미 들어 있는
@@ -26,7 +26,7 @@ import { cargoSummary } from '../../utils/cargoText';
 
 const AGENTS = {
   weather: { name: '기상분석 에이전트', icon: FaCloudSun, color: '#1E6FA8' },
-  scheduling: { name: '스케줄링 에이전트', icon: FaRoute, color: '#5B3E9B' },
+  scheduling: { name: '선석 검증 에이전트', icon: FaRoute, color: '#5B3E9B' },
   safety: { name: '안전관제 에이전트', icon: FaShieldAlt, color: '#B26A00' },
   orchestrator: { name: '종합 오케스트레이터', icon: FaRobot, color: COLORS.teal },
 };
@@ -49,7 +49,22 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   const msgs = [];
   const at = (s) => new Date(Date.now() - s * 1000).toLocaleTimeString('ko-KR', { hour12: false });
 
-  // 1) 기상 — 오케스트레이터 결과 우선, 없으면 패널에서 본 판정 사용.
+  // [2026-09-28] 발화 순서를 백엔드 감독자와 같게 — 선석 → 기상 → 혼재 → (부적합이면) 대체 제안 → 종합.
+  // 예전엔 기상이 늘 먼저 나와, 보고서·영상의 "선석이 정해져야 그 부두 기상 기준과 이웃 화물이 정해진다"와
+  // 화면 순서가 달랐다. 판정 내용은 그대로이고 보여 주는 순서만 바꿨다.
+  //
+  // 1) 선석 — 지금 붙은 부두가 이 배에 맞는가(검증). [2026-09-27] 배정·정박지 경로는 없어졌다.
+  const trace = orchestration.berth_decision?.trace || [];
+  if (trace.length) {
+    msgs.push({
+      agent: 'scheduling', time: at(9),
+      text: orchestration.berth_assigned
+        ? `판정 선석: ${orchestration.berth_assigned}`
+        : '지금 선석이 이 배·화물 조건에 맞지 않거나 확인할 수 없습니다.',
+      detail: trace,
+    });
+  }
+  // 2) 기상 — 오케스트레이터 결과 우선, 없으면 패널에서 본 판정 사용.
   // 상태·근거·선석 이름 셋 다 반드시 같은 출처에서 함께 가져온다.
   const usingOrchestrationWeather = Boolean(orchestration.weather_grade);
   const wStatus = orchestration.weather_grade || berthWeather?.status;
@@ -60,44 +75,14 @@ function toMessages({ orchestration, berthWeather, vessel }) {
       ? (orchestration.berth_assigned || vessel?.berth || '대상 선석')
       : (vessel?.berth || '대상 선석');
     msgs.push({
-      agent: 'weather', time: at(9),
+      agent: 'weather', time: at(8),
       text: `${wBerthName} 기상 판정: ${wStatus}` +
         (obs ? ` (실측 풍속 ${obs.wind ?? '-'} m/s · 파고 ${obs.wave ?? '-'} m)` : ''),
       detail: reasons || [],
     });
   }
 
-  // 2) 선석 — 지금 붙은 부두가 이 배에 맞는가(검증). [2026-09-27] 배정·정박지 경로는 없어졌다.
-  const trace = orchestration.berth_decision?.trace || [];
-  if (trace.length) {
-    msgs.push({
-      agent: 'scheduling', time: at(6),
-      text: orchestration.berth_assigned
-        ? `판정 선석: ${orchestration.berth_assigned}`
-        : '지금 선석이 이 배·화물 조건에 맞지 않거나 확인할 수 없습니다.',
-      detail: trace,
-    });
-  }
-  const rejected = orchestration.rejected_candidates || [];
-  if (rejected.length) {
-    msgs.push({
-      agent: 'scheduling', time: at(5),
-      text: '혼재 판정으로 이 선석이 부적합합니다.',
-      detail: rejected.map((r) => `${r.berth_id}: ${r.reason}`),
-    });
-  }
-  const alts = orchestration.suggested_alternatives || [];
-  if (alts.length || orchestration.suggestion_note) {
-    msgs.push({
-      agent: 'scheduling', time: at(4),
-      text: alts.length
-        ? `대체 선석 제안 ${alts.length}곳 — 제안이며 배정이 아닙니다`
-        : `대체 선석을 제안하지 못했습니다: ${orchestration.suggestion_note}`,
-      detail: alts.map((c) => `${c.wharf_name} (흘수 여유 ${c.draught_margin_m?.toFixed(2)} m · ${c.occupancy_status})`),
-    });
-  }
-
-  // 3) 안전 — 혼재/IMDG/LLM 근거
+  // 3) 혼재(안전) — 혼재/IMDG/LLM 근거
   //
   // 근거를 반드시 함께 싣는다. 예전엔 detail: [] 고정이라 "안전 판정: 위험" 한 줄로
   // 끝났다 — 기상·스케줄링 발화는 근거를 보여주는데 안전만 비어 있어서, 정작 이
@@ -127,7 +112,7 @@ function toMessages({ orchestration, berthWeather, vessel }) {
       ).join(' · ')}`]
       : [];
     msgs.push({
-      agent: 'safety', time: at(3),
+      agent: 'safety', time: at(6),
       text: `안전 판정: ${orchestration.risk_level}`,
       detail: [
         ...verdictLine,
@@ -144,9 +129,29 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   // 실행되므로, 생략된 이유를 안전 에이전트의 발화로 남긴다.
   if (!orchestration.risk_level && (trace.length || rejected.length)) {
     msgs.push({
-      agent: 'safety', time: at(2),
+      agent: 'safety', time: at(5),
       text: '안전 심사 생략 — 선석 또는 기상 단계에서 판정이 끝났습니다',
       detail: ['안전 심사는 선석이 정해진 뒤 그 선석의 인접 화물 기준으로 실행됩니다.'],
+    });
+  }
+
+  // 3.7) 혼재 판정으로 지금 선석이 부적합이면 — 그때만 대체 선석을 제안한다(배정 아님).
+  const rejected = orchestration.rejected_candidates || [];
+  if (rejected.length) {
+    msgs.push({
+      agent: 'scheduling', time: at(4),
+      text: '혼재 판정으로 이 선석이 부적합합니다.',
+      detail: rejected.map((r) => `${r.berth_id}: ${r.reason}`),
+    });
+  }
+  const alts = orchestration.suggested_alternatives || [];
+  if (alts.length || orchestration.suggestion_note) {
+    msgs.push({
+      agent: 'scheduling', time: at(3),
+      text: alts.length
+        ? `대체 선석 제안 ${alts.length}곳 — 제안이며 배정이 아닙니다`
+        : `대체 선석을 제안하지 못했습니다: ${orchestration.suggestion_note}`,
+      detail: alts.map((c) => `${c.wharf_name} (흘수 여유 ${c.draught_margin_m?.toFixed(2)} m · ${c.occupancy_status})`),
     });
   }
 
@@ -365,7 +370,7 @@ export default function AgentConsole() {
     [orchestration, berthWeather, target]
   );
 
-  // 한 번의 실행으로 기상 → 스케줄링 → 안전 → 종합을 순차 수행.
+  // 한 번의 실행으로 선석 → 기상 → 혼재 → 종합을 순차 수행(백엔드 감독자).
   //
   // [2026-09-27] 배가 실제로 붙은 부두(presence_berth_name)를 검증한다 — 판정 잡·'판정 기록'
   // 버튼과 같은 질문("이 자리가 맞나")이다. 예전엔 항상 탐색모드(top-3 새 추천)로 불러,
@@ -639,7 +644,7 @@ export default function AgentConsole() {
         {messages.length === 0 && (
           <div style={{ color: COLORS.textDim, fontSize: 13, lineHeight: 1.8, textAlign: 'center', marginTop: 40 }}>
             선박을 고르고 <strong style={{ color: COLORS.teal }}>종합 판정</strong>을 누르면<br />
-            기상 → 스케줄링 → 안전 에이전트가 차례로 판단하고<br />
+            선석 → 기상 → 혼재(안전) 에이전트가 차례로 판단하고<br />
             종합 오케스트레이터가 하역 적합성을 결정합니다.
           </div>
         )}

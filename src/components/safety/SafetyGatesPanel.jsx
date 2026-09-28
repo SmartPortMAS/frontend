@@ -264,7 +264,7 @@ export default function SafetyGatesPanel() {
             <div>대상 선석의 화물과 같은 선석·인접 선석 화물의 조합 위험을 봅니다.</div>
             <div style={{ marginTop: 4 }}>인접 선석 — MSDS 반응성 · 산적 호환성그룹 / 같은 선석 동시 취급 — IMDG 격리 · 포장등급.
               IMDG 격리표는 배 한 척 안의 적재 규정이라 부두 사이 판정에서는 참고로만 표시합니다.</div>
-            <div style={{ marginTop: 4, color: COLORS.textSecondary }}>흘수·DWT 에 따른 접안 가능성은 우하단 "에이전트 판단 과정"에서 스케줄링 에이전트가 검토합니다.</div>
+            <div style={{ marginTop: 4, color: COLORS.textSecondary }}>흘수·DWT 에 따른 접안 가능성은 우하단 "에이전트 판단 과정"에서 선석 검증 에이전트가 검토합니다.</div>
           </HelpTip>
         </h3>
         <span style={{ fontSize: '12.5px', color: COLORS.textSecondary, fontWeight: 600 }}>혼재 · 격리 · 포장등급</span>
