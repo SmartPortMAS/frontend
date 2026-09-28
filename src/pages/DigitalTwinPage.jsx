@@ -116,6 +116,7 @@ export default function DigitalTwinPage() {
     : null;
   const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
   const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
+  const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
 
   // ── 앞으로 72시간 — 이 화면 안의 판정 흐름 (2026-09-27) ────────────────────
   // 정보창·연결 바·?outlook= 에서 요청한다. 열리면 카메라가 그 선석으로 가고(BerthFocus, 링은 끔),
@@ -129,6 +130,8 @@ export default function DigitalTwinPage() {
     setShowOmniverseStream(false);
     setShowMap(false);
     setOutlookFocus(focus);
+    // 72시간 패널이 같은 선석 정보를 보여주므로 정보창은 닫는다 — 열어 두면 머리 단추를 덮었다
+    setSelectedObject(null);
     clearOutlookRequest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outlookRequest?.at]);

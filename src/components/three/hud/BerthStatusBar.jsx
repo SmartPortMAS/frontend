@@ -57,7 +57,8 @@ export default function BerthStatusBar() {
               cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap',
               padding: '3px 8px', borderRadius: '6px', fontSize: '11px',
-              color: ship ? COLORS.textPrimary : COLORS.textDim,
+              // 어두운 HUD 위라 라이트 화면용 글자색(COLORS.textPrimary, 짙은 남색)을 쓰면 점유 선석 이름이 사라졌다
+              color: ship ? '#E8F0F2' : '#8FA3B0',
               border: `1px solid ${escalated ? WEATHER_STATUS_COLORS[verdict] : 'transparent'}`,
               background: escalated ? `${'#0d1b2a'}` : 'transparent',
             }}
