@@ -53,6 +53,7 @@ const iconBtn = {
 };
 
 export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
+  const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
   const setOutlookPreview = useSensorStore((s) => s.setOutlookPreview);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -218,9 +219,12 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
         </HelpTip>
         {data && <span style={{ color: '#94a3b8', fontSize: 11.5 }}>{data.berth_group || '부두군 미상'} 기준 · {rule}</span>}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button type="button" onClick={() => setOmniPreviewOpen(true)} style={{ ...iconBtn, color: '#94a3b8' }} title="Omniverse 정밀 검토 장면(9/17 캡처) — 같은 배가 조위 변화로 어떻게 바뀌는지 두 시점을 겹쳐 봅니다">
+            정밀 검토 미리보기
+          </button>
           {onOmniverse && (
-            <button type="button" onClick={onOmniverse} style={{ ...iconBtn, color: '#94a3b8' }} title="같은 72시간을 Omniverse 로 봅니다 — 고사양 PC 전용, 기동 1~2분">
-              Omniverse 로 보기
+            <button type="button" onClick={onOmniverse} style={{ ...iconBtn, color: '#64748b' }} title="같은 72시간을 Omniverse 로 봅니다 — 고사양 PC 전용, 기동 1~2분">
+              Omniverse 실행
             </button>
           )}
           <button type="button" onClick={onClose} style={iconBtn} title="닫기 — 선석 색이 실측으로 돌아갑니다"><FaTimes /></button>

@@ -518,11 +518,12 @@ function ReplaySection() {
             style={{ background: 'transparent', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
           >
             <span style={{ display: 'inline-block', width: 12, color: COLORS.textDim }}>{open ? '▾' : '▸'}</span>
-            과거 사례 다시 보기
-            <span style={{ fontSize: 12, fontWeight: 400, color: COLORS.textDim }}>(교육 · 사후 검토)</span>
+            사후 검토 — 지난 입항 건 판정 재생
+            <span style={{ fontSize: 12, fontWeight: 400, color: COLORS.textDim }}>(실측 기록 · 접어 둠)</span>
           </button>
-          <HelpTip title="과거 사례 다시 보기">
-            <div>실제로 있었던 날의 실측 조위·기상으로 입항 전 → 접안 직전 → 하역 중 세 시점 판정이 어떻게 달라졌는지 다시 봅니다. 판정이 한 번으로 끝나지 않는 이유를 보여 주는 자료입니다.</div>
+          <HelpTip title="사후 검토">
+            <div>지난 입항 건을 그날의 실측 조위·기상으로 되돌려 입항 전 → 접안 직전 → 하역 중 세 시점 판정과 조치안이 어떻게 달라졌는지 봅니다.</div>
+            <div style={{ marginTop: 4 }}>쓰는 때: 사고·이의 제기가 있을 때 "그 시각에 무엇을 근거로 어떤 판정이 났는가"를 되짚을 때, 그리고 새 관제사 교육. 평소 관제에는 쓰지 않아 접어 둡니다.</div>
             <div>흘수 여유 = 표 수심 + 조위 − 흘수. 판정 기준은 조위를 반영한 흘수 여유 1.0 m(체류 중 최저 여유)입니다.</div>
             {current?.source && <div style={{ marginTop: 4 }}>{current.source}</div>}
             {current?.caveat && <div style={{ marginTop: 4 }}>{current.caveat}</div>}

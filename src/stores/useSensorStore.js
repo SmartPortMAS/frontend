@@ -98,6 +98,9 @@ const useSensorStore = create((set, get) => ({
   // 3D 관제 화면 → 정밀 검토(Omniverse) 지목. 3D 정보창(캔버스 안)에서 누르고,
   // 스트림을 여닫는 건 DigitalTwinPage 라 여기를 거친다. at 이 바뀌면 새 요청이다.
   // { berth: 마스터 표기 선석명, call_sign, vessel_name } — 셋 다 없으면 지목 해제.
+  // Omniverse 정밀 검토 미리보기(캡처 비교) — 시연 PC 에서는 스트림 대신 이것을 연다 (2026-09-28)
+  omniPreviewOpen: false,
+  setOmniPreviewOpen: (v) => set({ omniPreviewOpen: Boolean(v) }),
   omniverseRequest: null,
   requestOmniverse: (focus) => set({ omniverseRequest: { ...(focus || {}), at: Date.now() } }),
   // 트윈 화면이 요청을 처리하면 비운다 — 남겨 두면 다음에 화면을 열 때마다 같은 지목을 다시 보낸다

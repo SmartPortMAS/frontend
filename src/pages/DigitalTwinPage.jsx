@@ -10,6 +10,7 @@ import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import OutlookTimeline from '../components/three/hud/OutlookTimeline';
+import OmniversePreview from '../components/three/OmniversePreview';
 import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
@@ -114,6 +115,7 @@ export default function DigitalTwinPage() {
     ? (selectedObject.type === 'Ship' ? selectedObject.id : ONSAN_BERTHS[selectedObject.id]?.name || selectedObject.id)
     : null;
   const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
+  const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
 
   // ── 앞으로 72시간 — 이 화면 안의 판정 흐름 (2026-09-27) ────────────────────
   // 정보창·연결 바·?outlook= 에서 요청한다. 열리면 카메라가 그 선석으로 가고(BerthFocus, 링은 끔),
@@ -203,6 +205,7 @@ export default function DigitalTwinPage() {
   return (
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       <Scene focusBerth={outlookFocus ? outlookFocus.berth : focusBerth} focusRings={!outlookFocus} />
+      <OmniversePreview />
 
       {/* 어느 선석을 보러 왔는지 알려준다.
           카메라만 옮기면 사용자는 '왜 여기가 비춰지는지' 모른다. */}
@@ -290,6 +293,22 @@ export default function DigitalTwinPage() {
       )}
 
       <div style={{ position: 'absolute', top: 50, right: 20, zIndex: 1000, display: 'flex', gap: '10px' }}>
+        {/* [2026-09-28] 시연 PC 에서는 스트림을 켤 수 없으므로 큰 단추는 정밀 검토 '미리보기'(9/17 캡처 비교)를 연다.
+            실제 스트림은 오른쪽 작은 '실행' 단추 — 고사양 PC 에서만. */}
+        {!showOmniverseStream && (
+          <button
+            className="action-btn"
+            onClick={() => setOmniPreviewOpen(true)}
+            title="Omniverse 정밀 검토 장면(9/17 캡처) — 같은 배가 조위 변화로 어떻게 바뀌는지 두 시점을 겹쳐 봅니다"
+            style={{
+              padding: '10px 16px', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(10px)', color: '#cbd5e1',
+              border: '1px solid rgba(148, 163, 184, 0.45)', borderRadius: '8px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold',
+            }}
+          >
+            <FaPlay /> Omniverse 정밀 검토 미리보기
+          </button>
+        )}
         <button
           className="action-btn"
           onClick={() => {
@@ -298,6 +317,8 @@ export default function DigitalTwinPage() {
             setShowOmniverseStream(next);
             if (next) checkStream();
           }}
+          title="Omniverse 실시간 스트림 — 고사양 PC 전용, 기동 1~2분"
+
           style={{ 
             padding: '10px 16px', background: showOmniverseStream ? 'rgba(16, 185, 129, 0.8)' : 'rgba(15, 23, 42, 0.8)', 
             backdropFilter: 'blur(10px)', color: showOmniverseStream ? '#fff' : '#94a3b8', border: '1px solid rgba(148, 163, 184, 0.45)',
@@ -310,7 +331,7 @@ export default function DigitalTwinPage() {
               문구에 함께 담아 사용자가 누를지 말지 판단할 수 있게 한다. */}
           {/* [2026-09-27] 보조 버튼으로 내렸다 — 72시간 판정 흐름은 이 화면 안(OutlookTimeline)이 기본이고,
               Omniverse 는 장면이 달라 이어지지 않는 데다 시연 PC 를 발열로 끈다. 고사양 PC 에서만 켠다. */}
-          <FaPlay /> {showOmniverseStream ? 'Omniverse 닫기' : 'Omniverse (고사양 PC · 기동 1~2분)'}
+          {showOmniverseStream ? 'Omniverse 닫기' : '실행 (고사양 PC)'}
         </button>
 
         <button 

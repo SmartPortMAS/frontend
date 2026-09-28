@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchBerthAssignments } from '../../api/backendAdapter';
+import { fetchBerthAssignments, postAssessAndRecord } from '../../api/backendAdapter';
+import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
 import { cargoSummary } from '../../utils/cargoText';
 import HelpTip from '../common/HelpTip';
@@ -106,6 +107,36 @@ export default function BerthOccupiedList({ scope }) {
   // 선석×슬롯 구조를 평평한 행 목록으로 편다 — 이 표는 "지금 뭐가 어디 붙어
   // 있나"만 보면 되므로 빈 슬롯은 뺀다.
   const requestConsole = useSensorStore((st) => st.requestConsole);
+  // [2026-09-28] 판정 전 행의 단추를 입항 선박 표와 같은 뜻으로 맞췄다 — "판정 요청"은 서버가 판정해
+  // 이력에 기록하고, "근거 →"는 우하단 에이전트 판단 과정을 그 배로 열어 왜 그 결론인지 본다.
+  // 예전엔 여기만 '판단 과정 →'이 판정 실행 입구여서 두 표의 단추 뜻이 달랐다(현우 지적).
+  // 흘수는 선석 점유 응답에 없어 대시보드 실선박 목록(항만공사 선박위치)에서 찾는다.
+  const { data: dash } = useDashboardData();
+  const [judging, setJudging] = useState({});
+  const draughtOf = (callSign) => {
+    const v = (dash?.real_traffic || []).find((t) => (t.callsgn || t.call_sign || '').trim().toUpperCase() === (callSign || '').trim().toUpperCase());
+    return v?.draught_m ?? null;
+  };
+  const cannotJudge = (row) => {
+    if (!row.wharf_name) return '계류시설 없음';
+    if (!(Number(draughtOf(row.call_sign)) > 0)) return '흘수 없음';
+    if (!row.cargo_chem_id) return '화물 미확인';
+    return null;
+  };
+  const judge = async (row) => {
+    const key = row.call_sign;
+    setJudging((m) => ({ ...m, [key]: 'busy' }));
+    try {
+      await postAssessAndRecord({
+        callSign: row.call_sign, vesselName: row.vessel_name, draughtM: draughtOf(row.call_sign),
+        chemId: row.cargo_chem_id, cargoName: row.cargo_name, wharfName: row.wharf_name,
+      });
+      setJudging((m) => { const n = { ...m }; delete n[key]; return n; });
+      load();
+    } catch (e) {
+      setJudging((m) => ({ ...m, [key]: { error: e.message } }));
+    }
+  };
   // 지도와 목록이 같은 스코프를 본다 — 지도만 온산인데 목록은 전체면 숫자가 안 맞는다
 
   const scopedBerths = scope === 'onsan'
@@ -134,7 +165,7 @@ export default function BerthOccupiedList({ scope }) {
           접안 선박 목록 ({rows.length}건)
           <HelpTip title="접안 선박 목록">
             지금 선석에 접안한 선박(항만공사 선박위치 기준)입니다. 판정 칸은 이 배의 최근 판정 등급, 확인자는 그 판정을 본 관제사입니다.
-            판정이 아직 없으면 [판단 과정 →]로 우하단 에이전트 판단 과정이 이 배로 열립니다.
+            판정이 없으면 [판정 요청]으로 서버가 판정해 이력에 기록하고, [근거 →]는 우하단 에이전트 판단 과정을 이 선박으로 열어 왜 그 결론인지 봅니다 — 입항 선박 표와 같은 뜻입니다.
           </HelpTip>
         </h3>
       </div>
@@ -182,22 +213,29 @@ export default function BerthOccupiedList({ scope }) {
                       가는 길이 끊겨 있었다. 지금 콘솔이 필요한 행은 "배는 붙어
                       있는데 아직 판정이 없는" 행이므로, 그 조건이 곧 이 버튼이다. */}
                   {!row.status ? (
-                    <button
-                      type="button"
-                      onClick={() => requestConsole(row.call_sign, {
-                        // 이 선석이 실제로 취급 중인 화물 — 콘솔이 같은 것으로 판정하게 한다
-                        chem_id: row.cargo_chem_id,
-                        name: row.cargo_name,
-                      })}
-                      title={`${row.vessel_name || row.call_sign} 을(를) 우하단 에이전트 판단 과정에서 판정 — 입항 예정 표의 [판정 요청]과 달리 판단 과정을 보면서 기록합니다`}
-                      style={{
-                        border: `1px solid ${COLORS.yellow}`, background: 'transparent',
-                        color: COLORS.yellow, borderRadius: '6px', padding: '2px 8px',
-                        fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
-                      }}
-                    >
-                      판단 과정 →
-                    </button>
+                    judging[row.call_sign] === 'busy' ? (
+                      <span style={{ color: COLORS.info, fontSize: '12px' }}>판정 중… (10~20초)</span>
+                    ) : cannotJudge(row) ? (
+                      <span style={{ color: COLORS.textDim, fontSize: '12px' }} title="판정에 필요한 값이 없습니다 — 판정불가">
+                        판정불가 · {cannotJudge(row)}
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
+                        <button
+                          type="button" onClick={() => judge(row)}
+                          title="지금 이 선박을 판정합니다 — 결과는 판정 이력에 남습니다"
+                          style={{
+                            border: `1px solid ${COLORS.navy}`, background: COLORS.card, color: COLORS.navy,
+                            borderRadius: 4, padding: '3px 9px', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+                          }}
+                        >
+                          판정 요청
+                        </button>
+                        {judging[row.call_sign]?.error && (
+                          <span style={{ fontSize: 11, color: COLORS.red, maxWidth: 220 }}>{judging[row.call_sign].error}</span>
+                        )}
+                      </span>
+                    )
                   ) : (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                       {/* 등급별 색 — 지도 팝업(BerthAssignmentMap VERDICT_BG)과 같은 표다.
@@ -205,6 +243,17 @@ export default function BerthOccupiedList({ scope }) {
                       <span style={{ color: VERDICT_COLOR[row.status] ?? COLORS.textPrimary, fontSize: '12px', fontWeight: 700 }}>
                         {row.status}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => requestConsole(row.call_sign, { chem_id: row.cargo_chem_id, name: row.cargo_name })}
+                        title="우하단 에이전트 판단 과정을 이 선박으로 엽니다 — 선석 → 기상 → 혼재 순서로 왜 이 결론인지 보고 확인 기록을 남깁니다"
+                        style={{
+                          border: 'none', background: 'transparent', color: COLORS.navy, padding: 0,
+                          fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'underline',
+                        }}
+                      >
+                        근거 →
+                      </button>
                       {overdueDays(row) > 0 && (
                         <span
                           title="PORT-MIS 출항 신고 시각이 지났는데 아직 이 선석에 잡혀 있습니다 — 현재 점유가 아닐 수 있습니다"
