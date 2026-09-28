@@ -1,3 +1,6 @@
+import useSensorStore from '../stores/useSensorStore';
+import { TankModel, PipeModel } from '../components/sensor/EquipmentModels';
+import { COLORS } from '../utils/constants';
 import HardwarePanel from '../components/sensor/HardwarePanel';
 import HelpTip from '../components/common/HelpTip';
 
@@ -18,6 +21,7 @@ import HelpTip from '../components/common/HelpTip';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function SensorPage() {
+  const { tanks, pipes } = useSensorStore();
 
   return (
     <div className="page-content" style={{ padding: '0' }}>
@@ -26,12 +30,12 @@ export default function SensorPage() {
           <h2 style={{ fontSize: '20px', marginBottom: '6px', display: 'flex', alignItems: 'center' }}>
             현장 설비
             <HelpTip title="현장 설비">
-              하역 개시 인터락 게이트는 실물(라즈베리파이·밸브)과 연결됩니다. 탱크·배관 계측기는 아직 없어
-              이 화면에 두지 않았습니다. 터미널 유량계·탱크 레벨 계측이 붙으면 여기에 더합니다.
+              하역 개시 인터락 게이트는 실물(라즈베리파이·밸브)과 연결됩니다. 아래 탱크·배관은 계측기가 없어
+              점선 구역에 예시값으로 둔 연결 예정 화면입니다.
             </HelpTip>
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: 0 }}>
-            하역 개시 게이트 <strong>실물</strong> 2대
+            하역 개시 게이트 <strong>실물</strong> 2대 · 탱크·배관 <strong>예시값</strong>
           </p>
         </div>
         {/* '시뮬레이션 모드' 배지도 내렸다(2026-08-23) — 시연 UI 는 도입 후 제품
@@ -45,6 +49,28 @@ export default function SensorPage() {
           주장 자체를 지키기 위한 표식이다. */}
 
       <HardwarePanel />
+
+      {/* [2026-09-28] 탱크·배관은 계측기가 없어 예시값이다. 실물 게이트와 섞이지 않게 점선 · 빗금 구역에 두고
+          상태 램프(ACTIVE·FLOWING)를 끄고 '예시값' 표식을 붙인다. 판정·게이트에는 쓰지 않는다. */}
+      <section className="virtual-zone" style={{ marginTop: '32px' }} aria-label="연결 예정 계측 (예시값)">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '6px' }}>
+          <h3 style={{ fontSize: '16px', margin: 0, color: COLORS.textSecondary }}>연결 예정 계측 — 탱크 · 배관</h3>
+          <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#5F6F78', border: '1px dashed #9AA8B0', borderRadius: '999px', padding: '2px 10px' }}>
+            가상 · 계측기 미연결
+          </span>
+        </div>
+        <p style={{ fontSize: '12.5px', color: COLORS.textDim, margin: '0 0 14px' }}>
+          터미널 탱크 레벨계 · 유량계를 연결하면 이렇게 보입니다. 지금 숫자는 예시값이며 판정과 게이트에 쓰지 않습니다.
+        </p>
+        <h4 style={{ fontSize: '13px', margin: '0 0 10px', color: COLORS.textSecondary }}>저장탱크 수위 · 온도 · 압력</h4>
+        <div className="sensor-grid">
+          {tanks.map((tank) => <TankModel key={tank.id} tank={tank} />)}
+        </div>
+        <h4 style={{ fontSize: '13px', margin: '20px 0 10px', color: COLORS.textSecondary }}>이송 배관 유량 · 압력</h4>
+        <div className="sensor-grid">
+          {pipes.map((pipe) => <PipeModel key={pipe.id} pipe={pipe} />)}
+        </div>
+      </section>
 
     </div>
   );

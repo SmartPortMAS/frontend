@@ -34,10 +34,10 @@ const kstShort = (iso) => {
 // ─────────────────────────────────────────────
 
 const AGENTS = {
-  weather: { name: '기상분석 에이전트', icon: FaCloudSun, color: '#1E6FA8' },
-  scheduling: { name: '선석 검증 에이전트', icon: FaRoute, color: '#5B3E9B' },
-  safety: { name: '안전관제 에이전트', icon: FaShieldAlt, color: '#B26A00' },
-  orchestrator: { name: '종합 오케스트레이터', icon: FaRobot, color: COLORS.teal },
+  weather: { name: '기상 분석 에이전트', short: '기상 분석', icon: FaCloudSun, color: '#1E6FA8', role: '부두 기준 풍속·파고 실측과 체류 중 예보' },
+  scheduling: { name: '선석 검증 에이전트', short: '선석 검증', icon: FaRoute, color: '#5B3E9B', role: '선석 수심·조위와 흘수, 이웃 선석 화물' },
+  safety: { name: '혼재 심사 에이전트', short: '혼재 심사', icon: FaShieldAlt, color: '#B26A00', role: '화물 MSDS·호환성 그룹과 이웃 화물 조합' },
+  orchestrator: { name: '종합 판정 (오케스트레이터)', short: '종합', icon: FaRobot, color: COLORS.teal, role: '세 의견을 모아 등급·조치안' },
 };
 
 // 근거 신뢰도 — LLM이 아니라 근거 종류로 백엔드 코드가 산정한 값
@@ -105,7 +105,6 @@ function toMessages({ orchestration, berthWeather, vessel }) {
       ...(orchestration.safety_conflicts || []),
       ...(orchestration.safety_bulk || []),
       ...(orchestration.safety_unassessed || []),
-      ...(orchestration.safety_reasoning ? [orchestration.safety_reasoning] : []),
       ...(orchestration.safety_hazards?.length
         ? [`주요 위험성: ${orchestration.safety_hazards.join(' · ')}`] : []),
       ...(orchestration.safety_imdg_reference || []).map(
@@ -122,7 +121,9 @@ function toMessages({ orchestration, berthWeather, vessel }) {
       : [];
     msgs.push({
       agent: 'safety', time: at(6),
-      text: `안전 판정: ${orchestration.risk_level}`,
+      text: `혼재 판정: ${orchestration.risk_level}`,
+      // 판단 사유 전문은 길어서 접어 둔다(현우: 설명이 과하다)
+      longText: orchestration.safety_reasoning || null,
       detail: [
         ...verdictLine,
         ...(detail.length ? detail : ['인접·동시 작업 화물과 혼재금지·IMDG 격리 충돌 없음']),
@@ -167,12 +168,33 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   }
 
   // 4) 종합
+  // [2026-09-28] 에이전트마다 무엇을 확인했고 무엇을 못 봤는지, 어떤 자료를 썼는지 붙인다(백엔드 opinions).
+  const byAxis = Object.fromEntries((orchestration.opinions || []).map((o) => [o.axis, o]));
+  const AXIS_OF = { scheduling: '선석', weather: '기상', safety: '혼재' };
+  const ws = orchestration.weather_source;
+  const bf = orchestration.berth_facts;
+  const SOURCE = {
+    scheduling: `선석 제원${bf?.depth_m != null ? ` 수심 ${bf.depth_m} m` : ''} · 국립해양조사원 조석예보 · 이웃 선석 재항 화물`,
+    weather: ws ? `기상청 ${ws.station || ''} 관측 · 단기예보 ${ws.forecast_points ?? '-'}개 시각 · ${ws.berth_group || '부두'} 기준${ws.stop_wind ? `(중단 ${ws.stop_wind} m/s)` : ''}` : null,
+    safety: `MSDS ${orchestration.msds_sections_used?.length || 0}개 절 · 46 CFR 150 호환성 그룹 · 혼재금지 규칙`,
+  };
+  const seen = new Set();
+  for (const m of msgs) {
+    if (!AXIS_OF[m.agent] || seen.has(m.agent)) continue;
+    seen.add(m.agent);
+    const o = byAxis[AXIS_OF[m.agent]];
+    if (o) { m.level = o.level; m.checked = o.checked || []; m.missing = o.missing || []; }
+    m.source = SOURCE[m.agent];
+  }
+
   msgs.push({
     agent: 'orchestrator', time: at(1),
     text: orchestration.summary || `${orchestration.decision_label || orchestration.status}`,
     detail: [],
     verdict: orchestration.status,
     verdictLabel: orchestration.decision_label,
+    axes: (orchestration.opinions || []).map((o) => ({ axis: o.axis, level: o.level })),
+    missingAny: orchestration.evidence_missing,
   });
   return msgs;
 }
@@ -231,7 +253,7 @@ async function findPendingAssessmentId(callsgn) {
   }
 }
 
-export default function AgentConsole() {
+export default function AgentConsole({ mode = 'qa' }) {
   // 3D 관제 화면에서는 띄우지 않는다 — 전체화면 연출과 HUD 를 가린다
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
@@ -319,7 +341,7 @@ export default function AgentConsole() {
   // 목록에 없으면(화물·선종 모두 미확인) 대상 지정 없이 열기만 한다 —
   // 가짜 항목을 만들어 채우지 않는다.
   useEffect(() => {
-    if (!consoleRequest) return;
+    if (mode !== 'reasoning' || !consoleRequest) return;
     const want = (consoleRequest.callsgn || '').trim().toUpperCase();
     const match = (v) => v.callsgn && v.callsgn.trim().toUpperCase() === want;
     // 화면 목록 우선, 없으면 신호 끊긴 판정 대상에서 찾는다.
@@ -402,10 +424,37 @@ export default function AgentConsole() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.port_call_id]);
 
+  const setReasoningFocus = useSensorStore((st) => st.setReasoningFocus);
+  const setReasoningOpen = useSensorStore((st) => st.setReasoningOpen);
+  const reasoningOpen = useSensorStore((st) => st.reasoningOpen);
+  // 서랍이 닫히면 진행 표시도 끈다
+  useEffect(() => {
+    if (mode !== 'reasoning') return;
+    setReasoningOpen(open);
+    if (!open) setReasoningFocus(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  // 질의응답의 화물 맥락 — 지금 고른 배의 화물. 사용자가 빼면 쓰지 않는다.
+  const [qaCargoOff, setQaCargoOff] = useState(false);
+  const qaCargo = qaCargoOff ? null : (target?.cargo?.name || selectedVessel?.cargo?.name || null);
+
   const messages = useMemo(
     () => toMessages({ orchestration, berthWeather, vessel: target }),
     [orchestration, berthWeather, target]
   );
+  // [2026-09-28] 판정은 서버가 한 번에 계산해 돌려준다. 받은 결과를 실제 판단 순서(선석 → 기상 → 혼재 → 종합)대로
+  // 하나씩 펼쳐 보인다 — 결과를 바꾸지 않고 보여주는 순서만 정한다.
+  const [revealed, setRevealed] = useState(0);
+  useEffect(() => {
+    if (!messages.length) { setRevealed(0); return undefined; }
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { setRevealed(messages.length); return undefined; }
+    let i = 1;
+    setRevealed(1);
+    const id = setInterval(() => { i += 1; setRevealed(i); if (i >= messages.length) clearInterval(id); }, 550);
+    return () => clearInterval(id);
+  }, [messages]);
+  const shownMessages = messages.slice(0, revealed);
 
   // 한 번의 실행으로 선석 → 기상 → 혼재 → 종합을 순차 수행(백엔드 감독자).
   //
@@ -417,6 +466,7 @@ export default function AgentConsole() {
   const run = async (t = target) => {
     if (!t) return;
     setLoading(true);
+    if (mode === 'reasoning') setReasoningFocus({ callsgn: t.callsgn, loading: true });
     setAckState(null);   // 새로 판정하면 이전 확인은 무효다
     setAssessmentId(null);
     setAssessmentChecked(false);
@@ -459,6 +509,7 @@ export default function AgentConsole() {
       setAssessmentChecked(true);
     } finally {
       setLoading(false);
+      if (mode === 'reasoning') setReasoningFocus({ callsgn: t.callsgn, loading: false });
     }
   };
 
@@ -502,7 +553,7 @@ export default function AgentConsole() {
       const mentionsChemical = /[가-힣A-Za-z]{2,}/.test(q) && namesAnyCargo(q);
       const res = await ragQuery({
         question: q,
-        cargoHint: mentionsChemical ? null : target?.cargo?.name,
+        cargoHint: mentionsChemical ? null : qaCargo,
       });
       setQaLog((prev) => [...prev, { role: 'agent', ...res }]);
     } catch (err) {
@@ -519,10 +570,12 @@ export default function AgentConsole() {
   if (pathname.startsWith('/twin')) return null;
 
   if (!open) {
-    if (hideFloatingButton) return null;
+    if (mode === 'reasoning') return null;
+    if (hideFloatingButton || reasoningOpen) return null;
     return (
       <button
         onClick={() => setOpen(true)}
+        title="화물 안전 규정을 물어보면 MSDS 원문·규정에서 찾아 출처와 함께 답합니다"
         style={{
           position: 'fixed', right: 22, bottom: 22, zIndex: 3000,
           display: 'flex', alignItems: 'center', gap: 9,
@@ -532,27 +585,21 @@ export default function AgentConsole() {
           boxShadow: '0 6px 22px rgba(0,0,0,0.45)',
         }}
       >
-        <FaComments /> 에이전트 판단 과정
-        {orchestration && (
-          <span style={{
-            background: '#FFFFFF', color: COLORS.teal, borderRadius: 10,
-            padding: '1px 8px', fontSize: 11,
-          }}>
-            {orchestration.decision_label || orchestration.status}
-          </span>
-        )}
+        <FaBookOpen /> 화물 규정 질의응답
       </button>
     );
   }
 
+  const drawer = mode === 'reasoning';
   return (
     <div style={{
-      position: 'fixed', right: 22, bottom: 22, zIndex: 3000,
-      width: 420, maxWidth: 'calc(100vw - 44px)', height: 560, maxHeight: 'calc(100vh - 120px)',
+      ...(drawer
+        ? { position: 'fixed', top: 0, right: 0, height: '100vh', width: 470, maxWidth: '100vw', zIndex: 3000, borderRadius: 0 }
+        : { position: 'fixed', right: 22, bottom: 22, zIndex: 3000, width: 460, maxWidth: 'calc(100vw - 44px)', height: 640, maxHeight: 'calc(100vh - 120px)' }),
       display: 'flex', flexDirection: 'column',
       // 라이트 통일 — 어두운 바탕은 라이트 팔레트 글자색과 만나 글자가 안 보였다
       background: COLORS.panel, border: `1px solid ${COLORS.border}`,
-      borderRadius: 14, boxShadow: '0 10px 40px rgba(18,53,79,0.22)', overflow: 'hidden',
+      ...(drawer ? {} : { borderRadius: 14 }), boxShadow: '0 10px 40px rgba(18,53,79,0.22)', overflow: 'hidden',
     }}>
       {/* 헤더 */}
       <div style={{
@@ -560,43 +607,34 @@ export default function AgentConsole() {
         padding: '11px 14px', borderBottom: `1px solid ${COLORS.glassBorder}`,
         background: COLORS.cardHover,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: COLORS.textPrimary, fontWeight: 700 }}>
-          <FaComments color={COLORS.teal} /> 에이전트 판단 과정
-        </div>
+        {drawer ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: COLORS.textPrimary, fontWeight: 800 }}>
+            <FaRobot color={COLORS.teal} /> 판정 근거 · 에이전트 판단 과정
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: COLORS.textPrimary, fontWeight: 800 }}>
+              <FaBookOpen color={COLORS.teal} /> 화물 규정 질의응답
+            </div>
+            <div style={{ fontSize: 11, color: COLORS.textDim, marginTop: 2 }}>MSDS 원문 · 46 CFR 호환성 · 혼재금지 규칙에서 찾아 출처와 함께 답합니다</div>
+          </div>
+        )}
         <button
           onClick={() => setOpen(false)}
-          aria-label="판단 과정 로그 닫기"
-          title="판단 과정 로그 닫기"
+          aria-label="닫기"
+          title="닫기"
           style={{
             background: 'none', border: 'none', color: COLORS.textDim, cursor: 'pointer', fontSize: 15,
           }}
         ><FaTimes /></button>
       </div>
 
-      {/* 탭 — 협상 로그 / 질의응답 */}
-      <div style={{ display: 'flex', borderBottom: `1px solid ${COLORS.glassBorder}` }}>
-        {[
-          { key: 'negotiation', label: '판단 과정', icon: FaRobot },
-          { key: 'qa', label: '질의응답', icon: FaSearch },
-        ].map((t) => {
-          const Icon = t.icon;
-          const on = tab === t.key;
-          return (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              padding: '9px 0', cursor: 'pointer', background: 'none', border: 'none',
-              borderBottom: `2px solid ${on ? COLORS.teal : 'transparent'}`,
-              color: on ? COLORS.teal : COLORS.textDim, fontWeight: on ? 800 : 600, fontSize: 12.5,
-            }}><Icon /> {t.label}</button>
-          );
-        })}
-      </div>
-
-      {tab === 'qa' ? (
+      {!drawer ? (
         <QaPanel
           log={qaLog} loading={qaLoading} question={question}
           setQuestion={setQuestion} ask={ask} endRef={qaEndRef}
-          cargoHint={target?.cargo?.name}
+          cargoHint={qaCargo} onClearCargo={() => setQaCargoOff(true)}
+          onNew={() => { setQaLog([]); setQaCargoOff(false); }}
         />
       ) : (
       <>
@@ -641,6 +679,38 @@ export default function AgentConsole() {
         </div>
       )}
 
+      {/* 에이전트 단계 — 판단 중에는 깜빡이고, 결과가 오면 판단 순서대로 켜진다 */}
+      {target && (
+        <div
+          title="판정은 서버가 한 번에 계산합니다. 받은 결과를 실제 판단 순서대로 펼쳐 보입니다."
+          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 14px', borderBottom: `1px solid ${COLORS.glassBorder}`, flexWrap: 'wrap' }}
+        >
+          {['scheduling', 'weather', 'safety', 'orchestrator'].map((k, idx) => {
+            const a = AGENTS[k];
+            const hit = shownMessages.find((x) => x.agent === k);
+            const lv = k === 'orchestrator' ? (hit ? orchestration?.decision_label : null) : hit?.level;
+            const on = Boolean(hit);
+            const c = on ? (LEVEL_COLOR[lv] || a.color) : COLORS.textDim;
+            return (
+              <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                {idx > 0 && <span aria-hidden="true" style={{ color: COLORS.textDim, fontSize: 11 }}>→</span>}
+                <span
+                  className={!on && loading ? 'stage-chip-busy' : undefined}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 999,
+                    fontSize: 11.5, fontWeight: 800, color: on ? '#FFFFFF' : COLORS.textDim,
+                    background: on ? c : 'transparent', border: `1px solid ${on ? c : COLORS.border}`,
+                    boxShadow: on ? `0 0 10px ${c}66` : 'none', transition: 'all .3s',
+                  }}
+                >
+                  {a.short}{on && lv ? ` · ${lv}` : ''}
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* 대화 */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {messages.length === 0 && (
@@ -654,7 +724,7 @@ export default function AgentConsole() {
             )}
           </div>
         )}
-        {messages.map((m, i) => {
+        {shownMessages.map((m, i) => {
           const a = AGENTS[m.agent];
           const Icon = a.icon;
           return (
@@ -666,7 +736,7 @@ export default function AgentConsole() {
               }}><Icon /></div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 11, color: COLORS.textDim, marginBottom: 3 }}>
-                  {a.name} · {m.time}
+                  <strong style={{ color: a.color }}>{a.name}</strong> · {a.role}
                 </div>
                 <div style={{
                   background: m.verdict ? `${VERDICT_COLOR[m.verdict] || COLORS.info}1f` : COLORS.cardHover,
@@ -705,6 +775,38 @@ export default function AgentConsole() {
                       </details>
                     </>
                   ))}
+                  {m.longText && (
+                    <details style={{ marginTop: 5 }}>
+                      <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>판단 사유 전문</summary>
+                      <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4, lineHeight: 1.6 }}>{m.longText}</div>
+                    </details>
+                  )}
+                  {m.checked?.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 7, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10.5, color: COLORS.textDim, fontWeight: 700 }}>확인</span>
+                      {m.checked.map((c, j) => (
+                        <span key={j} style={{ fontSize: 10.5, color: a.color, border: `1px solid ${a.color}55`, background: `${a.color}0f`, borderRadius: 999, padding: '1px 7px' }}>{c}</span>
+                      ))}
+                    </div>
+                  )}
+                  {m.missing?.length > 0 && (
+                    <div style={{ fontSize: 11, color: COLORS.yellow, marginTop: 5 }}>
+                      못 본 것 · {m.missing.join(' · ')} — 없는 값을 지어내지 않고 등급을 보수적으로 둡니다
+                    </div>
+                  )}
+                  {m.source && (
+                    <div style={{ fontSize: 10.5, color: COLORS.textDim, marginTop: 5 }}>자료 · {m.source}</div>
+                  )}
+                  {m.axes?.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8, alignItems: 'center' }}>
+                      {m.axes.map((x) => (
+                        <span key={x.axis} style={{ fontSize: 11, fontWeight: 800, color: LEVEL_COLOR[x.level] ?? COLORS.textSecondary, border: `1px solid ${(LEVEL_COLOR[x.level] ?? COLORS.border)}66`, borderRadius: 6, padding: '1px 7px' }}>
+                          {x.axis} {x.level}
+                        </span>
+                      ))}
+                      <span style={{ fontSize: 11, color: COLORS.textDim }}>→ 가장 낮은 등급이 종합 등급</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -895,26 +997,62 @@ function CitationList({ citations, onOpen }) {
 // 펼친 뒤 다시 접으려면 스크롤을 거슬러 올라가야 해서 번거롭다. 대신 한 줄 칩만
 // 보여주고 클릭하면 콘솔 위에 오버레이로 띄운다 — 닫아도 채팅 스크롤 위치가 그대로다.
 // ─────────────────────────────────────────────
-function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }) {
+const QA_GROUPS = [
+  ['보호구 · 물성', ['벤젠 취급 시 착용해야 할 보호구는?', '톨루엔 인화점이 몇 도인가요?']],
+  ['누출 · 화재 대응', ['메탄올이 누출되면 어떻게 대처하나요?', '가솔린 화재에는 어떻게 소화하나요?']],
+  ['혼재 · 격리', ['황산은 어떤 물질과 함께 두면 안 되나요?', '아크릴로니트릴과 프로필렌옥사이드를 이웃 선석에서 동시에 하역해도 되나요?']],
+];
+
+function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint, onClearCargo, onNew }) {
   const [activeCitation, setActiveCitation] = useState(null);
   return (
     <>
       <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {(cargoHint || log.length > 0) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {cargoHint && (
+              <span style={{ fontSize: 11.5, color: COLORS.teal, border: `1px solid ${COLORS.teal}66`, background: `${COLORS.teal}10`, borderRadius: 999, padding: '2px 8px', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                지금 화물 · {cargoHint}
+                <button type="button" onClick={onClearCargo} title="이 화물을 질문 맥락에서 뺍니다" style={{ border: 'none', background: 'none', color: COLORS.textDim, cursor: 'pointer', padding: 0, fontSize: 11 }}>✕</button>
+              </span>
+            )}
+            {log.length > 0 && (
+              <button type="button" onClick={onNew} style={{ marginLeft: 'auto', border: `1px solid ${COLORS.border}`, background: 'transparent', color: COLORS.textSecondary, borderRadius: 6, padding: '2px 9px', fontSize: 11.5, cursor: 'pointer' }}>
+                새 대화
+              </button>
+            )}
+          </div>
+        )}
         {log.length === 0 && (
-          <div style={{ marginTop: 20 }}>
-            <div style={{ color: COLORS.textDim, fontSize: 13, lineHeight: 1.75, textAlign: 'center', marginBottom: 14 }}>
-              화물 안전 규정을 물어보세요.<br />
-              답변은 <strong style={{ color: COLORS.teal }}>MSDS 원문 근거</strong>와 함께 제공됩니다.
+          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ color: COLORS.textSecondary, fontSize: 12.5, lineHeight: 1.7 }}>
+              화물 안전 규정을 물어보세요. 답은 <strong style={{ color: COLORS.teal }}>MSDS 원문 절</strong>을 출처로 붙이고,
+              두 화물의 혼재를 물으면 <strong style={{ color: COLORS.teal }}>규칙으로 확정한 등급</strong>을 함께 보여줍니다.
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {SUGGESTED.map((s) => (
-                <button key={s} onClick={() => ask(s)} style={{
-                  textAlign: 'left', background: COLORS.cardHover, cursor: 'pointer',
-                  border: `1px solid ${COLORS.glassBorder}`, borderRadius: 9, padding: '9px 12px',
-                  color: COLORS.textSecondary, fontSize: 12.5, lineHeight: 1.5,
-                }}>{s}</button>
-              ))}
-            </div>
+            {cargoHint && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.textDim, marginBottom: 5 }}>지금 화물 · {cargoHint}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {[`${cargoHint} 취급 시 착용해야 할 보호구는?`, `${cargoHint}이(가) 누출되면 어떻게 대처하나요?`, `${cargoHint}과(와) 함께 두면 안 되는 물질은?`].map((q) => (
+                    <button key={q} onClick={() => ask(q)} style={{ textAlign: 'left', background: `${COLORS.teal}0d`, cursor: 'pointer', border: `1px solid ${COLORS.teal}44`, borderRadius: 9, padding: '8px 12px', color: COLORS.textPrimary, fontSize: 12.5 }}>{q}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {QA_GROUPS.map(([head, qs]) => (
+              <div key={head}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.textDim, marginBottom: 5 }}>{head}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {qs.map((q) => (
+                    <button key={q} onClick={() => ask(q)} style={{
+                      textAlign: 'left', background: COLORS.cardHover, cursor: 'pointer',
+                      border: `1px solid ${COLORS.glassBorder}`, borderRadius: 9, padding: '8px 12px',
+                      color: COLORS.textSecondary, fontSize: 12.5, lineHeight: 1.5,
+                    }}>{q}</button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -963,11 +1101,22 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
                       {' '}· 규정 기준으로 확정
                     </span>
                   </div>
-                  {m.assessment.reasoning && (
-                    <div style={{ fontSize: 11.5, color: COLORS.textSecondary, marginTop: 3, lineHeight: 1.55 }}>
-                      {m.assessment.reasoning}
-                    </div>
-                  )}
+                  {m.assessment.reasoning && (() => {
+                    const full = m.assessment.reasoning;
+                    const hit = full.match(/^.*?(?:다\.|\.)(?=\s|$)/);
+                    const head = hit ? hit[0] : full;
+                    return (
+                      <div style={{ fontSize: 11.5, color: COLORS.textSecondary, marginTop: 3, lineHeight: 1.55 }}>
+                        {head}
+                        {head.length < full.length && (
+                          <details style={{ marginTop: 3 }}>
+                            <summary style={{ cursor: 'pointer', color: COLORS.info, fontWeight: 600 }}>판단 사유 전문</summary>
+                            <div style={{ marginTop: 3 }}>{full}</div>
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1021,7 +1170,7 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint }
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') ask(); }}
-          placeholder={cargoHint ? `${cargoHint} 관련 질문…` : '화물 안전 규정을 물어보세요…'}
+          placeholder={cargoHint ? `${cargoHint} 관련 질문…` : '화물명과 함께 물어보세요 (예: 벤젠 보호구)'}
           style={{
             flex: 1, minWidth: 0, background: COLORS.card, color: COLORS.textPrimary,
             border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '9px 11px', fontSize: 12.5,

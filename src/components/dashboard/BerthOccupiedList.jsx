@@ -123,9 +123,12 @@ export default function BerthOccupiedList({ scope }) {
     if (!row.cargo_chem_id) return '화물 미확인';
     return null;
   };
+  const setJudgeBusy = useSensorStore((st) => st.setJudgeBusy);
+  const focus = useSensorStore((st) => st.reasoningFocus);
   const judge = async (row) => {
     const key = row.call_sign;
     setJudging((m) => ({ ...m, [key]: 'busy' }));
+    setJudgeBusy(key, true);
     try {
       await postAssessAndRecord({
         callSign: row.call_sign, vesselName: row.vessel_name, draughtM: draughtOf(row.call_sign),
@@ -135,6 +138,8 @@ export default function BerthOccupiedList({ scope }) {
       load();
     } catch (e) {
       setJudging((m) => ({ ...m, [key]: { error: e.message } }));
+    } finally {
+      setJudgeBusy(key, false);
     }
   };
   // 지도와 목록이 같은 스코프를 본다 — 지도만 온산인데 목록은 전체면 숫자가 안 맞는다
@@ -193,7 +198,14 @@ export default function BerthOccupiedList({ scope }) {
                 주석이 이미 적어 둔 사실이다) — 늘 undefined 라, 한 부두에 배가
                 둘 붙는 순간 키가 겹친다. 선석·슬롯은 이 표에서 언제나 유일하다. */}
             {rows.map((row) => (
-              <tr key={`${row.wharf_name}-${row.slot_no}`} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+              <tr
+                key={`${row.wharf_name}-${row.slot_no}`}
+                className={[
+                  focus?.callsgn === row.call_sign ? 'row-focus' : '',
+                  judging[row.call_sign] === 'busy' || (focus?.callsgn === row.call_sign && focus.loading) ? 'row-busy' : '',
+                ].join(' ').trim() || undefined}
+                style={{ borderBottom: `1px solid ${COLORS.border}` }}
+              >
                 <td style={{ padding: '6px 8px' }}>{row.wharf_name}{row.slot_no ? ` · 슬롯${row.slot_no}` : ''}</td>
                 <td style={{ padding: '6px 8px' }}>{row.vessel_name || '(선명 미상)'} ({row.call_sign || '-'})</td>
                 <td style={{ padding: '6px 8px', color: COLORS.textSecondary }} title={(row.cargo_names || []).join(', ')}>

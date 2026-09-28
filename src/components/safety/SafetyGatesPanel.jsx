@@ -25,6 +25,15 @@ const RISK_STYLE = {
 // 선택지였다.
 const BERTHS = Object.values(ONSAN_BERTHS).map((b) => b.name);
 
+// 판단 사유의 첫 문장 — 결론 옆에는 이것만 둔다
+function firstSentence(text) {
+  const t = (text || '').trim();
+  if (!t) return '';
+  const m = t.match(/^.*?(?:다\.|\.)(?=\s|$)/);
+  const head = m ? m[0] : t;
+  return head.length > 140 ? `${head.slice(0, 138)}…` : head;
+}
+
 export default function SafetyGatesPanel() {
   const { assessSafetyVerdict, assessSafetyGates } = useOnsanApi();
   // 이 패널의 판정 결과는 DashboardPage "최근 안전 심사" KPI가 참조하므로
@@ -401,8 +410,8 @@ export default function SafetyGatesPanel() {
                   또 붙이는 구조라 "인화성 인화성 가스 폭발 위험"으로 찍혔다.
                   등급값(고인화성 등)이 오던 자리에 문장이 들어오면서 깨진 것.
                 · IMDG 격리코드: 부두 간 판정 근거가 아니라 참고 정보라 제거됨. */}
-            <div style={{ fontSize: '12px', color: COLORS.textSecondary, lineHeight: 1.6 }}>
-              {result.explanation?.summary}
+            <div style={{ fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.6, flex: 1, minWidth: 0 }}>
+              {firstSentence(result.explanation?.summary)}
             </div>
           </div>
 
@@ -456,6 +465,15 @@ export default function SafetyGatesPanel() {
             </div>
           )}
 
+          {/* [2026-09-28] 판단 사유 전문 · 통과 규칙 · MSDS 체크리스트는 접어 둔다(현우: 설명이 과하다) */}
+          <details>
+          <summary style={{ cursor: 'pointer', color: COLORS.info, fontSize: '12.5px', fontWeight: 700 }}>
+            근거 자세히 — 판단 사유 · 통과 규칙 {passes.length}개{result.explanation?.checklist?.length ? ` · MSDS 체크리스트 ${result.explanation.checklist.length}` : ''}
+          </summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+          {result.explanation?.summary && (
+            <div style={{ fontSize: '12px', color: COLORS.textSecondary, lineHeight: 1.65 }}>{result.explanation.summary}</div>
+          )}
           <button onClick={() => setShowAllGates((v) => !v)} style={{
             alignSelf: 'flex-start', background: 'none', border: 'none', color: COLORS.info,
             cursor: 'pointer', fontSize: '12px', padding: 0,
@@ -508,6 +526,8 @@ export default function SafetyGatesPanel() {
               </ul>
             </div>
           )}
+          </div>
+          </details>
         </div>
       )}
     </div>

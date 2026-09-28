@@ -10,6 +10,7 @@ import { cargoNames, cargoSummary } from '../utils/cargoText';
 import HelpTip from '../components/common/HelpTip';
 import BerthAssignmentMap from '../components/dashboard/BerthAssignmentMap';
 import BerthOccupiedList from '../components/dashboard/BerthOccupiedList';
+import AgentConsole from '../components/dashboard/AgentConsole';
 import GanttChart from '../components/dashboard/GanttChart';
 
 // ─────────────────────────────────────────────
@@ -108,9 +109,12 @@ function UpcomingSection() {
   const requestConsole = useSensorStore((st) => st.requestConsole);
   // 판정 감시 작업은 10분마다 "지금 항내에 있는 배"만 훑는다. 아직 오지 않은 배는 관제사가
   // 여기서 직접 판정을 요청한다 — 결과는 판정 이력에 남고 표가 다시 읽는다.
+  const setJudgeBusy = useSensorStore((st) => st.setJudgeBusy);
+  const focus = useSensorStore((st) => st.reasoningFocus);
   const judge = async (r) => {
     const key = r.call_sign;
     setJudging((m) => ({ ...m, [key]: 'busy' }));
+    setJudgeBusy(key, true);
     try {
       await postAssessAndRecord({
         callSign: r.call_sign, vesselName: r.vessel_name, draughtM: r.draught_m,
@@ -121,6 +125,8 @@ function UpcomingSection() {
       setReloadKey((k) => k + 1);
     } catch (e) {
       setJudging((m) => ({ ...m, [key]: { error: e.message } }));
+    } finally {
+      setJudgeBusy(key, false);
     }
   };
   // 판정을 요청할 수 없는 이유 — 지어내지 않고 무엇이 없는지 말한다
@@ -193,9 +199,11 @@ function UpcomingSection() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 12 }}>
         {['입항전', '접안직전', '하역중'].map((k) => {
           const on = stageFilter === k;
+          const live = items.some((r) => r.stage === k && (judging[r.call_sign] === 'busy' || focus?.callsgn === r.call_sign));
           return (
             <button
               key={k} type="button" aria-pressed={on}
+              className={live ? 'stage-live' : undefined}
               onClick={() => setStageFilter((cur) => (cur === k ? null : k))}
               title={on ? '다시 누르면 모든 시점을 봅니다' : `${STAGE_LABEL[k]} 선박만 봅니다`}
               style={{
@@ -243,7 +251,14 @@ function UpcomingSection() {
           </thead>
           <tbody>
             {shown.map((r) => (
-              <tr key={`${r.call_sign}-${r.arrival_at_utc}`} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+              <tr
+                key={`${r.call_sign}-${r.arrival_at_utc}`}
+                className={[
+                  focus?.callsgn === r.call_sign ? 'row-focus' : '',
+                  judging[r.call_sign] === 'busy' || (focus?.callsgn === r.call_sign && focus.loading) ? 'row-busy' : '',
+                ].join(' ').trim() || undefined}
+                style={{ borderBottom: `1px solid ${COLORS.border}` }}
+              >
                 <td style={{ ...td, fontFamily: 'ui-monospace, Consolas, monospace', whiteSpace: 'nowrap' }}>{kst(r.arrival_at_utc)}</td>
                 <td style={td}>
                   <div style={{ fontWeight: 600 }}>{r.vessel_name || '(선명 미상)'}</div>
@@ -586,6 +601,8 @@ function ReplaySection() {
 
 export default function ArrivalVerificationPage() {
   const review = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('review') === '1';
+  const judgingAny = useSensorStore((st) => Object.keys(st.judgeBusy).length > 0);
+  const reasoningLive = useSensorStore((st) => Boolean(st.reasoningFocus));
   return (
     <div className="dashboard-page">
       <div className="glass-card dash-section" style={{ display: 'grid', gap: 6 }}>
@@ -595,7 +612,7 @@ export default function ArrivalVerificationPage() {
             <div>기존 선석 배정(선석회의 · PORT-MIS 신고)은 그대로 따릅니다. 선박 한 척을 <strong>입항 전 → 접안 직전 → 하역 중</strong> 순서로 다시 판정하고,
             기상·조위·흘수·인접 화물이 기준을 벗어나면 조치안을 만들어 권한 있는 곳 — 선석 운영 주체 · VTS · 터미널 — 에 근거와 함께 넘깁니다.</div>
             <div style={{ marginTop: 4 }}>위는 <strong>입항 선박 판정</strong>(입항 신고 기준), 아래는 <strong>접안 선박</strong>(실제 위치 기준)입니다.
-            판정 옆 [근거]를 누르면 우하단 창에 선석 → 기상 → 혼재 순서의 판단 과정이 열립니다.
+            판정 옆 [근거]를 누르면 오른쪽 서랍에 선석 → 기상 → 혼재 → 종합 순서로 에이전트 판단 과정이 열립니다.
             대시보드의 "확인 대기 판정"을 누르면 이 화면으로 옵니다.</div>
           </HelpTip>
         </h2>
@@ -610,6 +627,7 @@ export default function ArrivalVerificationPage() {
             <li key={head} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {i > 0 && <span aria-hidden="true" style={{ color: COLORS.textDim }}>→</span>}
               <a
+                className={(i === 1 && judgingAny) || (i === 2 && reasoningLive) ? 'step-live' : undefined}
                 href={`#${id}`}
                 onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
                 style={{
@@ -631,6 +649,8 @@ export default function ArrivalVerificationPage() {
       {/* 사후 검토·부두별 접안 이력은 관제 흐름에 없어 화면에서 뺐다(현우 D3) — 보고서·영상 촬영용으로만 ?review=1 */}
       {review && <div className="dash-section"><GanttChart /></div>}
       {review && <div className="dash-section"><ReplaySection /></div>}
+      {/* 판단 과정 서랍 — 판정 옆 [근거]로 연다(2026-09-28: 전 화면 떠 있는 창에서 이 화면으로 옮겼다) */}
+      <AgentConsole mode="reasoning" />
     </div>
   );
 }

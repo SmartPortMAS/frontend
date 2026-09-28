@@ -71,7 +71,7 @@ export default function SafetyGraph() {
           </div>
         )}
         {!error && chartData.length === 0 && (
-          <div style={{ color: 'var(--text-dim)', fontSize: '13px' }}>불러오는 중…</div>
+          <div style={{ color: 'var(--text-dim)', fontSize: '13px' }}>항만 전체 지수를 계산하는 중입니다 · 서버가 처음 계산할 때는 1분 정도 걸립니다</div>
         )}
         {chartData.length > 0 && (
           <ResponsiveContainer width="100%" height="100%">

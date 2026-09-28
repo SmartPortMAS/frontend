@@ -4,6 +4,7 @@ import WeatherPanel from '../components/dashboard/WeatherPanel';
 import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
 import PortMap from '../components/dashboard/PortMap';
 import PortCallTable from '../components/dashboard/PortCallTable';
+import GanttChart from '../components/dashboard/GanttChart';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import useDashboardData from '../hooks/useDashboardData';
 import { fetchPendingApprovals, fetchBerthAssignments } from '../api/backendAdapter';
@@ -148,6 +149,11 @@ export default function DashboardPage() {
       {/* 입항 선박 목록 (Full Width) */}
       <div className="dash-section">
         <PortCallTable />
+      </div>
+
+      {/* [2026-09-28] 부두별 접안 이력 — 판정에 쓰지 않는 참고 정보라 판정 화면이 아니라 대시보드 맨 아래에 둔다(현우) */}
+      <div className="dash-section">
+        <GanttChart />
       </div>
 
       {/* 화면에서 내린 것들 —

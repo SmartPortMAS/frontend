@@ -108,8 +108,8 @@ export default function GanttChart() {
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
         <h3 className="glass-card-title">
           부두별 접안 이력
-          <span style={{ fontWeight: 400, fontSize: '12px', color: isRealHistory ? COLORS.teal : COLORS.textDim, marginLeft: '8px' }}>
-            실수집 {isRealHistory && '●'}
+          <span style={{ fontWeight: 400, fontSize: '12px', color: COLORS.textDim, marginLeft: '8px' }}>
+            참고 · 판정에는 쓰지 않음{isRealHistory ? ' · 실수집' : ''}
           </span>
         </h3>
         {stats?.total_port_calls != null && (

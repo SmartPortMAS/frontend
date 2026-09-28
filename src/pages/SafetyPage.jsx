@@ -31,7 +31,7 @@ export default function SafetyPage() {
     <div className="safety-layout">
       <div className="safety-graph-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         <SafetyGatesPanel />
-        <IndexFold />
+        <SafetyGraph />
       </div>
 
       <div className="safety-panel">

@@ -89,6 +89,17 @@ const useSensorStore = create((set, get) => ({
   // 다른 화면(배정현황 등)에서 "이 배를 협상 콘솔에서 처리해 달라"는 요청.
   // 콘솔이 소비하면 clear 한다 — 값이 남아 있으면 라우팅 때마다 다시 열린다.
   consoleRequest: null,
+  // [2026-09-28] 판단 과정 서랍(선박 판정 화면)이 열려 있나 · 지금 근거를 보는 배 · 판정 요청 중인 배
+  reasoningOpen: false,
+  setReasoningOpen: (v) => set({ reasoningOpen: Boolean(v) }),
+  reasoningFocus: null,          // { callsgn, loading }
+  setReasoningFocus: (f) => set({ reasoningFocus: f }),
+  judgeBusy: {},                 // { [call_sign]: true }
+  setJudgeBusy: (cs, on) => set((s) => {
+    const n = { ...s.judgeBusy };
+    if (on) n[cs] = true; else delete n[cs];
+    return { judgeBusy: n };
+  }),
   // cargo: 배정현황 행이 들고 있는 '그 배정이 실제로 쓴 화물'({chem_id, name}).
   // 없이 호출부호만 넘기면 콘솔이 제 나름대로 화물을 고르는데, 한 배가 후보 선석마다
   // 다른 화물 행을 갖고 있어(mart.berth_current_cargo 는 선석별로 만들어진다)
