@@ -121,6 +121,9 @@ function toMessages({ orchestration, berthWeather, vessel }) {
     });
   }
 
+  // 3.5 에서 먼저 쓰므로 여기서 선언한다 (2026-09-28: 순서 바꾸며 TDZ 오류 — 종합 판정 시 화면 전체가 꺼졌음)
+  const rejected = orchestration.rejected_candidates || [];
+
   // 3.5) 후보가 없어 안전 심사까지 가지 못한 경우.
   //
   // 안전 에이전트가 "왜 조용한지"를 화면이 말하지 않으면, 관제사에게는 세 에이전트
@@ -136,7 +139,6 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   }
 
   // 3.7) 혼재 판정으로 지금 선석이 부적합이면 — 그때만 대체 선석을 제안한다(배정 아님).
-  const rejected = orchestration.rejected_candidates || [];
   if (rejected.length) {
     msgs.push({
       agent: 'scheduling', time: at(4),
