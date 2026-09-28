@@ -43,7 +43,7 @@ export default function OmniversePreview() {
       role="dialog" aria-modal="true" aria-label="Omniverse 정밀 검토 미리보기"
       onClick={() => setOpen(false)}
       style={{
-        position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(2, 8, 20, 0.78)',
+        position: 'fixed', inset: 0, zIndex: 6000, background: 'rgba(2, 8, 20, 0.82)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
       }}
     >
