@@ -9,7 +9,7 @@ import { COLORS } from './constants';
 // ─────────────────────────────────────────────────────────────────────────────
 export const AGENT_BADGE = {
   weather: { label: '기상 에이전트', color: '#1E6FA8' },
-  scheduling: { label: '스케줄링 에이전트', color: '#5B3E9B' },
+  scheduling: { label: '선석 검증 에이전트', color: '#5B3E9B' },
   safety: { label: '안전 에이전트', color: '#B26A00' },
   orchestrator: { label: '종합 오케스트레이터', color: COLORS.teal },
 };

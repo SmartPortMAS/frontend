@@ -101,7 +101,7 @@ export default function BerthWeatherPanel() {
       }}
     >
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 className="glass-card-title"><FaAnchor style={{ marginRight: '8px', color: COLORS.teal }} />선석별 하역 가능 판정<AgentChip agent="weather" /></h3>
+        <h3 className="glass-card-title"><FaAnchor style={{ marginRight: '8px', color: COLORS.teal }} />부두 기상 판정<AgentChip agent="weather" /></h3>
         <span style={{ fontSize: '12px', color: COLORS.textDim }}>부두그룹별 실측 기준 · 정상 → 하역중단 → 이안 → 호스분리 4단계</span>
       </div>
 

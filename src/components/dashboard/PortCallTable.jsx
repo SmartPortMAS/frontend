@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS } from '../../utils/constants';
+import HelpTip from '../common/HelpTip';
 import { cargoNames, cargoSummary } from '../../utils/cargoText';
 
 const formatKST = (utcString) => {
@@ -9,7 +10,7 @@ const formatKST = (utcString) => {
   return new Date(utcString).toLocaleString('ko-KR', {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
     hour12: false, timeZone: 'Asia/Seoul',
-  });
+  }).replace(/\.\s*/g, '.').replace(/\.(\d\d:\d\d)$/, ' $1');   // "09. 28. 23:41" → "09.28 23:41" (열 폭 절약)
 };
 
 const cellStyle = {
@@ -85,16 +86,16 @@ function cargoLabel(v) {
 // width: table-layout:fixed 에서 쓸 고정 비율 (합계 100%) — 정렬 시 내용 길이에 따라
 // 컬럼 폭이 흔들리던 문제를 없애기 위함.
 const COLUMNS = [
-  { key: 'vessel_name', label: '선박명', width: '19%', getValue: (v) => v.vessel_name ?? '' },
-  { key: 'callsgn', label: '호출부호', width: '9%', getValue: (v) => v.callsgn ?? '' },
+  { key: 'vessel_name', label: '선박명', width: '21%', getValue: (v) => v.vessel_name ?? '' },
+  { key: 'callsgn', label: '호출부호', width: '8%', getValue: (v) => v.callsgn ?? '' },
   // 선종은 PORT-MIS 공식 선종코드(51종). 액체/일반 구분의 근거를 화면에 그대로 둔다 —
   // 뱃지만 있으면 "왜 이 배가 위험물선인가"를 물었을 때 답할 근거가 화면에 없다.
-  { key: 'ship_kind_nm', label: '선종 (PORT-MIS)', width: '14%', getValue: (v) => v.ship_kind_nm ?? '' },
-  { key: 'nav_status_category', label: '상태', width: '9%', getValue: (v) => (NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label },
-  { key: 'cargo', label: '화물', width: '18%', getValue: (v) => (v.cargo ? cargoSummary(v.cargos?.length ? v.cargos : [v.cargo]) : '') },
-  { key: 'berth', label: '배정 선석', width: '14%', getValue: (v) => v.berth ?? (v.anchorage ? `정박지 ${v.anchorage}` : '') },
-  { key: 'sog', label: '속력', width: '7%', getValue: (v) => v.sog ?? 0 },
-  { key: 'received_at_utc', label: '최근 수신 (KST)', width: '10%', getValue: (v) => (v.received_at_utc ? new Date(v.received_at_utc).getTime() : 0) },
+  { key: 'ship_kind_nm', label: '선종 (PORT-MIS)', width: '13%', getValue: (v) => v.ship_kind_nm ?? '' },
+  { key: 'nav_status_category', label: '상태', width: '10%', getValue: (v) => (NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label },
+  { key: 'cargo', label: '화물', width: '16%', getValue: (v) => (v.cargo ? cargoSummary(v.cargos?.length ? v.cargos : [v.cargo]) : '') },
+  { key: 'berth', label: '배정 선석', width: '10%', getValue: (v) => v.berth ?? (v.anchorage ? `정박지 ${v.anchorage}` : '') },
+  { key: 'sog', label: '속력', width: '6%', getValue: (v) => v.sog ?? 0 },
+  { key: 'received_at_utc', label: '최근 수신', width: '16%', getValue: (v) => (v.received_at_utc ? new Date(v.received_at_utc).getTime() : 0) },
 ];
 
 function compareVessels(a, b, getValue) {
@@ -154,7 +155,12 @@ export default function PortCallTable() {
   return (
     <div className="glass-card">
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        <h3 className="glass-card-title">입항 선박 목록</h3>
+        <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
+          항내 선박 목록
+          <HelpTip title="항내 선박 목록">
+            항만공사 선박위치로 지금 울산항 안에 있는 선박입니다. 입항 신고 기준의 판정은 선박 판정 화면에서 봅니다.
+          </HelpTip>
+        </h3>
         {/* 관제 선박 KPI(전체)와 이 표의 척수가 다른 이유를 화면에서 말해준다 —
             real_traffic 은 지도 성능 상한(MAP_VESSEL_LIMIT=200)까지만 내려온다. */}
         <span style={{ fontSize: '13px', color: COLORS.textDim }}>

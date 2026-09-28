@@ -44,6 +44,22 @@ const ONSAN_FIT = { padding: [48, 48], maxZoom: 15 };
 //
 //   점유는 "배가 실제로 거기 있는가"이고 그 답은 call_sign 이다. 판정 유무는
 //   별개이며, 판정이 없다는 사실은 슬롯 상세가 따로 보여준다.
+
+// 위치 신호가 얼마나 낡았는지 — 백엔드 quality_flag(OK/DEGRADED/STALE/NO_SIGNAL, mart.vessel_presence)를
+// 관제 용어로 옮긴다. [2026-09-28] 예전엔 "DEGRADED 18분 전"처럼 내부 코드가 그대로 보였다.
+//   OK         12분 이내 — 표시하지 않음
+//   DEGRADED   12~30분 — "위치 18분 전 수신"
+//   STALE      30분~6시간 — "위치 신호 끊김 · 2시간 전"
+//   NO_SIGNAL  6시간 넘음 — "위치 신호 없음"
+function positionAgeLabel(flag, ageMin) {
+  const age = Number(ageMin);
+  const ago = !Number.isFinite(age) ? '' : age < 60 ? `${Math.round(age)}분 전` : `${Math.round(age / 60)}시간 전`;
+  if (flag === 'DEGRADED') return `위치 ${ago} 수신`;
+  if (flag === 'STALE') return `위치 신호 끊김${ago ? ` · ${ago}` : ''}`;
+  if (flag === 'NO_SIGNAL') return '위치 신호 없음';
+  return ago ? `위치 ${ago}` : '';
+}
+
 function isOccupied(slots) {
   return slots.some((s) => s.call_sign);
 }
@@ -205,7 +221,7 @@ function SlotRow({ slot, onShowReason }) {
             {slot.distance_m != null && ` · ${Math.round(slot.distance_m)}m`}
             {slot.position_at_utc && ` · ${formatKST(slot.position_at_utc)} 관측`}
             {slot.quality_flag && slot.quality_flag !== 'OK'
-              && ` · ${slot.quality_flag} ${slot.position_age_min}분 전`}
+              && ` · ${positionAgeLabel(slot.quality_flag, slot.position_age_min)}`}
           </>
         )}
       </p>

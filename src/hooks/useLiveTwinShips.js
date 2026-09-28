@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import useDashboardData from './useDashboardData';
 import useSensorStore from '../stores/useSensorStore';
-import { findBerthIdByName } from '../utils/geoUtils';
+import { findBerthIdByName, ONSAN_BERTHS_3D } from '../utils/geoUtils';
+import { fetchBerthAssignments } from '../api/backendAdapter';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 디지털 트윈 선박을 실데이터로 채운다.
@@ -22,7 +23,7 @@ import { findBerthIdByName } from '../utils/geoUtils';
 // ─────────────────────────────────────────────────────────────────────────────
 
 // 트윈에 세울 선박 수 상한. 3D 오브젝트가 많아지면 프레임이 떨어진다.
-const TWIN_SHIP_LIMIT = 14;
+const TWIN_SHIP_LIMIT = 16;
 
 // 트윈이 그리는 범위는 온산 일대뿐이다. 울산 전역의 배를 그대로 투영하면
 // 대부분이 화면 밖 먼 곳에 놓여 "배가 하나도 없는" 것처럼 보인다(실측: 신호가
@@ -55,6 +56,31 @@ function twinStatus(vessel, berthId) {
   return 'underway';
 }
 
+/** 선박위치 행 → 트윈 선박. berthName 이 있으면 그 선석 자리에 세운다. */
+function toShip(v, berthName) {
+  const berthId = berthName ? findBerthIdByName(berthName) : null;
+  return {
+    id: v.vessel_name || v.callsgn || `MMSI ${v.mmsi}`,
+    type: 'Ship',
+    status: twinStatus(v, berthId),
+    berth: berthId,
+    anchorage: null,
+    // 접안한 배는 실좌표 대신 그 선석의 3D 위치에 세운다(부두는 보기 좋게 이격해 그렸다).
+    // 항해·묘박 중인 배만 실좌표를 쓴다.
+    vessel_lat: berthId ? null : v.latitude,
+    vessel_lon: berthId ? null : v.longitude,
+    vessel_heading: v.vessel_heading,
+    vessel_speed: v.sog,
+    cargoType: v.cargo?.name || null,
+    cargoAmount: null,
+    callsgn: v.callsgn,
+    mmsi: v.mmsi,
+    is_liquid_cargo_vessel: v.is_liquid_cargo_vessel,
+    is_real: true,
+    berth_name: berthName,
+  };
+}
+
 /**
  * 실 AIS + 재항 화물을 트윈 선박 목록으로 바꿔 스토어에 넣는다.
  * 디지털트윈 페이지에서 한 번만 호출한다.
@@ -63,58 +89,74 @@ export default function useLiveTwinShips() {
   const { data } = useDashboardData();
   const setShips = useSensorStore((s) => s.setShips);
 
+  // [2026-09-28] 선석에 붙은 배는 접안 선박 목록과 **같은 자료**(선석 점유 · 위치 판정)로 세운다.
+  // 실시간 선박 목록(real_traffic)은 신호가 몇 분만 늦어도 빠지고 지도 성능 때문에 200척에서 잘린다.
+  // 그래서 목록은 S-Oil 1부두에 럭키오션호가 있다는데 3D 는 공석으로 그렸다(9/28 실측, 현우 지적).
+  const [occupancy, setOccupancy] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetchBerthAssignments()
+      .then((d) => { if (alive) setOccupancy(Array.isArray(d) ? d : null); })
+      .catch(() => {});
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
   useEffect(() => {
     if (!setShips) return;
-    const traffic = (data?.real_traffic ?? []).filter(inOnsan);
-    // 온산 범위에 배가 없으면 빈 목록을 그대로 넣는다 — 직전 목록을 남겨 두면
-    // 수집이 끊긴 화면이 "배가 있다"고 말하게 된다.
-    if (!traffic.length) { setShips([]); return; }
-
-    // 선석은 위치 판정(presence_berth_name — 멈춰서 선석에 붙은 배)을 먼저 쓴다.
-    // v.berth 는 재항 화물 신고에서 온 값이라 화물이 안 붙은 배는 선석에 붙어 있어도
-    // 비어 있었다(2026-09-21: 장면 선석 11곳에 붙은 10척 중 화물 없는 배는 바다에 떴다).
+    const key = (cs) => (cs || '').trim().toUpperCase();
+    const allTraffic = data?.real_traffic ?? [];
+    const byCs = new Map(allTraffic.filter((v) => v.callsgn).map((v) => [key(v.callsgn), v]));
+    const traffic = allTraffic.filter(inOnsan);
     const berthOf = (v) => v.presence_berth_name || v.berth || null;
 
-    // 온산 선석이 확인된 배를 먼저 세운다 — 트윈은 온산 부두를 그린 화면이라
-    // 선석을 모르는 배만 잔뜩 띄우면 부두가 비어 보인다.
-    const ranked = [...traffic].sort((a, b) => {
-      const aB = berthOf(a) ? 0 : 1;
-      const bB = berthOf(b) ? 0 : 1;
-      if (aB !== bB) return aB - bB;
-      return (b.cargo ? 1 : 0) - (a.cargo ? 1 : 0);
-    });
+    // 1) 3D 에 그린 온산 선석에 붙은 배 — 선석 점유 자료 그대로(없으면 선박위치의 위치 판정으로 대신)
+    const slots = (occupancy || []).flatMap((b) => (b.slots || [])
+      .filter((sl) => sl.call_sign)
+      .map((sl) => ({ ...sl, wharf_name: b.wharf_name, id3d: findBerthIdByName(b.wharf_name) })))
+      .filter((sl) => ONSAN_BERTHS_3D[sl.id3d]);
+    const berthed = occupancy
+      ? slots.map((sl) => {
+        const v = byCs.get(key(sl.call_sign));
+        return {
+          id: sl.vessel_name || v?.vessel_name || sl.call_sign,
+          type: 'Ship',
+          status: 'mooring',
+          berth: sl.id3d,
+          anchorage: null,
+          vessel_lat: null,
+          vessel_lon: null,
+          vessel_heading: v?.vessel_heading ?? 0,
+          vessel_speed: v?.sog ?? 0,
+          cargoType: v?.cargo?.name || sl.cargo_name || (sl.cargo_names || [])[0] || null,
+          cargoAmount: null, // 적재량은 수집 소스가 없다 — 지어내지 않고 비운다
+          callsgn: sl.call_sign,
+          mmsi: v?.mmsi ?? null,
+          is_liquid_cargo_vessel: v?.is_liquid_cargo_vessel ?? Boolean(sl.cargo_chem_id),
+          is_real: true,
+          berth_name: sl.wharf_name,
+        };
+      })
+      : traffic.filter((v) => ONSAN_BERTHS_3D[findBerthIdByName(berthOf(v))]).map((v) => toShip(v, berthOf(v)));
+    const berthedCs = new Set(berthed.map((b) => key(b.callsgn)));
 
-    const ships = ranked.slice(0, TWIN_SHIP_LIMIT).map((v) => {
-      const berthName = berthOf(v);
-      const berthId = berthName ? findBerthIdByName(berthName) : null;
-      return {
-        id: v.vessel_name || v.callsgn || `MMSI ${v.mmsi}`,
-        type: 'Ship',
-        status: twinStatus(v, berthId),
-        berth: berthId,
-        anchorage: null,
-        // 접안한 배는 실좌표 대신 그 선석의 3D 위치에 세운다.
-        //
-        // 3D 부두는 실측 좌표를 옮겨 그린 것이지만 잔교·안벽은 보기 좋게 이격해
-        // 배치했다. 접안선을 AIS 좌표 그대로 찍으면 몇십 미터 오차로도 안벽을
-        // 파고들거나 육지 위에 뜬다. "어느 선석에 붙었나"는 이미 아는 정보이므로
-        // 그 선석 자리에 세우는 편이 정확하고 보기에도 맞다.
-        // 항해·묘박 중인 배만 실좌표를 쓴다(있어야 할 자리가 바다라서 문제없다).
-        vessel_lat: berthId ? null : v.latitude,
-        vessel_lon: berthId ? null : v.longitude,
-        vessel_heading: v.vessel_heading,
-        vessel_speed: v.sog,
-        cargoType: v.cargo?.name || null,
-        cargoAmount: null, // 적재량은 수집 소스가 없다 — 지어내지 않고 비운다
-        callsgn: v.callsgn,
-        mmsi: v.mmsi,
-        is_liquid_cargo_vessel: v.is_liquid_cargo_vessel,
-        is_real: true,
-        // 정밀 검토(Omniverse) 지목에 쓰는 마스터 표기 선석명 — 3D 선석 id 와 별도로 둔다
-        berth_name: berthName,
-      };
-    });
+    // 2) 선석에 붙지 않은 배 — 정박지 대기 먼저, 화물 신고 있는 배 먼저.
+    //    3D 밖 부두(SK·신항 등)에 멈춰 있는 배는 세울 자리가 없어 뺀다. 움직이는 배는 실좌표로 그린다.
+    const waiting = traffic
+      .filter((v) => !berthedCs.has(key(v.callsgn)))
+      .filter((v) => !(berthOf(v) && (v.sog ?? 0) < 1))
+      .sort((a, b) => {
+        const aA = a.nav_status_category === 'AT_ANCHOR' ? 0 : 1;
+        const bA = b.nav_status_category === 'AT_ANCHOR' ? 0 : 1;
+        if (aA !== bA) return aA - bA;
+        return (b.cargo ? 1 : 0) - (a.cargo ? 1 : 0);
+      })
+      .slice(0, Math.max(4, TWIN_SHIP_LIMIT - berthed.length))
+      .map((v) => toShip(v, null));
 
-    setShips(ships);
-  }, [data, setShips]);
+    // 온산 범위에 배가 없으면 빈 목록을 그대로 넣는다 — 직전 목록을 남겨 두면
+    // 수집이 끊긴 화면이 "배가 있다"고 말하게 된다.
+    setShips([...berthed, ...waiting]);
+  }, [data, occupancy, setShips]);
 }

@@ -37,7 +37,7 @@ export default function BerthDecisionPanel() {
         }}>
           우하단 <strong style={{ color: COLORS.teal }}>에이전트 판단 과정</strong>에서 선박을 고르고
           <strong style={{ color: COLORS.teal }}> 종합 판정</strong>을 실행하면
-          기상 → 스케줄링 → 안전 판단을 거친 배정 경로가 여기에 표시됩니다.
+          선석 → 기상 → 혼재 판단 결과가 여기에 표시됩니다.
         </div>
       )}
 

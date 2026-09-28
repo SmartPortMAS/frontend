@@ -34,7 +34,7 @@ export default function App() {
         사용자가 대시보드로 되돌아가야 했다(2026-08-22 실발견 — "사용흐름이
         보기 어렵다"는 피드백의 실례). 판정 진입점이 하나라면 어디서든 닿아야 한다.
         3D 관제(/twin)만 제외 — 전체화면 연출 위에 겹치면 HUD 를 가린다. */}
-    <AgentConsole />
+    <AgentConsole mode="qa" />
     </>
   );
 }

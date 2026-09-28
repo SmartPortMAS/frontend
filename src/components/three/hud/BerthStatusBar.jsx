@@ -16,11 +16,13 @@ const OCCUPY_COLOR = {
 export default function BerthStatusBar() {
   const ships = useSensorStore((s) => s.ships);
   const berthWeather = useSensorStore((s) => s.berthWeather);
+  const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
+  const cctvCollapsed = useSensorStore((s) => s.hudCctvCollapsed);
 
   return (
     <div style={{
-      // CCTV(좌, ~300px)와 우측 버튼(~390px) 사이 구간에만 배치 — 어느 쪽도 가리지 않음
-      position: 'absolute', top: 44, left: 440, right: 400,
+      // CCTV(좌)와 머리 단추(우, [정밀 검토 영상] 하나) 사이 — 어느 쪽도 가리지 않음
+      position: 'absolute', top: 44, left: cctvCollapsed ? 190 : 440, right: 290,
       zIndex: 1000, display: 'flex', gap: '6px', alignItems: 'center',
       background: 'rgba(13, 27, 42, 0.8)', backdropFilter: 'blur(8px)',
       border: `1px solid ${COLORS.glassBorder}`, borderRadius: '10px',
@@ -29,6 +31,7 @@ export default function BerthStatusBar() {
       <span style={{ fontSize: '11px', fontWeight: 800, color: COLORS.textSecondary, whiteSpace: 'nowrap', marginRight: '4px' }}>
         선석 현황
       </span>
+      <span style={{ fontSize: '10.5px', color: COLORS.textDim, whiteSpace: 'nowrap', marginRight: '4px' }}>누르면 72시간</span>
       {Object.entries(ONSAN_BERTHS_3D).map(([id, b]) => {
         const ship = ships.find(
           (s) => s.berth === id && ['operating', 'mooring', 'docked'].includes(s.status)
@@ -42,11 +45,20 @@ export default function BerthStatusBar() {
         return (
           <div
             key={id}
-            title={`${b.name}${ship ? ` — ${ship.id} (${ship.cargoType})` : ' — 공석'}${verdict ? ` · 판정: ${verdict}` : ''}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => setSelectedObject({
+              type: 'Berth', id, name: b.name, status: ship ? 'active' : 'idle',
+              mooredShip: ship ? `${ship.id}${ship.cargoType ? ` (${ship.cargoType})` : ''}` : null,
+            })}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.click(); }}
+            title={`${b.name}${ship ? ` — ${ship.id}${ship.cargoType ? ` (${ship.cargoType})` : ''}` : ' — 공석'}${verdict ? ` · 판정: ${verdict}` : ''} · 누르면 선석 정보와 앞으로 72시간`}
             style={{
+              cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap',
               padding: '3px 8px', borderRadius: '6px', fontSize: '11px',
-              color: ship ? COLORS.textPrimary : COLORS.textDim,
+              // 어두운 HUD 위라 라이트 화면용 글자색(COLORS.textPrimary, 짙은 남색)을 쓰면 점유 선석 이름이 사라졌다
+              color: ship ? '#E8F0F2' : '#8FA3B0',
               border: `1px solid ${escalated ? WEATHER_STATUS_COLORS[verdict] : 'transparent'}`,
               background: escalated ? `${'#0d1b2a'}` : 'transparent',
             }}
@@ -56,7 +68,7 @@ export default function BerthStatusBar() {
               background: dotColor,
               boxShadow: ship ? `0 0 6px ${dotColor}` : 'none',
             }} />
-            {b.name.replace(' 부두', '').replace('터미널', '')}
+            {b.name.replace(/\s*부두$/, '').replace('터미널', '')}
             {escalated && (
               <span style={{ color: WEATHER_STATUS_COLORS[verdict], fontWeight: 800 }}>{verdict}</span>
             )}

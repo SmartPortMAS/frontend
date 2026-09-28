@@ -571,6 +571,22 @@ function mapOrchestration(r) {
     vessel_name: r._vessel_name || null,
     cargo_name: r._cargo_name || null,
     rejected_candidates: r.rejected_candidates || [],
+    // [2026-09-28] 에이전트별 의견 — 무엇을 확인했고(checked) 무엇을 근거로(evidence) 무엇을 못 봤는지(missing).
+    // 백엔드가 늘 돌려주던 값인데 화면이 버리고 있었다.
+    opinions: r.opinions || [],
+    evidence_missing: Boolean(r.evidence_missing),
+    weather_source: r.weather_assessment ? {
+      station: r.weather_assessment.wind?.station_name || null,
+      berth_group: r.weather_assessment.thresholds_used?.berth_group || null,
+      stop_wind: r.weather_assessment.thresholds_used?.stop?.wind_ms ?? null,
+      forecast_points: r.weather_assessment.forecast_warning?.forecast_points_checked ?? null,
+    } : null,
+    msds_sections_used: r.safety_assessment?.msds_sections_used || [],
+    berth_facts: r.selected_berth ? {
+      depth_m: r.selected_berth.depth_m ?? null,
+      margin_m: r.selected_berth.draught_margin_m ?? null,
+      adjacent: (r.selected_berth.adjacent_cargos || []).length,
+    } : null,
     is_local_fallback: false,
     source: 'BACKEND_ORCHESTRATOR',
   };
