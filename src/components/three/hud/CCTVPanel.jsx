@@ -3,6 +3,7 @@ import useSensorStore from '../../../stores/useSensorStore';
 import useDashboardData from '../../../hooks/useDashboardData';
 import { ONSAN_BERTHS_3D } from '../../../utils/geoUtils';
 import { FaVideo, FaPause, FaPlay, FaChevronUp, FaChevronDown } from 'react-icons/fa';
+import CctvTwinView from './CctvTwinView';
 
 const BERTH_IDS = Object.keys(ONSAN_BERTHS_3D);
 
@@ -85,6 +86,7 @@ export default function CCTVPanel() {
   const berth = ONSAN_BERTHS_3D[berthId];
   const camNo = BERTH_IDS.indexOf(berthId) + 1;
   const P = PALETTES[phaseOf(time.getHours())];
+  const hour = time.getHours() + time.getMinutes() / 60;   // 트윈 카메라 조명용
   const lightsOn = P !== PALETTES.DAY;
 
   const mooredShip = ships.find(
@@ -159,81 +161,11 @@ export default function CCTVPanel() {
       fontFamily: 'monospace',
       animation: 'camswitch 0.35s ease-out',
     }}>
-      {/* 가상 부두 장면 */}
-      <svg width="400" height="240" viewBox="0 0 280 168" style={{ position: 'absolute', inset: 0 }}>
-        <defs>
-          <linearGradient id="cctv-sky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={P.sky1} />
-            <stop offset="100%" stopColor={P.sky2} />
-          </linearGradient>
-          <linearGradient id="cctv-sea" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={P.sea1} />
-            <stop offset="100%" stopColor={P.sea2} />
-          </linearGradient>
-        </defs>
-
-        <rect width="280" height="96" fill="url(#cctv-sky)" />
-        {/* 일몰이면 태양 */}
-        {P === PALETTES.DUSK && <circle cx="60" cy="60" r="12" fill="#ffb46a" opacity="0.85" />}
-        <rect y="96" width="280" height="72" fill="url(#cctv-sea)" />
-        {[108, 122, 140, 155].map((y, i) => (
-          <line key={y} x1={20 + i * 30} y1={y} x2={70 + i * 40} y2={y}
-            stroke={P.sub} strokeWidth="1" opacity="0.4">
-            <animate attributeName="opacity" values="0.15;0.5;0.15" dur={`${2.4 + i * 0.7}s`} repeatCount="indefinite" />
-          </line>
-        ))}
-
-        {/* 잔교 데크 */}
-        <rect x="150" y="118" width="130" height="16" fill={P.deck} />
-        <rect x="150" y="114" width="130" height="4" fill={P.deckTop} />
-        {/* 야드등 (야간·일몰에만 점등) */}
-        {[175, 245].map((x) => (
-          <g key={x}>
-            <rect x={x} y="78" width="2.5" height="38" fill={P.deckTop} />
-            {lightsOn ? (
-              <>
-                <circle cx={x + 1} cy="76" r="3.4" fill={P.glow}>
-                  <animate attributeName="opacity" values="0.85;1;0.85" dur="2.1s" repeatCount="indefinite" />
-                </circle>
-                <circle cx={x + 1} cy="76" r="8" fill={P.glow} opacity="0.15" />
-              </>
-            ) : (
-              <circle cx={x + 1} cy="76" r="3" fill={P.struct} />
-            )}
-          </g>
-        ))}
-        {/* 로딩암 타워 */}
-        <rect x="206" y="88" width="9" height="30" fill={P.struct} />
-        <rect x="203" y="84" width="15" height="6" fill={P.deckTop} />
-
-        {mooredShip ? (
-          <g>
-            <rect x="26" y="92" width="150" height="26" rx="3" fill={P.hull} stroke={P.hullLine} strokeWidth="1" />
-            <rect x="36" y="76" width="26" height="18" rx="2" fill={P.deck} stroke={P.hullLine} strokeWidth="1" />
-            <line x1="70" y1="90" x2="168" y2="90" stroke={P.hullLine} strokeWidth="2.5" />
-            {lightsOn && (
-              <circle cx="40" cy="72" r="2" fill="#ffe9a8">
-                <animate attributeName="opacity" values="1;0.4;1" dur="1.6s" repeatCount="indefinite" />
-              </circle>
-            )}
-            {/* 로딩암 연결 + 하역 중 유체 흐름 */}
-            <line x1="207" y1="92" x2="170" y2="98" stroke={loading ? '#6fe8c0' : P.struct} strokeWidth="3" strokeLinecap="round" />
-            {loading && (
-              <line x1="207" y1="92" x2="170" y2="98" stroke="#c8ffe8" strokeWidth="1.4" strokeLinecap="round" strokeDasharray="5 6">
-                <animate attributeName="stroke-dashoffset" values="22;0" dur="0.9s" repeatCount="indefinite" />
-              </line>
-            )}
-          </g>
-        ) : (
-          <g>
-            {[40, 75, 110].map((x) => (
-              <circle key={x} cx={x} cy="116" r="4.5" fill={P.hull} stroke={P.hullLine} strokeWidth="1" />
-            ))}
-            <text x="70" y="90" fill={P.sub} fontSize="9" fontFamily="monospace">-- BERTH VACANT --</text>
-          </g>
-        )}
-      </svg>
-
+      {/* 트윈 카메라 — 같은 3D 장면을 이 부두의 CCTV 자리에서 본다 (2026-09-28, 예전 SVG 가상 장면 대체).
+          실제 선박 위치·선석 색이 그대로 보인다. 실제 CCTV 영상은 없으므로 라벨로 밝힌다. */}
+      <div style={{ position: 'absolute', inset: 0, filter: P === PALETTES.NIGHT ? 'grayscale(0.6) sepia(0.4) hue-rotate(60deg) brightness(1.15) contrast(1.1)' : P === PALETTES.DUSK ? 'sepia(0.25) saturate(1.1)' : 'none' }}>
+        <CctvTwinView berthId={berthId} hour={hour} />
+      </div>
       {/* 노이즈 + 스캔라인 */}
       <div style={{
         position: 'absolute', inset: 0,
@@ -247,20 +179,20 @@ export default function CCTVPanel() {
       }} />
 
       {/* 오버레이 */}
-      <div style={{ position: 'absolute', top: 10, left: 12, color: '#ef4444', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 'bold' }}>
-        <div style={{ width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', animation: 'pulse 1s infinite' }} />
-        REC
+      <div style={{ position: 'absolute', top: 10, left: 12, color: '#7dd3fc', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+        <div style={{ width: '9px', height: '9px', background: '#38bdf8', borderRadius: '50%', animation: 'pulse 1.2s infinite' }} />
+        트윈 카메라
       </div>
-      <div style={{ position: 'absolute', top: 10, right: 12, color: P.text, fontSize: '14px', fontWeight: 700 }}>
+      <div style={{ position: 'absolute', top: 10, right: 12, color: P.text, fontSize: '14px', fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
         CAM-{String(camNo).padStart(2, '0')} · {berth?.name}
       </div>
-      <div style={{ position: 'absolute', top: 30, right: 12, color: P.sub, fontSize: '12px' }}>
-        {P.label} 모드 {isManual ? '· 수동 선택' : '· 자동 순찰'}
+      <div style={{ position: 'absolute', top: 30, right: 12, color: P.sub, fontSize: '12px', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+        {P.label} 모드 {isManual ? '· 수동 선택' : '· 자동 순찰'} · CCTV 영상 없음
       </div>
-      <div style={{ position: 'absolute', bottom: 10, left: 12, color: P.sub, fontSize: '12.5px', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <div style={{ position: 'absolute', bottom: 10, left: 12, color: P.sub, fontSize: '12.5px', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
         {footer}
       </div>
-      <div style={{ position: 'absolute', bottom: 10, right: 12, color: P.text, fontSize: '13px' }}>
+      <div style={{ position: 'absolute', bottom: 10, right: 12, color: P.text, fontSize: '13px', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
         {time.toLocaleTimeString('ko-KR', { hour12: false })}
       </div>
 
