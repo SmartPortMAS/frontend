@@ -1,9 +1,5 @@
-import useSensorStore from '../stores/useSensorStore';
 import HardwarePanel from '../components/sensor/HardwarePanel';
-import { TankModel, PipeModel } from '../components/sensor/EquipmentModels';
-import { COLORS } from '../utils/constants';
 import HelpTip from '../components/common/HelpTip';
-import { } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 센서 데이터 — 현장 설비 계측
@@ -22,7 +18,6 @@ import { } from 'react-icons/fa';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function SensorPage() {
-  const { tanks, pipes } = useSensorStore();
 
   return (
     <div className="page-content" style={{ padding: '0' }}>
@@ -31,12 +26,12 @@ export default function SensorPage() {
           <h2 style={{ fontSize: '20px', marginBottom: '6px', display: 'flex', alignItems: 'center' }}>
             현장 설비
             <HelpTip title="현장 설비">
-              하역 개시 인터락 게이트는 실물(라즈베리파이·밸브)과 연결됩니다. 탱크·배관 계측값은 아직 계측기가 없어
-              예시값이며, 터미널 유량계·탱크 레벨 계측이 연결될 자리입니다.
+              하역 개시 인터락 게이트는 실물(라즈베리파이·밸브)과 연결됩니다. 탱크·배관 계측기는 아직 없어
+              이 화면에 두지 않았습니다. 터미널 유량계·탱크 레벨 계측이 붙으면 여기에 더합니다.
             </HelpTip>
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: 0 }}>
-            게이트 <strong>실물</strong> · 탱크·배관 <strong>예시값</strong>
+            하역 개시 게이트 <strong>실물</strong> 2대
           </p>
         </div>
         {/* '시뮬레이션 모드' 배지도 내렸다(2026-08-23) — 시연 UI 는 도입 후 제품
@@ -51,29 +46,6 @@ export default function SensorPage() {
 
       <HardwarePanel />
 
-      <h3 style={{ fontSize: '16px', margin: '32px 0 16px', color: 'var(--teal)' }}>
-        탱크 센서 — 저장탱크 수위·온도·압력
-        <span style={{ fontSize: '12px', fontWeight: 400, color: COLORS.textDim, marginLeft: '8px' }}>
-          (데모 값 · 고정)
-        </span>
-      </h3>
-      <div className="sensor-grid">
-        {tanks.map((tank) => (
-          <TankModel key={tank.id} tank={tank} />
-        ))}
-      </div>
-
-      <h3 style={{ fontSize: '16px', margin: '32px 0 16px', color: 'var(--teal)' }}>
-        배관 센서 — 이송 라인 유량·압력
-        <span style={{ fontSize: '12px', fontWeight: 400, color: COLORS.textDim, marginLeft: '8px' }}>
-          (데모 값 · 고정)
-        </span>
-      </h3>
-      <div className="sensor-grid">
-        {pipes.map((pipe) => (
-          <PipeModel key={pipe.id} pipe={pipe} />
-        ))}
-      </div>
     </div>
   );
 }

@@ -396,7 +396,7 @@ export default function Port() {
                 id,
                 name: berth.name,
                 status: mooredShip ? 'active' : 'idle',
-                mooredShip: mooredShip ? `${mooredShip.id} (${mooredShip.cargoType})` : null,
+                mooredShip: mooredShip ? `${mooredShip.id}${mooredShip.cargoType ? ` (${mooredShip.cargoType})` : ''}` : null,
               });
             }}
           >

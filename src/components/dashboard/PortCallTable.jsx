@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS } from '../../utils/constants';
+import HelpTip from '../common/HelpTip';
 import { cargoNames, cargoSummary } from '../../utils/cargoText';
 
 const formatKST = (utcString) => {
@@ -154,7 +155,12 @@ export default function PortCallTable() {
   return (
     <div className="glass-card">
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        <h3 className="glass-card-title">입항 선박 목록</h3>
+        <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
+          항내 선박 목록
+          <HelpTip title="항내 선박 목록">
+            항만공사 선박위치로 지금 울산항 안에 있는 선박입니다. 입항 신고 기준의 판정은 선박 판정 화면에서 봅니다.
+          </HelpTip>
+        </h3>
         {/* 관제 선박 KPI(전체)와 이 표의 척수가 다른 이유를 화면에서 말해준다 —
             real_traffic 은 지도 성능 상한(MAP_VESSEL_LIMIT=200)까지만 내려온다. */}
         <span style={{ fontSize: '13px', color: COLORS.textDim }}>

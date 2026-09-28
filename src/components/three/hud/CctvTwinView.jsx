@@ -60,7 +60,7 @@ export default function CctvTwinView({ berthId, hour: hourProp }) {
     >
       <color attach="background" args={[isNight ? '#0a1628' : '#4b6f93']} />
       <fog attach="fog" args={[isNight ? '#0a1628' : '#4b6f93', 120, 700]} />
-      <ambientLight intensity={isNight ? 0.25 : 0.55} color="#b0c4de" />
+      <ambientLight intensity={isNight ? 0.42 : 0.55} color="#b0c4de" />
       <hemisphereLight skyColor="#4a7aad" groundColor="#1a2a3a" intensity={isNight ? 0.15 : 0.4} />
       {!isNight && <directionalLight position={[Math.cos(sunAngle) * 800, Math.sin(sunAngle) * 800, -400]} intensity={sunIntensity} color="#fff5e6" />}
       {isNight && <directionalLight position={[-500, 400, 500]} intensity={0.45} color="#38bdf8" />}

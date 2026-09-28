@@ -31,7 +31,8 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
   const sunY = Math.sin(sunAngle) * 1000;
 
   const isNight = hour < 6 || hour > 18;
-  const ambientIntensity = isNight ? 0.15 : 0.5;
+  // [2026-09-28] 밤 최저 밝기를 올렸다 — 18시 뒤 장면이 거의 검어 고장처럼 보였다(현우 D13)
+  const ambientIntensity = isNight ? 0.42 : 0.5;
   const sunIntensity = isNight ? 0 : Math.max(Math.sin(sunAngle), 0) * 1.8;
 
   return (
@@ -43,7 +44,7 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
       <hemisphereLight
         skyColor="#4a7aad"
         groundColor="#1a2a3a"
-        intensity={isNight ? 0.1 : 0.35}
+        intensity={isNight ? 0.3 : 0.35}
       />
 
       {!isNight && (
@@ -59,7 +60,7 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
       {isNight && (
         <directionalLight
           position={[-500, 400, 500]}
-          intensity={0.35}
+          intensity={0.7}
           color="#38bdf8"
         />
       )}

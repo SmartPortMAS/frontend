@@ -219,7 +219,7 @@ export default function AlertBell() {
                       type="button"
                       className="alert-row-btn"
                       onClick={() => reviewAlert(a)}
-                      title={`${a.berth_name} 안전 심사로 이동 — 재항 화물이 폼에 채워집니다`}
+                      title={`${a.berth_name} 혼재 심사로 이동 — 재항 화물이 폼에 채워집니다`}
                     >
                       <FaShieldAlt />
                     </button>

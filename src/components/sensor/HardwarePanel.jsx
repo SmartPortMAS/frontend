@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import useHardwareData from '../../hooks/useHardwareData';
 import HelpTip from '../common/HelpTip';
 import { COLORS } from '../../utils/constants';
+import { isOperator } from '../../utils/operatorMode';
 import { FaLock, FaLockOpen, FaPlug, FaExclamationTriangle, FaFlask, FaShip } from 'react-icons/fa';
 
 // 하역 개시 인터락 — 선석 A·B 게이트 실물(라즈베리파이 + 릴레이 + 상시닫힘 밸브 + LCD).
@@ -51,7 +52,7 @@ function Chip({ color, children, strong = false }) {
   );
 }
 
-function GateCard({ gate, onCommand }) {
+function GateCard({ gate, onCommand, operator }) {
   const st = gate.status || {};
   const sent = gate.interlock;            // 백엔드가 장치에 보낸 마지막 판정
   const locked = st.interlock === 'LOCKED';
@@ -151,6 +152,11 @@ function GateCard({ gate, onCommand }) {
       )}
       {error && <div style={{ margin: '0 0 10px', fontSize: '12px', color: COLORS.yellow }}>보내지 못했습니다: {error}</div>}
 
+      {!operator ? (
+        <div style={{ fontSize: '12px', color: COLORS.textDim }}>
+          하역 개시 요청 · 중단은 터미널 운영자 화면에서 보냅니다. 이 화면은 장치 상태를 보여줍니다.
+        </div>
+      ) : (
       <div style={{ display: 'flex', gap: '8px' }}>
         {/* 잠겨 있어도 누를 수 있다 — 거부는 장치가 한다(그게 시연의 핵심 장면). 끊겼을 때만 막는다. */}
         <button
@@ -175,6 +181,7 @@ function GateCard({ gate, onCommand }) {
           하역 중단
         </button>
       </div>
+      )}
     </div>
   );
 }
@@ -213,6 +220,8 @@ function DemoControl({ demo, demoVerdict, gates, onApply, onClear, onVerdict, on
   const [vGate, setVGate] = useState(gates?.[0]?.gate_id ?? 'G01');
   const [vKey, setVKey] = useState('ukc');
   const anyDemo = Boolean(demo) || Boolean(demoVerdict);
+  // [2026-09-28] 평소엔 접어 둔다(현우 D10) — 시연 입력 중이면 펼친 채로 연다
+  const [open, setOpen] = useState(anyDemo);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const run = async (fn) => {
@@ -232,12 +241,22 @@ function DemoControl({ demo, demoVerdict, gates, onApply, onClear, onVerdict, on
             </ul>
           </HelpTip>
         </span>
-        {anyDemo && (
-          <span style={{ fontSize: '11px', fontWeight: 800, color: '#FFFFFF', background: COLORS.yellow, padding: '2px 8px', borderRadius: '999px' }}>
-            시연 입력 중
-          </span>
-        )}
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          {anyDemo && (
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#FFFFFF', background: COLORS.yellow, padding: '2px 8px', borderRadius: '999px' }}>
+              시연 입력 중
+            </span>
+          )}
+          <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+            style={{ border: `1px solid ${COLORS.border}`, background: 'transparent', color: COLORS.textSecondary, borderRadius: 6, padding: '2px 8px', fontSize: 11.5, cursor: 'pointer' }}>
+            {open ? '접기' : '펼치기'}
+          </button>
+        </span>
       </div>
+      {!open && (
+        <div style={{ fontSize: '12px', color: COLORS.textDim, marginTop: 6 }}>발표장에서 날씨·판정 값을 넣어 잠금 장면을 보여줄 때만 씁니다.</div>
+      )}
+      {open && (<>
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '12px' }}>
         <span style={rowLabel}>기상</span>
@@ -273,6 +292,7 @@ function DemoControl({ demo, demoVerdict, gates, onApply, onClear, onVerdict, on
         </button>
       </div>
       {error && <div style={{ marginTop: '6px', fontSize: '12px', color: COLORS.red }}>{error}</div>}
+      </>)}
     </div>
   );
 }
@@ -292,6 +312,7 @@ export default function HardwarePanel() {
   } = useHardwareData();
   const broker = snapshot?.broker;
   const serverOk = wsState === 'open' || wsState === 'polling';
+  const operator = isOperator();
 
   return (
     <>
@@ -321,13 +342,19 @@ export default function HardwarePanel() {
       ) : (
         <div className="sensor-grid">
           {snapshot.gates.map((gate) => (
-            <GateCard key={gate.gate_id} gate={gate} onCommand={sendGateCommand} />
+            <GateCard key={gate.gate_id} gate={gate} onCommand={sendGateCommand} operator={operator} />
           ))}
-          <DemoControl
-            demo={snapshot.demo} demoVerdict={snapshot.demo_verdict} gates={snapshot.gates}
-            onApply={setDemoWeather} onClear={clearDemoWeather}
-            onVerdict={setDemoVerdict} onVerdictClear={clearDemoVerdict}
-          />
+          {operator ? (
+            <DemoControl
+              demo={snapshot.demo} demoVerdict={snapshot.demo_verdict} gates={snapshot.gates}
+              onApply={setDemoWeather} onClear={clearDemoWeather}
+              onVerdict={setDemoVerdict} onVerdictClear={clearDemoVerdict}
+            />
+          ) : (snapshot.demo || snapshot.demo_verdict) ? (
+            <div className="sensor-card" style={{ borderLeft: `3px solid ${COLORS.yellow}`, fontSize: '13px', color: COLORS.textSecondary }}>
+              <strong style={{ color: COLORS.yellow }}>시연 입력 중</strong> — 발표용으로 넣은 값입니다. 잠금 규칙은 실제와 같습니다.
+            </div>
+          ) : null}
         </div>
       )}
     </>

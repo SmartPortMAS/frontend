@@ -155,21 +155,7 @@ export default function ActiveRiskPanel() {
                     >
                       <FaCube size={9} /> 위치 보기
                     </button>
-                    {!allAcked && (
-                      <button
-                        type="button"
-                        onClick={() => unacked.forEach((a) => ackAlert(alertId(a)))}
-                        title={`${g.berth} 경고 ${unacked.length}건 확인 처리`}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: '4px',
-                          background: 'transparent', border: `1px solid ${COLORS.border}`,
-                          color: COLORS.teal, borderRadius: '6px', padding: '3px 8px',
-                          fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                        }}
-                      >
-                        <FaCheck size={9} /> 확인
-                      </button>
-                    )}
+                    {/* [2026-09-28] 경고 확인은 상단 벨 한 곳에서만 한다(현우 D2) — 여기는 보기만 */}
                     <button
                       type="button"
                       onClick={() => setSafetyPrefill({

@@ -259,8 +259,8 @@ export default function SafetyGatesPanel() {
     >
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
-          <FaShieldAlt style={{ marginRight: '8px', color: COLORS.teal }} />화물 안전 심사
-          <HelpTip title="화물 안전 심사">
+          <FaShieldAlt style={{ marginRight: '8px', color: COLORS.teal }} />화물 혼재 심사
+          <HelpTip title="화물 혼재 심사">
             <div>대상 선석의 화물과 같은 선석·인접 선석 화물의 조합 위험을 봅니다.</div>
             <div style={{ marginTop: 4 }}>인접 선석 — MSDS 반응성 · 산적 호환성그룹 / 같은 선석 동시 취급 — IMDG 격리 · 포장등급.
               IMDG 격리표는 배 한 척 안의 적재 규정이라 부두 사이 판정에서는 참고로만 표시합니다.</div>
@@ -368,7 +368,7 @@ export default function SafetyGatesPanel() {
             cursor: running ? 'progress' : 'pointer', fontSize: '14px',
           }}
         >
-          {running ? '판정 중…' : '안전 심사 실행'}
+          {running ? '심사 중…' : '혼재 심사'}
         </button>
       </div>
       {/* [2026-08-23] 판정이 뜨기 "전"에만 보여준다.

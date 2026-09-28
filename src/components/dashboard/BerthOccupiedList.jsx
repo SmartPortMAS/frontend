@@ -162,10 +162,11 @@ export default function BerthOccupiedList({ scope }) {
     <div className="glass-card">
       <div className="glass-card-header">
         <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
-          접안 선박 목록 ({rows.length}건)
-          <HelpTip title="접안 선박 목록">
-            지금 선석에 접안한 선박(항만공사 선박위치 기준)입니다. 판정 칸은 이 배의 최근 판정 등급, 확인자는 그 판정을 본 관제사입니다.
-            판정이 없으면 [판정 요청]으로 서버가 판정해 이력에 기록하고, [근거 →]는 우하단 에이전트 판단 과정을 이 선박으로 열어 왜 그 결론인지 봅니다 — 입항 선박 표와 같은 뜻입니다.
+          접안 선박 · 온산 {rows.length}척
+          <HelpTip title="접안 선박">
+            지금 온산 선석에 접안한 선박입니다. 입항 신고가 아니라 항만공사 선박위치로 정합니다. 위 표에서 "하역 중"인 선박을 선석 기준으로 본 것입니다.
+            판정 칸은 이 배의 최근 판정 등급, 확인자는 그 판정을 본 관제사입니다.
+            판정이 없으면 [판정 요청]으로 판정해 이력에 남기고, [근거]로 왜 그 결론인지 봅니다. 입항 선박 표와 같은 버튼입니다.
           </HelpTip>
         </h3>
       </div>
@@ -245,14 +246,23 @@ export default function BerthOccupiedList({ scope }) {
                       </span>
                       <button
                         type="button"
-                        onClick={() => requestConsole(row.call_sign, { chem_id: row.cargo_chem_id, name: row.cargo_name })}
-                        title="우하단 에이전트 판단 과정을 이 선박으로 엽니다 — 선석 → 기상 → 혼재 순서로 왜 이 결론인지 보고 확인 기록을 남깁니다"
+                        onClick={() => requestConsole(row.call_sign, { chem_id: row.cargo_chem_id, name: row.cargo_name }, {
+                          subject: {
+                            vessel_name: row.vessel_name, wharf: row.wharf_name, draught_m: draughtOf(row.call_sign),
+                            cargo: row.cargo_chem_id ? { chem_id: row.cargo_chem_id, name: row.cargo_name } : null,
+                          },
+                          record: {
+                            level: row.status, stage: row.stage, action: row.action, recipient: row.recipient,
+                            assessed_at_utc: row.assessed_at_utc, acknowledged_by: row.acknowledged_by,
+                          },
+                        })}
+                        title="왜 이 판정인지 선석 → 기상 → 혼재 순서로 봅니다 — 보고 나서 [판정 확인]을 남깁니다"
                         style={{
                           border: 'none', background: 'transparent', color: COLORS.navy, padding: 0,
                           fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'underline',
                         }}
                       >
-                        근거 →
+                        근거
                       </button>
                       {overdueDays(row) > 0 && (
                         <span

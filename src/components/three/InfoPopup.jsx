@@ -200,39 +200,12 @@ export default function InfoPopup({ object, onClose }) {
                   <FaPlay /> 앞으로 72시간 판정 흐름
                 </button>
                 <div style={{ marginTop: '6px', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.5 }}>{outlookNote}</div>
-                <div style={{ marginTop: '6px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => setOmniPreviewOpen(true)}
-                    title="Omniverse 정밀 검토 장면(9/17 캡처) — 같은 배가 조위 변화로 어떻게 바뀌는지 두 시점을 겹쳐 봅니다"
-                    style={{
-                      background: 'none', border: 'none', padding: 0, color: '#94a3b8',
-                      fontSize: '11px', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
-                    }}
-                  >
-                    정밀 검토 미리보기 (Omniverse 캡처)
-                  </button>
-                  {omniReady && (
-                    <button
-                      type="button"
-                      onClick={() => requestOmniverse(focusPayload)}
-                      title="같은 72시간을 Omniverse 로 봅니다 — 고사양 PC 전용, 기동 1~2분"
-                      style={{
-                        background: 'none', border: 'none', padding: 0, color: '#64748b',
-                        fontSize: '11px', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
-                      }}
-                    >
-                      Omniverse 실행 (고사양 PC)
-                    </button>
-                  )}
-                </div>
               </div>
             )}
 
             {type === 'Ship' && object.is_real && (
               <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.6 }}>
-                인접 선석 화물 판정(혼재 · 산적 호환성)은 <strong style={{ color: '#e8f0f2' }}>대시보드 → 선박 상세</strong> 또는
-                우하단 <strong style={{ color: '#e8f0f2' }}>에이전트 판단 과정</strong>의 종합 판정에서 봅니다.
+                이 배의 판정과 근거(선석 · 기상 · 혼재)는 <strong style={{ color: '#e8f0f2' }}>선박 판정</strong> 화면의 [근거]에서 봅니다.
               </div>
             )}
           </div>

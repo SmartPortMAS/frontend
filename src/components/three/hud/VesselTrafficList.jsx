@@ -68,7 +68,7 @@ export default function VesselTrafficList() {
   return (
     <div className="vessel-traffic-list" style={{
       position: 'absolute', top: TOP, left: 20, zIndex: 1000,
-      width: '400px',
+      width: '310px',
       background: 'var(--hud-panel)',
       backdropFilter: 'blur(10px)',
       border: '1px solid var(--hud-border)',

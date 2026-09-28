@@ -12,6 +12,15 @@ import { COLORS, OPERATOR_NAME } from '../../utils/constants';
 import { ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 import { cargoSummary } from '../../utils/cargoText';
 
+// 기록된 판정 카드 — 표와 같은 색·같은 말
+const LEVEL_COLOR = { '적합': COLORS.teal, '주의': COLORS.yellow, '부적합': COLORS.red, '판정불가': COLORS.yellow };
+const STAGE_TEXT = { '입항전': '입항 전', '접안직전': '접안 직전', '하역중': '하역 중' };
+const kstShort = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+};
+
 // ─────────────────────────────────────────────
 // 멀티 에이전트 협상 콘솔 (우하단 플로팅 탭)
 //
@@ -133,8 +142,8 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   if (!orchestration.risk_level && (trace.length || rejected.length)) {
     msgs.push({
       agent: 'safety', time: at(5),
-      text: '안전 심사 생략 — 선석 또는 기상 단계에서 판정이 끝났습니다',
-      detail: ['안전 심사는 선석이 정해진 뒤 그 선석의 인접 화물 기준으로 실행됩니다.'],
+      text: '혼재 심사 생략 — 선석 또는 기상 단계에서 판정이 끝났습니다',
+      detail: ['혼재 심사는 선석이 정해진 뒤 그 선석의 인접 화물 기준으로 실행됩니다.'],
     });
   }
 
@@ -253,7 +262,7 @@ export default function AgentConsole() {
   const [ackNote, setAckNote] = useState('');
   // 조회 전용(공개 배포본) 때문에 막힌 것인지 — 문구 색을 가르는 근거
   const [decisionReadOnly, setDecisionReadOnly] = useState(false);
-  const { orchestrate, recordAssessment, assessBerthWeather, ragQuery } = useOnsanApi();
+  const { orchestrate, assessBerthWeather, ragQuery } = useOnsanApi();
   const setOrchestration = useSensorStore((s) => s.setOrchestration);
   const setBerthWeather = useSensorStore((s) => s.setBerthWeather);
 
@@ -298,11 +307,12 @@ export default function AgentConsole() {
   // 우선순위: 콘솔에서 직접 고른 선박 > 지도/목록에서 클릭한 선박(전역) > 첫 번째 후보
   // localTarget 이 화면 목록에 없어도(신호 끊긴 승인 대기 배) 유효한 대상으로 둔다 —
   // 예전엔 목록 멤버십을 요구해서, 그런 배를 지목하면 조용히 첫 배로 되돌아갔다.
-  const target = localTarget
-    ? localTarget
-    : selectedVessel && vessels.some((v) => v.port_call_id === selectedVessel.port_call_id)
-      ? selectedVessel
-      : vessels[0];
+  // [2026-09-28] 대상은 [근거]로만 정한다. 예전엔 드롭다운 + [종합 판정]이 있어 선박 판정 화면의
+  // [판정 요청]과 같은 엔진을 두 번째 입구로 돌렸고(기록은 안 남김), 그래서 [판정 기록]이 또
+  // 필요했다(현우: "판정 요청과 판단 과정의 차이를 모르겠다"). 실행은 [판정 요청] 한 곳이다.
+  const target = localTarget;
+  // 이력에 남은 판정 — 표의 행이 실어 보낸다. 창 맨 위에 그대로 보인다.
+  const [recorded, setRecorded] = useState(null);
 
   // 배정현황의 "협상 로그 →" 클릭을 받는다 — 그 배를 대상으로 콘솔을 연다.
   // 실제 판정 대상 목록(vessels)에서 호출부호로 찾은 실선박만 지정한다.
@@ -314,6 +324,31 @@ export default function AgentConsole() {
     const match = (v) => v.callsgn && v.callsgn.trim().toUpperCase() === want;
     // 화면 목록 우선, 없으면 신호 끊긴 판정 대상에서 찾는다.
     const hit = vessels.find(match) || offscreen.find(match);
+    const sub = consoleRequest.subject;
+    if (sub) {
+      // 표의 행이 판정에 쓴 값(PORT-MIS 사전배정 계류시설 또는 위치 판정 선석 · 흘수 · 화물)을 그대로 쓴다.
+      // 선박위치 목록에 있으면 그 배를 바탕으로, 없으면(입항 전) 행 값만으로 대상을 만든다.
+      const base = hit ? withRequestedCargo(hit, consoleRequest.cargo, data?.berth_cargo ?? []) : {};
+      const t = {
+        ...base,
+        port_call_id: `req:${want}:${sub.wharf || ''}`,
+        vessel_name: sub.vessel_name || base.vessel_name,
+        callsgn: base.callsgn || consoleRequest.callsgn,
+        presence_berth_name: sub.wharf || base.presence_berth_name || null,
+        berth: sub.wharf || base.berth || null,
+        draught_m: Number(sub.draught_m) > 0 ? Number(sub.draught_m) : (base.draught_m ?? null),
+        cargo: base.cargo || sub.cargo || null,
+        cargos: base.cargos?.length ? base.cargos : (sub.cargos || []),
+      };
+      setLocalTarget(t);
+      setRecorded(consoleRequest.record || null);
+      setTab('negotiation');
+      setOpen(true);
+      clearConsoleRequest();
+      run(t);
+      return;
+    }
+    setRecorded(consoleRequest.record || null);
     if (hit) {
       // 배정현황이 보여준 화물이 있으면 그것으로 판정한다.
       //
@@ -379,8 +414,8 @@ export default function AgentConsole() {
   // 실측 43척 중 42척에 기록된 판정과 다른 답(다른 선석 추천·'적합 선석 없음')을 보였다.
   // 접안 전인 배는 여기서 판정하지 않는다 — 이 목록의 facility_name 은 하루 늦은 VTS
   // 이력이라 믿을 수 없고, 사전 검토는 판정 잡이 PORT-MIS 신고 선석으로 한다.
-  const run = async () => {
-    if (!target) return;
+  const run = async (t = target) => {
+    if (!t) return;
     setLoading(true);
     setAckState(null);   // 새로 판정하면 이전 확인은 무효다
     setAssessmentId(null);
@@ -397,19 +432,19 @@ export default function AgentConsole() {
     setOrchestration(null);
     setBerthWeather(null);
     try {
-      const berthId = findBerthIdByName(target.berth);
+      const berthId = findBerthIdByName(t.berth);
       const group = berthId ? ONSAN_WEATHER_GROUP[berthId] : null;
       if (group) await assessBerthWeather({ berthGroup: group });
       await orchestrate({
-        cargoName: target.cargo?.name,
-        casNo: target.cargo?.cas_no,
+        cargoName: t.cargo?.name,
+        casNo: t.cargo?.cas_no,
         dwt: null, // 실AIS 위치 데이터엔 DWT가 없음 — 미상으로 보내 오케스트레이터가 보수적으로 판단하게 함
-        draught: target.draught_m ?? undefined,
-        vesselName: target.vessel_name,
-        callSign: target.callsgn,
-        assignedWharfName: target.presence_berth_name ?? null,
+        draught: t.draught_m ?? undefined,
+        vesselName: t.vessel_name,
+        callSign: t.callsgn,
+        assignedWharfName: t.presence_berth_name ?? null,
         // 같은 입항 건의 나머지 화물
-        extraCargos: target.cargos ?? [],
+        extraCargos: t.cargos ?? [],
       });
       // orchestrate()는 매번 새로 계산하는 상태없는 판단이라 아무것도 기록하지
       // 않는다. arrival_watcher(10분 주기 배경 잡)가 같은 배를 이미 판정해 뒀으면
@@ -420,7 +455,7 @@ export default function AgentConsole() {
       //   vessel_name · stage · wharf_name · level · action · recipient ·
       //   reasons · changed_from · assessed_at_utc). 없는 필드로 걸렀으니
       //   match 가 늘 undefined 였고, 확인할 수 있는 건이 있어도 못 찾았다.
-      setAssessmentId(await findPendingAssessmentId(target.callsgn));
+      setAssessmentId(await findPendingAssessmentId(t.callsgn));
       setAssessmentChecked(true);
     } finally {
       setLoading(false);
@@ -432,45 +467,6 @@ export default function AgentConsole() {
   // 준다 — /vessels 의 presence_berth_name. 화면이 스스로 추정하지 않는다.
   const berthNow = target?.presence_berth_name ?? null;
 
-  // 판정을 이력에 남긴다. 아무 자리도 잠기지 않는다.
-  const record = async () => {
-    if (decisionBusy || !target) return;
-    setDecisionBusy(true);
-    setDecisionError(null);
-    setDecisionReadOnly(false);
-    try {
-      // 판정에 쓴 화물과 기록에 쓰는 화물이 같아야 한다 — 둘 다 target.cargo(입항 건 화물).
-      const cargo = target.cargo;
-      const outcome = await recordAssessment({
-        cargoName: cargo?.name,
-        chemId: cargo?.chem_id,
-        casNo: cargo?.cas_no,
-        dwt: null,
-        draught: target.draught_m ?? undefined,
-        vesselName: target.vessel_name,
-        callSign: target.callsgn,
-        assignedWharfName: berthNow,
-        extraCargos: target.cargos ?? [],
-      });
-      // 판정을 다시 돌린 결과다 — 콘솔에 보이던 판단을 그걸로 갱신해 화면과
-      // 기록된 내용이 어긋나지 않게 한다.
-      setOrchestration(outcome.orchestration);
-      setAckState('RECORDED');
-      // 방금 남긴 행의 id 는 응답에 없다(응답은 recorded/level/stage 만 준다).
-      // 확인 버튼을 띄우려면 id 가 필요하니 대기 목록에서 다시 찾는다.
-      setAssessmentId(await findPendingAssessmentId(target.callsgn));
-      if (!outcome.recorded) {
-        // 실패가 아니라 "직전 판정과 시점·등급·조치안이 모두 같다"는 뜻이다.
-        setDecisionReadOnly(true);
-        setDecisionError('직전 판정과 같아 새 이력을 남기지 않았습니다 — 변화만 기록합니다.');
-      }
-    } catch (e) {
-      setDecisionError(e.message);
-      setDecisionReadOnly(Boolean(e.readOnly));
-    } finally {
-      setDecisionBusy(false);
-    }
-  };
 
   // 관제사가 이 판정을 봤다는 사실을 남긴다. 의견이 있으면 함께 적는다.
   const acknowledge = async () => {
@@ -604,50 +600,58 @@ export default function AgentConsole() {
         />
       ) : (
       <>
-      {/* 대상 선박 선택 + 실행 (판정 진입점을 하나로) */}
-      <div style={{ padding: '10px 14px', borderBottom: `1px solid ${COLORS.glassBorder}`, display: 'flex', gap: 8 }}>
-        <select
-          value={target?.port_call_id || ''}
-          onChange={(e) => setLocalTarget(vessels.find((v) => v.port_call_id === e.target.value))}
-          style={{
-            flex: 1, minWidth: 0, background: COLORS.card, color: COLORS.textPrimary,
-            border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '7px 9px', fontSize: 12.5,
-          }}
-        >
-          {target && !vessels.some((v) => v.port_call_id === target.port_call_id) && (
-            /* 신호가 끊겨 목록에 없는 배를 승인 대기에서 지목한 경우 —
-               선택된 사실이 보이도록 이 항목만 임시로 띄운다 */
-            <option key={target.port_call_id} value={target.port_call_id}>
-              {target.vessel_name} · {target.cargo?.name ?? '화물 미확인'} (AIS 신호 없음)
-            </option>
+      {/* 대상 + 이력에 남은 판정. [2026-09-28] 실행 버튼 없음 — 선박 판정 화면의 [근거]로 연다. */}
+      {target && (
+        <div style={{ padding: '10px 14px', borderBottom: `1px solid ${COLORS.glassBorder}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 13.5, color: COLORS.textPrimary }}>{target.vessel_name || target.callsgn}</div>
+              <div style={{ fontSize: 11.5, color: COLORS.textDim }}>
+                {berthNow || '선석 미확인'} · {cargoSummary(target.cargos?.length ? target.cargos : [target.cargo].filter(Boolean)) || '화물 미확인'}
+                {target.draught_m ? ` · 흘수 ${target.draught_m} m` : ''}
+              </div>
+            </div>
+            {loading && (
+              <span style={{ color: COLORS.info, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                <FaSpinner className="spin" /> 판단 중
+              </span>
+            )}
+          </div>
+          {recorded && (
+            <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '7px 10px', fontSize: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ color: COLORS.textDim, fontWeight: 700 }}>기록된 판정</span>
+                <span style={{ color: LEVEL_COLOR[recorded.level] ?? COLORS.textPrimary, fontWeight: 800 }}>{recorded.level}</span>
+                {recorded.stage && <span style={{ color: COLORS.textDim }}>· {STAGE_TEXT[recorded.stage] ?? recorded.stage}</span>}
+                {recorded.assessed_at_utc && <span style={{ color: COLORS.textDim }}>· {kstShort(recorded.assessed_at_utc)}</span>}
+                {recorded.acknowledged_by && <span style={{ color: COLORS.teal, fontWeight: 700 }}>· 확인 {recorded.acknowledged_by}</span>}
+              </div>
+              {recorded.action && recorded.level !== '적합' && (
+                <div style={{ marginTop: 3, color: COLORS.textSecondary }}>
+                  조치안 {recorded.action}{recorded.recipient ? <> → <strong>{recorded.recipient}</strong></> : null}
+                </div>
+              )}
+            </div>
           )}
-          {vessels.map((v) => (
-            <option key={v.port_call_id} value={v.port_call_id}>
-              {/* 부두 이름은 안 보여준다 — 이 콘솔은 항상 탐색모드로 새로 추천받는다(위
-                  run() 참고). 지금 있는 자리를 먼저 보여주면 "이미 정해진 자리를
-                  확인하는 화면"처럼 보여 탐색모드로 바꾼 의도와 어긋난다. */}
-              {/* 판정은 입항 건 화물 전부로 돈다(run 의 extraCargos) — 목록도 전부 보여준다 */}
-              {v.vessel_name} · {cargoSummary(v.cargos?.length ? v.cargos : [v.cargo])}
-            </option>
-          ))}
-        </select>
-        <button onClick={run} disabled={loading || !target} style={{
-          background: loading ? COLORS.card : `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,
-          color: loading ? COLORS.textDim : '#FFFFFF', border: 'none', borderRadius: 8,
-          padding: '7px 14px', fontWeight: 800, fontSize: 12.5, cursor: loading ? 'default' : 'pointer',
-          display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0,
-        }}>
-          {loading ? <><FaSpinner className="spin" /> 판단 중</> : <><FaPlay /> 종합 판정</>}
-        </button>
-      </div>
+          {recorded && (
+            <div style={{ fontSize: 11, color: COLORS.textDim }}>
+              아래는 같은 선석·흘수·화물을 지금 자료로 다시 판단한 과정입니다. 기상·조위가 기록 시각과 다르면 결론이 다를 수 있습니다.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 대화 */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {messages.length === 0 && (
           <div style={{ color: COLORS.textDim, fontSize: 13, lineHeight: 1.8, textAlign: 'center', marginTop: 40 }}>
-            선박을 고르고 <strong style={{ color: COLORS.teal }}>종합 판정</strong>을 누르면<br />
-            선석 → 기상 → 혼재(안전) 에이전트가 차례로 판단하고<br />
-            종합 오케스트레이터가 하역 적합성을 결정합니다.
+            {loading ? '판단 중입니다 (10~20초)' : (
+              <>
+                <strong style={{ color: COLORS.teal }}>선박 판정</strong> 화면에서 판정 옆 <strong style={{ color: COLORS.teal }}>[근거]</strong>를 누르면<br />
+                선석 → 기상 → 혼재(안전) 에이전트가 차례로 판단한<br />
+                과정이 여기에 나옵니다.
+              </>
+            )}
           </div>
         )}
         {messages.map((m, i) => {
@@ -758,23 +762,13 @@ export default function AgentConsole() {
                   background: COLORS.teal, color: '#FFFFFF', border: 'none', borderRadius: 8,
                   padding: '7px 14px', fontWeight: 800, fontSize: 12.5,
                   cursor: decisionBusy ? 'wait' : 'pointer', opacity: decisionBusy ? 0.6 : 1,
-                }}>확인</button>
+                }}>판정 확인</button>
               </>
             ) : (
               <>
                 <span style={{ flex: 1, fontSize: 11.5, color: COLORS.textDim }}>
-                  {berthNow
-                    ? `아직 남긴 판정이 없습니다 — ${berthNow} 기준으로 기록합니다.`
-                    : '이 배가 어느 선석에 있는지 확인되지 않아 기록할 수 없습니다.'}
+                  아직 기록된 판정이 없습니다. 선박 판정 화면의 [판정 요청]으로 기록합니다.
                 </span>
-                <button onClick={record} disabled={decisionBusy || !berthNow} style={{
-                  background: berthNow ? COLORS.teal : 'transparent',
-                  color: berthNow ? '#FFFFFF' : COLORS.textDim,
-                  border: berthNow ? 'none' : `1px solid ${COLORS.border}`,
-                  borderRadius: 8, padding: '7px 14px', fontWeight: 800, fontSize: 12.5,
-                  cursor: !berthNow ? 'not-allowed' : decisionBusy ? 'wait' : 'pointer',
-                  opacity: decisionBusy ? 0.6 : 1,
-                }}>판정 기록</button>
               </>
             )}
           </div>

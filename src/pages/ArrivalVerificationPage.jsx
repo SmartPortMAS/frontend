@@ -4,6 +4,7 @@ import {
   CartesianGrid, Tooltip, ReferenceLine, ReferenceDot,
 } from 'recharts';
 import { fetchUpcomingArrivals, postAssessAndRecord } from '../api/backendAdapter';
+import useSensorStore from '../stores/useSensorStore';
 import { COLORS } from '../utils/constants';
 import { cargoNames, cargoSummary } from '../utils/cargoText';
 import HelpTip from '../components/common/HelpTip';
@@ -89,7 +90,7 @@ const td = { padding: '7px 8px', verticalAlign: 'top' };
 function UpcomingSection() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [scope, setScope] = useState('berth');
+  const [scope, setScope] = useState('onsan');
   // 화면에서 바로 요청한 판정의 진행 상태 — { [call_sign]: 'busy' | { error } }
   const [judging, setJudging] = useState({});
   const [reloadKey, setReloadKey] = useState(0);
@@ -104,6 +105,7 @@ function UpcomingSection() {
     return () => { alive = false; clearInterval(id); };
   }, [reloadKey]);
 
+  const requestConsole = useSensorStore((st) => st.requestConsole);
   // 판정 감시 작업은 10분마다 "지금 항내에 있는 배"만 훑는다. 아직 오지 않은 배는 관제사가
   // 여기서 직접 판정을 요청한다 — 결과는 판정 이력에 남고 표가 다시 읽는다.
   const judge = async (r) => {
@@ -149,8 +151,8 @@ function UpcomingSection() {
   );
 
   const scopes = [
-    ['berth', `울산항 계류시설 ${data?.berth_count ?? '-'}`],
     ['onsan', `온산 계류시설 ${data?.onsan_count ?? '-'}`],
+    ['berth', `울산항 계류시설 ${data?.berth_count ?? '-'}`],
     ['all', `정박지 포함 전체 ${data?.count ?? '-'}`],
   ];
 
@@ -214,7 +216,7 @@ function UpcomingSection() {
 
       {error && (
         <p style={{ color: COLORS.red, fontSize: 13 }}>
-          입항 예정 목록을 불러오지 못했습니다 — 관제 서버에 연결할 수 없습니다. 아래 사례 재생은 서버 없이 동작합니다.
+          입항 예정 목록을 불러오지 못했습니다 — 관제 서버에 연결할 수 없습니다.
         </p>
       )}
       {!error && data && data.has_assessment_history === false && (
@@ -272,7 +274,24 @@ function UpcomingSection() {
                 <td style={td}>
                   {r.assessment ? (
                     <div title={(r.assessment.reasons || []).join('\n')}>
-                      <LevelPill level={r.assessment.level} />
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <LevelPill level={r.assessment.level} />
+                        <button
+                          type="button"
+                          onClick={() => requestConsole(r.call_sign, r.chem_id ? { chem_id: r.chem_id, name: r.cargo_name } : null, {
+                            subject: {
+                              vessel_name: r.vessel_name, wharf: r.wharf_name || r.facility_name, draught_m: r.draught_m,
+                              cargo: r.chem_id || r.cas_no ? { chem_id: r.chem_id, cas_no: r.cas_no, name: r.cargo_name } : null,
+                              cargos: r.cargos || [],
+                            },
+                            record: r.assessment,
+                          })}
+                          title="왜 이 판정인지 선석 → 기상 → 혼재 순서로 봅니다"
+                          style={{ border: 'none', background: 'transparent', color: COLORS.navy, padding: 0, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          근거
+                        </button>
+                      </span>
                       {/* 적합은 칩만 — 같은 문장이 줄마다 반복되던 것을 없앴다. 벗어난 배만 이유와 조치안을 보인다. */}
                       {r.assessment.level !== '적합' && keyReason(r.assessment.reasons) && (
                         <div style={{ fontSize: 11.5, color: COLORS.textSecondary, marginTop: 3, maxWidth: 280 }}>
@@ -467,11 +486,17 @@ function SwellReplay({ replay }) {
 
 // ── 3. 지금 선석에 붙어 있는 배 ────────────────
 // 선석 슬롯 지도(클릭 → 슬롯별 배·판정 근거) + 점유 목록. 두 부품은 같은 범위(온산/전체)를 본다.
+// [2026-09-28] 지도를 뺐다 — 목록과 같은 자료를 두 번 보여줬다(현우 D8). 판정·확인자·[근거]가 한눈에 보이는 목록만 둔다.
 function BerthedSection() {
+  return <div className="dash-section" id="berthed"><BerthOccupiedList scope="onsan" /></div>;
+}
+
+// eslint-disable-next-line no-unused-vars
+function BerthedMapSection() {
   const [scope, setScope] = useState('onsan');
   return (
     <>
-      <div className="glass-card dash-section" id="berthed">
+      <div className="glass-card dash-section">
         <div className="glass-card-header">
           <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
             접안 선박 · 선석 점유
@@ -560,6 +585,7 @@ function ReplaySection() {
 }
 
 export default function ArrivalVerificationPage() {
+  const review = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('review') === '1';
   return (
     <div className="dashboard-page">
       <div className="glass-card dash-section" style={{ display: 'grid', gap: 6 }}>
@@ -568,7 +594,8 @@ export default function ArrivalVerificationPage() {
           <HelpTip title="선박 판정">
             <div>기존 선석 배정(선석회의 · PORT-MIS 신고)은 그대로 따릅니다. 선박 한 척을 <strong>입항 전 → 접안 직전 → 하역 중</strong> 순서로 다시 판정하고,
             기상·조위·흘수·인접 화물이 기준을 벗어나면 조치안을 만들어 권한 있는 곳 — 선석 운영 주체 · VTS · 터미널 — 에 근거와 함께 넘깁니다.</div>
-            <div style={{ marginTop: 4 }}>위는 <strong>입항 선박 판정</strong>(입항 신고 기준), 아래는 <strong>접안 선박 · 선석 점유</strong>(실제 위치 기준)입니다.
+            <div style={{ marginTop: 4 }}>위는 <strong>입항 선박 판정</strong>(입항 신고 기준), 아래는 <strong>접안 선박</strong>(실제 위치 기준)입니다.
+            판정 옆 [근거]를 누르면 우하단 창에 선석 → 기상 → 혼재 순서의 판단 과정이 열립니다.
             대시보드의 "확인 대기 판정"을 누르면 이 화면으로 옵니다.</div>
           </HelpTip>
         </h2>
@@ -577,7 +604,7 @@ export default function ArrivalVerificationPage() {
           {[
             ['arrival-table', '입항 선박', '시점별 판정 보기'],
             ['arrival-table', '판정 요청', '판정 없는 선박'],
-            ['arrival-table', '조치안 · 받는 곳', '벗어난 선박'],
+            ['arrival-table', '근거 · 조치안', '벗어난 선박'],
             ['berthed', '접안 선박', '선석별 점유 확인'],
           ].map(([id, head, sub], i) => (
             <li key={head} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -601,8 +628,9 @@ export default function ArrivalVerificationPage() {
       </div>
       <div className="dash-section"><UpcomingSection /></div>
       <BerthedSection />
-      <div className="dash-section"><GanttChart /></div>
-      <div className="dash-section"><ReplaySection /></div>
+      {/* 사후 검토·부두별 접안 이력은 관제 흐름에 없어 화면에서 뺐다(현우 D3) — 보고서·영상 촬영용으로만 ?review=1 */}
+      {review && <div className="dash-section"><GanttChart /></div>}
+      {review && <div className="dash-section"><ReplaySection /></div>}
     </div>
   );
 }

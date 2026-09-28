@@ -303,7 +303,7 @@ export default function VesselDetailPanel() {
       })()}
 
       {/* 안전 심사 — 백엔드 안전 에이전트 (MSDS 혼재금지 + IMDG 격리) */}
-      <SectionTitle icon={<FaShieldAlt />}>안전 심사<AgentChip agent="safety" /></SectionTitle>
+      <SectionTitle icon={<FaShieldAlt />}>혼재 심사<AgentChip agent="safety" /></SectionTitle>
       {!assessment ? (
         <div style={{ fontSize: '13px', color: COLORS.textDim, lineHeight: 1.7 }}>
           안전 에이전트 조회 중…
@@ -422,7 +422,7 @@ export default function VesselDetailPanel() {
       {/* 선석 기상 판정 연동 */}
       {weatherGroup && (
         <>
-          <SectionTitle icon={<FaCloudSun />}>선석 기상 판정</SectionTitle>
+          <SectionTitle icon={<FaCloudSun />}>부두 기상 판정</SectionTitle>
           <Row label="기상 임계군">{weatherGroup}</Row>
           {groupVerdict && (
             <Row label="최근 판정">
@@ -437,7 +437,7 @@ export default function VesselDetailPanel() {
               color: '#FFFFFF', fontWeight: 700, cursor: 'pointer', fontSize: '13px',
             }}
           >
-            이 선석 기상 판정 실행 → 판정 패널로 이동
+            부두 기상 판정 패널에서 보기
           </button>
         </>
       )}
@@ -654,47 +654,7 @@ export default function VesselDetailPanel() {
           {moorSim?.error && (
             <div style={{ marginTop: '8px', fontSize: '12px', color: COLORS.yellow }}>{moorSim.error}</div>
           )}
-          {/* 정밀 검토(Omniverse)로 넘긴다 — 이 배가 붙은 선석의 앞으로 72시간(기상 예보 ·
-              조위 예측)을 3D 로 재생한다. 2026-09-22 전에는 스트림만 켜고 어느 배인지는
-              넘기지 않아 Omniverse 가 자기 순환을 계속했다. 문구의 "PhysX"도 뺐다 —
-              지금 보여주는 건 예보 재생이지 물리 계산이 아니다(심사 질문에 답할 수 없는
-              말을 화면에 두지 않는다). Omniverse 장면은 온산 액체화물 부두 11곳뿐이라
-              그 밖의 선석에 있는 배는 누를 수 없고 이유를 적는다. */}
-          {(() => {
-            const omniBerthName = vessel.presence_berth_name || vessel.berth || null;
-            const omniBerthId = omniBerthName ? berthIdByName(omniBerthName) : null;
-            const omniReady = Boolean(omniBerthId) && OMNIVERSE_BERTH_IDS.has(omniBerthId);
-            const note = omniReady
-              ? `${omniBerthName}의 앞으로 72시간을 기상 예보·조위 예측으로 재생합니다`
-              : omniBerthName
-                ? '이 선석은 3D 정밀 검토 장면에 없습니다 (온산 액체화물 부두 11곳만)'
-                : '선석에 붙은 배만 정밀 검토할 수 있습니다';
-            return (
-              <>
-                <button
-                  type="button"
-                  disabled={!omniReady}
-                  onClick={() => {
-                    requestOmniverse({
-                      berth: omniBerthName, call_sign: vessel.callsgn || null, vessel_name: vessel.vessel_name,
-                    });
-                    navigate('/twin');
-                  }}
-                  title={note}
-                  style={{
-                    marginTop: '10px', width: '100%',
-                    background: 'transparent', border: `1px solid ${omniReady ? COLORS.teal : COLORS.border}`,
-                    color: omniReady ? COLORS.teal : COLORS.textDim, borderRadius: '8px', padding: '7px 10px',
-                    fontSize: '11.5px', fontWeight: 700, cursor: omniReady ? 'pointer' : 'not-allowed',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  정밀 검토 (Omniverse · 앞으로 72시간 · 기동 1~2분)
-                </button>
-                <div style={{ fontSize: '10.5px', color: COLORS.textDim, marginTop: '4px' }}>{note}</div>
-              </>
-            );
-          })()}
+          {/* [2026-09-28] 정밀 검토(Omniverse) 버튼은 3D 관제 화면 머리의 [정밀 검토 영상] 하나로 합쳤다(현우 D4). */}
           </details>
         </>
       )}
@@ -726,15 +686,7 @@ export default function VesselDetailPanel() {
                 ✓ 확인 — {ack.by} · {formatKST(ack.at)}
               </div>
             ) : (
-              <button
-                onClick={() => ackAlert(id)}
-                style={{
-                  padding: '5px 12px', borderRadius: '6px', border: `1px solid ${COLORS.teal}`,
-                  background: 'transparent', color: COLORS.teal, cursor: 'pointer', fontSize: '12px', fontWeight: 700,
-                }}
-              >
-                확인 처리
-              </button>
+              <div style={{ color: COLORS.textDim, fontSize: '11.5px' }}>미확인 · 상단 경고 벨에서 확인합니다</div>
             )}
           </div>
         );
