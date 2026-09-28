@@ -804,7 +804,7 @@ export default function AgentConsole({ mode = 'qa' }) {
                           {x.axis} {x.level}
                         </span>
                       ))}
-                      <span style={{ fontSize: 11, color: COLORS.textDim }}>→ 가장 낮은 등급이 종합 등급</span>
+                      <span style={{ fontSize: 11, color: COLORS.textDim }}>선석 → 기상 → 혼재 순서로 보고, 앞 단계에서 걸리면 거기서 멈춥니다</span>
                     </div>
                   )}
                 </div>
