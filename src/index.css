@@ -1426,3 +1426,7 @@ tr.row-busy > td { animation: sbRowPulse 1.1s ease-in-out infinite; }
 .virtual-zone .sensor-card { border-style: dashed !important; border-left: 1px dashed #9AA8B0 !important; box-shadow: none; opacity: 0.92; }
 .virtual-zone .sensor-status { display: none; }
 .virtual-zone .sensor-card-header::after { content: '예시값'; font-size: 11px; font-weight: 800; color: #5F6F78; border: 1px dashed #9AA8B0; border-radius: 999px; padding: 1px 8px; }
+
+/* [2026-09-29] 사용 순서 띠가 가리킨 행 — 잠깐 켜졌다 꺼진다 */
+tr.step-target > td { animation: sbStepTarget 2.6s ease-out; }
+@keyframes sbStepTarget { 0% { background: rgba(14, 124, 107, 0.28); } 100% { background: transparent; } }

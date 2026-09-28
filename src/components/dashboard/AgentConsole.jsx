@@ -14,6 +14,15 @@ import { cargoSummary } from '../../utils/cargoText';
 
 // 기록된 판정 카드 — 표와 같은 색·같은 말
 const LEVEL_COLOR = { '적합': COLORS.teal, '주의': COLORS.yellow, '부적합': COLORS.red, '판정불가': COLORS.yellow };
+// 서버 종합 판정값(내부 이름)을 화면 말로. '적합선석없음'은 선석을 확인 못 한 판정불가, 나머지 둘은 원인이 붙은 부적합.
+const DECISION_KO = {
+  '적합': '적합', '승인가능': '적합',
+  '적합선석없음': '판정불가 · 선석 확인 불가',
+  '기상불가_중단권고': '부적합 · 기상',
+  '전 후보 부적합': '부적합 · 혼재',
+};
+const decisionKo = (d) => DECISION_KO[d] || d || '';
+const decisionLevel = (d) => (DECISION_KO[d] || '').split(' ·')[0];
 const STAGE_TEXT = { '입항전': '입항 전', '접안직전': '접안 직전', '하역중': '하역 중' };
 const kstShort = (iso) => {
   const d = new Date(iso);
@@ -175,7 +184,7 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   const bf = orchestration.berth_facts;
   const SOURCE = {
     scheduling: `선석 제원${bf?.depth_m != null ? ` 수심 ${bf.depth_m} m` : ''} · 국립해양조사원 조석예보 · 이웃 선석 재항 화물`,
-    weather: ws ? `기상청 ${ws.station || ''} 관측 · 단기예보 ${ws.forecast_points ?? '-'}개 시각 · ${ws.berth_group || '부두'} 기준${ws.stop_wind ? `(중단 ${ws.stop_wind} m/s)` : ''}` : null,
+    weather: ws ? `기상청 ${ws.station || ''} 관측 · 단기예보 ${ws.forecast_points ?? '-'}개 시각 · ${!ws.berth_group || /GLOBAL_DEFAULT/.test(ws.berth_group) ? '공통 기준(부두 기준 없음)' : `${ws.berth_group} 기준`}${ws.stop_wind ? `(중단 ${ws.stop_wind} m/s)` : ''}` : null,
     safety: `MSDS ${orchestration.msds_sections_used?.length || 0}개 절 · 46 CFR 150 호환성 그룹 · 혼재금지 규칙`,
   };
   const seen = new Set();
@@ -192,7 +201,7 @@ function toMessages({ orchestration, berthWeather, vessel }) {
     text: orchestration.summary || `${orchestration.decision_label || orchestration.status}`,
     detail: [],
     verdict: orchestration.status,
-    verdictLabel: orchestration.decision_label,
+    verdictLabel: decisionKo(orchestration.decision_label),
     axes: (orchestration.opinions || []).map((o) => ({ axis: o.axis, level: o.level })),
     missingAny: orchestration.evidence_missing,
   });
@@ -688,7 +697,7 @@ export default function AgentConsole({ mode = 'qa' }) {
           {['scheduling', 'weather', 'safety', 'orchestrator'].map((k, idx) => {
             const a = AGENTS[k];
             const hit = shownMessages.find((x) => x.agent === k);
-            const lv = k === 'orchestrator' ? (hit ? orchestration?.decision_label : null) : hit?.level;
+            const lv = k === 'orchestrator' ? (hit ? decisionLevel(orchestration?.decision_label) || orchestration?.decision_label : null) : hit?.level;
             const on = Boolean(hit);
             const c = on ? (LEVEL_COLOR[lv] || a.color) : COLORS.textDim;
             return (

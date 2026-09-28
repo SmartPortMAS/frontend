@@ -58,9 +58,11 @@ export default function CCTVPanel() {
   const setCollapsed = useSensorStore((st) => st.setHudCctvCollapsed);
 
   useEffect(() => {
+    if (collapsed) return undefined;
+    setTime(new Date());
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [collapsed]);
 
   // 자동 순회는 켜져 있고, 사람이 특정 부두를 지목하지 않았을 때만 돈다.
   // (3D 에서 선석·선박을 클릭한 경우도 '지목'으로 본다)

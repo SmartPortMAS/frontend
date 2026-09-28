@@ -80,6 +80,9 @@ const useSensorStore = create((set, get) => ({
   // [2026-09-28] CCTV·레이더는 접힌 상태가 기본 — 펼쳐 두면 3D 장면의 절반을 덮었다(현우 D11)
   hudCctvCollapsed: true,
   setHudCctvCollapsed: (v) => set({ hudCctvCollapsed: Boolean(v) }),
+  // 3D 가벼운 모드(그림자 끔 · 해상도 1배) — Scene 의 PerfProbe 가 켜거나 ?lite=1
+  twinLite: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('lite') === '1',
+  setTwinLite: (v) => set({ twinLite: Boolean(v) }),
   hudRadarCollapsed: true,
   setHudRadarCollapsed: (v) => set({ hudRadarCollapsed: Boolean(v) }),
 

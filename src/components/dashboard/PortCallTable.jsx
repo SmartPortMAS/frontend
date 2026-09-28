@@ -10,7 +10,7 @@ const formatKST = (utcString) => {
   return new Date(utcString).toLocaleString('ko-KR', {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
     hour12: false, timeZone: 'Asia/Seoul',
-  });
+  }).replace(/\.\s*/g, '.').replace(/\.(\d\d:\d\d)$/, ' $1');   // "09. 28. 23:41" → "09.28 23:41" (열 폭 절약)
 };
 
 const cellStyle = {
@@ -86,16 +86,16 @@ function cargoLabel(v) {
 // width: table-layout:fixed 에서 쓸 고정 비율 (합계 100%) — 정렬 시 내용 길이에 따라
 // 컬럼 폭이 흔들리던 문제를 없애기 위함.
 const COLUMNS = [
-  { key: 'vessel_name', label: '선박명', width: '19%', getValue: (v) => v.vessel_name ?? '' },
-  { key: 'callsgn', label: '호출부호', width: '9%', getValue: (v) => v.callsgn ?? '' },
+  { key: 'vessel_name', label: '선박명', width: '21%', getValue: (v) => v.vessel_name ?? '' },
+  { key: 'callsgn', label: '호출부호', width: '8%', getValue: (v) => v.callsgn ?? '' },
   // 선종은 PORT-MIS 공식 선종코드(51종). 액체/일반 구분의 근거를 화면에 그대로 둔다 —
   // 뱃지만 있으면 "왜 이 배가 위험물선인가"를 물었을 때 답할 근거가 화면에 없다.
-  { key: 'ship_kind_nm', label: '선종 (PORT-MIS)', width: '14%', getValue: (v) => v.ship_kind_nm ?? '' },
-  { key: 'nav_status_category', label: '상태', width: '9%', getValue: (v) => (NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label },
-  { key: 'cargo', label: '화물', width: '18%', getValue: (v) => (v.cargo ? cargoSummary(v.cargos?.length ? v.cargos : [v.cargo]) : '') },
-  { key: 'berth', label: '배정 선석', width: '14%', getValue: (v) => v.berth ?? (v.anchorage ? `정박지 ${v.anchorage}` : '') },
-  { key: 'sog', label: '속력', width: '7%', getValue: (v) => v.sog ?? 0 },
-  { key: 'received_at_utc', label: '최근 수신 (KST)', width: '10%', getValue: (v) => (v.received_at_utc ? new Date(v.received_at_utc).getTime() : 0) },
+  { key: 'ship_kind_nm', label: '선종 (PORT-MIS)', width: '13%', getValue: (v) => v.ship_kind_nm ?? '' },
+  { key: 'nav_status_category', label: '상태', width: '10%', getValue: (v) => (NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label },
+  { key: 'cargo', label: '화물', width: '16%', getValue: (v) => (v.cargo ? cargoSummary(v.cargos?.length ? v.cargos : [v.cargo]) : '') },
+  { key: 'berth', label: '배정 선석', width: '10%', getValue: (v) => v.berth ?? (v.anchorage ? `정박지 ${v.anchorage}` : '') },
+  { key: 'sog', label: '속력', width: '6%', getValue: (v) => v.sog ?? 0 },
+  { key: 'received_at_utc', label: '최근 수신', width: '16%', getValue: (v) => (v.received_at_utc ? new Date(v.received_at_utc).getTime() : 0) },
 ];
 
 function compareVessels(a, b, getValue) {

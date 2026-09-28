@@ -60,6 +60,7 @@ const STATUS_COLOR = {
 
 export default function RadarMap() {
   const radarCollapsed = useSensorStore((st) => st.hudRadarCollapsed);
+  const lite = useSensorStore((st) => st.twinLite);
   const setRadarCollapsed = useSensorStore((st) => st.setHudRadarCollapsed);
   const ships = useSensorStore((s) => s.ships);
   const [angle, setAngle] = useState(0);
@@ -80,7 +81,12 @@ export default function RadarMap() {
 
   if (radarCollapsed) {
     return (
-      <div style={{ position: 'absolute', bottom: 40, right: 20, zIndex: 1000 }}>
+      <div style={{ position: 'absolute', bottom: 40, right: 20, zIndex: 1000, display: 'flex', gap: 6, alignItems: 'center' }}>
+        {lite && (
+          <span className="hud-chip" title="이 PC 에서 3D 가 느려 그림자를 끄고 해상도를 낮췄습니다. 자료와 판정은 그대로입니다." style={{ opacity: 0.8, cursor: 'default' }}>
+            가벼운 모드
+          </span>
+        )}
         <button type="button" className="hud-chip" onClick={() => setRadarCollapsed(false)} title="레이더 펼치기 — 온산 근해 선박위치">
           레이더 {blips.length}척
         </button>

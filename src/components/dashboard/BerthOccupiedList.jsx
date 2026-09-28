@@ -190,7 +190,7 @@ export default function BerthOccupiedList({ scope }) {
                   승인할 대상이 없다. 남는 기록은 "관제사가 이 판정을 봤다"뿐이고,
                   그 값은 acknowledged_by 로 내려온다(응답에 approved_by 는 없다). */}
               <th style={{ padding: '6px 8px' }}>확인자</th>
-              <th style={{ padding: '6px 8px' }}>판정</th>
+              <th style={{ padding: '6px 8px', minWidth: 150 }}>판정</th>
             </tr>
           </thead>
           <tbody>
@@ -206,7 +206,7 @@ export default function BerthOccupiedList({ scope }) {
                 ].join(' ').trim() || undefined}
                 style={{ borderBottom: `1px solid ${COLORS.border}` }}
               >
-                <td style={{ padding: '6px 8px' }}>{row.wharf_name}{row.slot_no ? ` · 슬롯${row.slot_no}` : ''}</td>
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{row.wharf_name}{row.slot_no ? ` · 슬롯${row.slot_no}` : ''}</td>
                 <td style={{ padding: '6px 8px' }}>{row.vessel_name || '(선명 미상)'} ({row.call_sign || '-'})</td>
                 <td style={{ padding: '6px 8px', color: COLORS.textSecondary }} title={(row.cargo_names || []).join(', ')}>
                   {(row.cargo_names?.length ? cargoSummary(row.cargo_names, 3) : row.cargo_name) || '-'}
@@ -229,7 +229,7 @@ export default function BerthOccupiedList({ scope }) {
                     judging[row.call_sign] === 'busy' ? (
                       <span style={{ color: COLORS.info, fontSize: '12px' }}>판정 중… (10~20초)</span>
                     ) : cannotJudge(row) ? (
-                      <span style={{ color: COLORS.textDim, fontSize: '12px' }} title="판정에 필요한 값이 없습니다 — 판정불가">
+                      <span style={{ color: COLORS.textDim, fontSize: '12px', whiteSpace: 'nowrap' }} title="판정에 필요한 값이 없습니다 — 판정불가">
                         판정불가 · {cannotJudge(row)}
                       </span>
                     ) : (

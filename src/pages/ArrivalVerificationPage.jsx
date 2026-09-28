@@ -246,7 +246,7 @@ function UpcomingSection() {
               <th style={th}>흘수</th>
               <th style={th}>표 수심 여유</th>
               <th style={th}>시점</th>
-              <th style={th}>판정 · 조치안</th>
+              <th style={{ ...th, minWidth: 150 }}>판정 · 조치안</th>
             </tr>
           </thead>
           <tbody>
@@ -266,7 +266,7 @@ function UpcomingSection() {
                 </td>
                 <td style={{ ...td, whiteSpace: 'nowrap', color: r.report_type === '최종' ? COLORS.textPrimary : COLORS.textSecondary }}>{r.report_type || '-'}</td>
                 {/* 이 입항 건에 단 화물 전부 — 입항 후 위치 화면과 같은 키(입항 건)라 같은 화물이다 */}
-                <td style={td} title={cargoNames(r.cargos).join(', ')}>
+                <td style={{ ...td, maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={cargoNames(r.cargos).join(', ')}>
                   {r.cargos?.length ? cargoSummary(r.cargos, 3) : <span style={{ color: COLORS.textDim }}>미확인</span>}
                 </td>
                 <td style={td}>
@@ -276,9 +276,9 @@ function UpcomingSection() {
                   )}
                 </td>
                 <td style={{ ...td, fontFamily: 'ui-monospace, Consolas, monospace' }}>{r.depth_m != null ? `${r.depth_m} m` : '-'}</td>
-                <td style={td}>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>
                   <span style={{ fontFamily: 'ui-monospace, Consolas, monospace' }}>{r.draught_m != null ? `${r.draught_m} m` : '없음'}</span>
-                  <div style={{ fontSize: 11, color: COLORS.textDim }}>{r.draught_basis || '판정불가 사유'}</div>
+                  <div style={{ fontSize: 11, color: COLORS.textDim }}>{r.draught_basis || '미신고'}</div>
                 </td>
                 <td style={{ ...td, fontFamily: 'ui-monospace, Consolas, monospace', color: COLORS.textSecondary }}>
                   {/부이/.test(r.wharf_name || r.facility_name || '')
@@ -323,7 +323,7 @@ function UpcomingSection() {
                   ) : judging[r.call_sign] === 'busy' ? (
                     <span style={{ color: COLORS.info, fontSize: 12 }}>판정 중… (10~20초)</span>
                   ) : cannotJudge(r) ? (
-                    <span style={{ color: COLORS.textDim, fontSize: 12 }} title="판정에 필요한 값이 없습니다 — 판정불가">
+                    <span style={{ color: COLORS.textDim, fontSize: 12, whiteSpace: 'nowrap' }} title="판정에 필요한 값이 없습니다 — 판정불가">
                       판정불가 · {cannotJudge(r)}
                     </span>
                   ) : (
@@ -603,6 +603,24 @@ export default function ArrivalVerificationPage() {
   const review = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('review') === '1';
   const judgingAny = useSensorStore((st) => Object.keys(st.judgeBusy).length > 0);
   const reasoningLive = useSensorStore((st) => Boolean(st.reasoningFocus));
+  // [2026-09-29] 사용 순서 띠를 누르면 자리로 가는 데서 끝나지 않고 그 단계의 첫 대상으로 간다(현우).
+  //   2 판정 요청 → 판정이 없는 첫 배의 [판정 요청]을 비춘다(누르지는 않는다 — 기록이 남는 동작이라 관제사가 누른다)
+  //   3 근거 → 벗어난(부적합·주의·판정불가) 첫 배의 [근거]를 연다. 없으면 첫 배의 [근거]
+  const runStep = (i, id) => {
+    const table = document.getElementById('arrival-table');
+    const show = (el) => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('step-target'); setTimeout(() => el.classList.remove('step-target'), 2600); };
+    if (i === 1 && table) {
+      const btn = [...table.querySelectorAll('button')].find((b) => b.textContent.trim() === '판정 요청');
+      if (btn) { show(btn.closest('tr') || btn); btn.focus({ preventScroll: true }); return; }
+    }
+    if (i === 2 && table) {
+      const rows = [...table.querySelectorAll('tbody tr')].filter((tr) => [...tr.querySelectorAll('button')].some((b) => b.textContent.trim() === '근거'));
+      const off = rows.find((tr) => /부적합|주의|판정불가/.test(tr.textContent)) || rows[0];
+      const btn = off && [...off.querySelectorAll('button')].find((b) => b.textContent.trim() === '근거');
+      if (btn) { show(off); btn.click(); return; }
+    }
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   return (
     <div className="dashboard-page">
       <div className="glass-card dash-section" style={{ display: 'grid', gap: 6 }}>
@@ -620,8 +638,8 @@ export default function ArrivalVerificationPage() {
         <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 13 }}>
           {[
             ['arrival-table', '입항 선박', '시점별 판정 보기'],
-            ['arrival-table', '판정 요청', '판정 없는 선박'],
-            ['arrival-table', '근거 · 조치안', '벗어난 선박'],
+            ['arrival-table', '판정 요청', '판정 없는 첫 배로'],
+            ['arrival-table', '근거 · 조치안', '벗어난 배의 근거 열기'],
             ['berthed', '접안 선박', '선석별 점유 확인'],
           ].map(([id, head, sub], i) => (
             <li key={head} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -629,7 +647,7 @@ export default function ArrivalVerificationPage() {
               <a
                 className={(i === 1 && judgingAny) || (i === 2 && reasoningLive) ? 'step-live' : undefined}
                 href={`#${id}`}
-                onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                onClick={(e) => { e.preventDefault(); runStep(i, id); }}
                 style={{
                   display: 'inline-flex', alignItems: 'baseline', gap: 6, padding: '5px 10px',
                   border: `1px solid ${COLORS.border}`, background: COLORS.cardHover, color: COLORS.textPrimary,
