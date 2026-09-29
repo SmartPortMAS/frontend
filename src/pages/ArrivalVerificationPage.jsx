@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, LineChart, Line, ComposedChart, Bar, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, ReferenceDot,
@@ -618,12 +619,15 @@ function ReplaySection() {
 
 export default function ArrivalVerificationPage() {
   const review = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('review') === '1';
+  const navigate = useNavigate();
   const judgingAny = useSensorStore((st) => Object.keys(st.judgeBusy).length > 0);
   const reasoningLive = useSensorStore((st) => Boolean(st.reasoningFocus));
   // [2026-09-29] 사용 순서 띠를 누르면 자리로 가는 데서 끝나지 않고 그 단계의 첫 대상으로 간다(현우).
   //   2 판정 요청 → 판정이 없는 첫 배의 [판정 요청]을 비춘다(누르지는 않는다 — 기록이 남는 동작이라 관제사가 누른다)
   //   3 근거 → 벗어난(부적합·주의·판정불가) 첫 배의 [근거]를 연다. 없으면 첫 배의 [근거]
   const runStep = (i, id) => {
+    // 5 하역 개시 게이트 → 현장 설비. 하역 중 판정이 부적합·판정불가면 그 부두 게이트가 잠긴다(실제 흐름의 끝)
+    if (id === 'gate') { navigate('/sensors'); return; }
     const table = document.getElementById('arrival-table');
     const show = (el) => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('step-target'); setTimeout(() => el.classList.remove('step-target'), 2600); };
     if (i === 1 && table) {
@@ -658,6 +662,7 @@ export default function ArrivalVerificationPage() {
             ['arrival-table', '판정 요청', '판정 없는 첫 배로'],
             ['arrival-table', '근거 · 조치안', '벗어난 배의 근거 열기'],
             ['berthed', '접안 선박', '선석별 점유 확인'],
+            ['gate', '하역 개시 게이트', '잠금·해제 확인'],
           ].map(([id, head, sub], i) => (
             <li key={head} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {i > 0 && <span aria-hidden="true" style={{ color: COLORS.textDim }}>→</span>}
@@ -683,7 +688,8 @@ export default function ArrivalVerificationPage() {
       <BerthedSection />
       {/* 사후 검토·부두별 접안 이력은 관제 흐름에 없어 화면에서 뺐다(현우 D3) — 보고서·영상 촬영용으로만 ?review=1 */}
       {review && <div className="dash-section"><GanttChart /></div>}
-      {review && <div className="dash-section"><ReplaySection /></div>}
+      {/* [2026-09-29] 사후 검토는 실측 기록 재생이라 실제 시스템에도 있을 기능 — 숨기지 않고 접어서 둔다(현우) */}
+      <div className="dash-section"><ReplaySection /></div>
       {/* 판단 과정 서랍 — 판정 옆 [근거]로 연다(2026-09-28: 전 화면 떠 있는 창에서 이 화면으로 옮겼다) */}
       <AgentConsole mode="reasoning" />
     </div>

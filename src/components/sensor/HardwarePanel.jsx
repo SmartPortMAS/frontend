@@ -83,7 +83,10 @@ function GateCard({ gate, onCommand, operator }) {
   const wordColor = gate.offline ? COLORS.textDim : locked ? COLORS.red : COLORS.teal;
   const reason = locked ? shortReason(sent) : null;
   const both = sent?.lock_by?.weather && sent?.lock_by?.assessment;
-  const vessel = Array.isArray(gate.vessels) && gate.vessels[0];
+  // [2026-09-29] 잠금을 만든 배를 먼저 — 첫 배만 보이면 '판정 전' 배가 떠서 왜 잠겼는지 안 보였다
+  const vessels = Array.isArray(gate.vessels) ? gate.vessels : [];
+  const vessel = vessels.find((v) => v.blocking) || vessels[0];
+  const moreVessels = Math.max(0, vessels.length - 1);
   const demo = useDemoCargo();
   const dv = gate.demo_verdict;
 
@@ -117,7 +120,13 @@ function GateCard({ gate, onCommand, operator }) {
           <FaPlug /> 연결 끊김
           <span style={{ fontSize: '12px', fontWeight: 400, color: COLORS.textDim }}>전원 · Wi-Fi · 중계 확인</span>
         </div>
-      ) : (
+      ) : null}
+      {gate.offline && sent?.state && (
+        <div style={{ margin: '-6px 0 10px', fontSize: '12.5px', color: sent.state === 'LOCKED' ? COLORS.red : COLORS.textSecondary }}>
+          서버 판정 {sent.state === 'LOCKED' ? `잠금 — ${shortReason(sent) || '잠금'}` : '해제'} (장치가 연결되면 이대로 적용)
+        </div>
+      )}
+      {gate.offline ? null : (
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', margin: '12px 0 10px' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
             <Lamp on={st.lamp === 'ON'} color={COLORS.red} label="잠금" />
@@ -137,7 +146,7 @@ function GateCard({ gate, onCommand, operator }) {
 
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
         {vessel
-          ? <Chip color={vessel.blocking ? COLORS.red : COLORS.textSecondary}><FaShip size={10} />{vessel.vessel_name || vessel.call_sign} · {vessel.level || '판정 전'}</Chip>
+          ? <Chip color={vessel.blocking ? COLORS.red : COLORS.textSecondary}><FaShip size={10} />{vessel.vessel_name || vessel.call_sign} · {vessel.level || '판정 전'}{moreVessels ? ` 외 ${moreVessels}척` : ''}</Chip>
           : Array.isArray(gate.vessels) && <Chip color={COLORS.textDim}>접안 선박 없음</Chip>}
         {dv && <Chip color={['부적합', '판정불가'].includes(dv.level) ? COLORS.red : COLORS.yellow} strong>시연 판정 {dv.level}</Chip>}
         {st.simulate && <Chip color={COLORS.yellow}>모의 장치</Chip>}

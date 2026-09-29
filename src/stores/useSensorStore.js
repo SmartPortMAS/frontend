@@ -78,12 +78,14 @@ const useSensorStore = create((set, get) => ({
   // 트윈 HUD 접기 상태 — CCTV 를 접으면 그 아래 선박 목록이 따라 올라가야 한다.
   // 두 패널이 각자 접힘을 들고 있으면 위치가 어긋나므로 여기서 공유한다.
   // [2026-09-28] CCTV·레이더는 접힌 상태가 기본 — 펼쳐 두면 3D 장면의 절반을 덮었다(현우 D11)
-  hudCctvCollapsed: true,
+  // [2026-09-29] 다시 펼친 채 시작(현우) — 실제 관제실이 늘 띄워 두는 감시 화면이라 흐름의 첫 장면이다.
+  //   가상이라는 사실은 숨겨서가 아니라 창의 표식("트윈 카메라 · CCTV 영상 없음")으로 밝힌다. 접기 단추는 그대로.
+  hudCctvCollapsed: false,
   setHudCctvCollapsed: (v) => set({ hudCctvCollapsed: Boolean(v) }),
   // 3D 가벼운 모드(그림자 끔 · 해상도 1배) — Scene 의 PerfProbe 가 켜거나 ?lite=1
   twinLite: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('lite') === '1',
   setTwinLite: (v) => set({ twinLite: Boolean(v) }),
-  hudRadarCollapsed: true,
+  hudRadarCollapsed: false,
   setHudRadarCollapsed: (v) => set({ hudRadarCollapsed: Boolean(v) }),
 
   // 선박 상세 패널 (지도 마커/입항 목록 클릭 → 선박 여정 뷰)

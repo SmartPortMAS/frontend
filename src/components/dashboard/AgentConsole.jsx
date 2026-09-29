@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   FaCloudSun, FaRoute, FaShieldAlt, FaRobot, FaComments, FaTimes, FaPlay, FaSpinner,
   FaSearch, FaPaperPlane, FaBookOpen, FaUser,
@@ -26,6 +26,13 @@ const DECISION_KO = {
 const decisionKo = (d) => DECISION_KO[d] || d || '';
 const decisionLevel = (d) => (DECISION_KO[d] || '').split(' ·')[0];
 const STAGE_TEXT = { '입항전': '입항 전', '접안직전': '접안 직전', '하역중': '하역 중' };
+// 실물 하역 개시 게이트가 있는 부두 — 현장 설비 화면의 게이트 A·B
+const gateOfBerth = (name) => {
+  const n = String(name || '').replace(/\s/g, '');
+  if (n.startsWith('OTK1')) return 'A';
+  if (n.startsWith('정일1')) return 'B';
+  return null;
+};
 const kstShort = (iso) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
@@ -399,6 +406,7 @@ export default function AgentConsole({ mode = 'qa' }) {
   const target = localTarget;
   // 이력에 남은 판정 — 표의 행이 실어 보낸다. 창 맨 위에 그대로 보인다.
   const [recorded, setRecorded] = useState(null);
+  const navigate = useNavigate();
 
   // 배정현황의 "협상 로그 →" 클릭을 받는다 — 그 배를 대상으로 콘솔을 연다.
   // 실제 판정 대상 목록(vessels)에서 호출부호로 찾은 실선박만 지정한다.
@@ -744,6 +752,16 @@ export default function AgentConsole({ mode = 'qa' }) {
                 {recorded.assessed_at_utc && <span style={{ color: COLORS.textDim }}>· {kstShort(recorded.assessed_at_utc)}</span>}
                 {recorded.acknowledged_by && <span style={{ color: COLORS.teal, fontWeight: 700 }}>· 확인 {recorded.acknowledged_by}</span>}
               </div>
+              {gateOfBerth(berthNow) && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/sensors')}
+                  title="이 부두에는 실물 하역 개시 게이트가 있습니다. 하역 중 판정이 부적합·판정불가이거나 부두 기상이 정상이 아니면 잠깁니다."
+                  style={{ marginTop: 5, background: 'none', border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 11.5, color: COLORS.navy, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  하역 개시 게이트 {gateOfBerth(berthNow)} 보기 →
+                </button>
+              )}
               {recorded.action && recorded.level !== '적합' && (
                 <div style={{ marginTop: 3, color: COLORS.textSecondary }}>
                   조치안 {recorded.action}{recorded.recipient ? <> → <strong>{recorded.recipient}</strong></> : null}

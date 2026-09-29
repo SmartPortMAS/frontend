@@ -1,8 +1,8 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import PortMisBar from './PortMisBar';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // ToastContainer 는 걷어냈다 — useSensorStore.alerts 를 읽는데 그 배열을 채우는
 // addAlert/updateSensorData 를 부르는 곳이 코드베이스에 하나도 없어(WebSocket 경로
@@ -13,6 +13,11 @@ import { useState } from 'react';
 
 export default function Layout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // [2026-09-29] 화면을 옮기면 맨 위부터 — 스크롤 칸이 하나라 앞 화면의 위치가 남아
+  // 선박 판정 → 하역 개시 게이트로 가면 게이트 카드가 아니라 아래 탱크부터 보였다.
+  const { pathname } = useLocation();
+  const contentRef = useRef(null);
+  useEffect(() => { contentRef.current?.scrollTo(0, 0); }, [pathname]);
 
   return (
     <div className="app-shell">
@@ -21,7 +26,7 @@ export default function Layout() {
         <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
         <div className="main-area" style={{ marginLeft: sidebarCollapsed ? '72px' : '260px' }}>
           <Header />
-          <main className="page-content">
+          <main className="page-content" ref={contentRef}>
             <Outlet />
           </main>
         </div>
