@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ONSAN_ANCHORAGE_3D, MOOR_HEADING, SHORE_T, shoreShift, bayShift } from './geoUtils';
-import { stateAt, isAtBerth, PHASE_TEXT, PHASE_COLOR } from './berthSim';
+import { stateAt, PHASE_TEXT, PHASE_COLOR } from './berthSim';
 
 // 72시간 시뮬레이션의 시계 — 패널(OutlookTimeline)이 돌리고 3D 의 배(Ship)가 매 프레임 읽는다.
 // React 상태로 두면 1초에 수십 번 장면 전체가 다시 그려져 느려지므로, 값 하나를 같이 본다.
@@ -46,7 +46,8 @@ export function simTarget(plan, st, moor, waitIdx) {
     case 'gone': return { pos: EXIT, heading: MOOR_HEADING, moving: true };
     case 'inbound': return along(ENTRANCE, abeam(moor, 50), moor, st.k, true);
     case 'toAnchor': return along(ENTRANCE, bayShift(shoreShift(anchor, 120), -40), anchor, st.k, true);
-    case 'waiting': return { pos: anchor, heading: MOOR_HEADING + 0.7, anchored: true };
+    case 'waiting':
+    case 'heldOut': return { pos: anchor, heading: MOOR_HEADING + 0.7, anchored: true };
     case 'shifting': return along(anchor, abeam(moor, 30), moor, st.k, true);
     case 'outbound': return along(moor, abeam(moor, 70), EXIT, st.k, false);
     default: return { pos: moor, heading: MOOR_HEADING, moored: true };
@@ -54,8 +55,8 @@ export function simTarget(plan, st, moor, waitIdx) {
 }
 
 const STATUS_OF = {
-  inbound: 'arriving', toAnchor: 'arriving', shifting: 'arriving', waiting: 'anchored',
-  prep: 'mooring', work: 'operating', stopped: 'mooring', finish: 'mooring', berthed: 'mooring', outbound: 'departing',
+  inbound: 'arriving', toAnchor: 'arriving', shifting: 'arriving', waiting: 'anchored', heldOut: 'anchored',
+  prep: 'mooring', work: 'operating', stopped: 'mooring', finish: 'mooring', berthed: 'mooring', held: 'mooring', outbound: 'departing',
 };
 
 /** 그 시각 3D 에 세울 배 목록 — 계획에 든 배 + 계획 밖 정박지 대기선(지금 자리 그대로) */
@@ -72,10 +73,10 @@ export function shipsAt(plans, t, liveShips = [], wide = false) {
       id: p.name || p.callsgn,
       type: 'Ship',
       status: STATUS_OF[st.phase] || 'mooring',
-      berth: isAtBerth(st.phase) || ['inbound', 'shifting', 'outbound'].includes(st.phase) ? p.berthId : (st.phase === 'waiting' || st.phase === 'toAnchor' ? p.berthId : null),
+      berth: p.berthId,
       slot: p.slot,
       plan: p,
-      waitIdx: st.phase === 'waiting' || st.phase === 'toAnchor' || st.phase === 'shifting' ? waitIdx++ : 0,
+      waitIdx: ['waiting', 'heldOut', 'toAnchor', 'shifting'].includes(st.phase) ? waitIdx++ : 0,
       phase: st.phase,
       // 하역 중에는 글 대신 진행 막대를 그린다(Ship 이름표) — 글이 길면 이웃 배 이름표와 겹친다
       simLabel: st.phase === 'work' ? '' : st.phase === 'berthed' ? '' : (PHASE_TEXT[st.phase] || '').replace(' · 기상', ''),
@@ -83,7 +84,7 @@ export function shipsAt(plans, t, liveShips = [], wide = false) {
       simProgress: working ? Math.round(st.progress * 100) : null,
       // 온산 전체를 멀리서 볼 때 — 72시간 안에 들어오거나 나가는 배만 이름표를 세우고(크기 고정), 머무는 배는 뺀다
       labelMode: !wide ? 'scaled'
-        : (p.kind === 'plan' || (p.leaveAt != null && p.leaveAt <= p.appearAt + 72 * 3600000)) ? 'fixed' : 'hidden',
+        : (p.kind === 'plan' || p.hold || (p.leaveAt != null && p.leaveAt <= p.appearAt + 72 * 3600000)) ? 'fixed' : 'hidden',
       vessel_lat: null, vessel_lon: null,
       vessel_heading: live?.vessel_heading ?? 0,
       vessel_speed: st.phase === 'inbound' || st.phase === 'outbound' || st.phase === 'shifting' ? 5 : 0,

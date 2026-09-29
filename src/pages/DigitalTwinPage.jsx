@@ -157,6 +157,20 @@ export default function DigitalTwinPage() {
     setOutlookFocus(WIDE_FOCUS);
     requestTwinHome('wide');
   };
+  // [2026-09-30] 72시간을 보는 동안 배 · 선석을 누르면(3D · 선석 현황 띠) 정보창 대신 그 선석의 72시간으로 넘어간다.
+  //   시각은 패널이 이어 간다(OutlookTimeline keepT) — 온산 전체와 선석 하나는 같은 시뮬레이션의 두 배율이다.
+  const focusBerthOutlook = (berthId) => {
+    if (!ONSAN_BERTHS_3D[berthId] || !ONSAN_BERTHS[berthId]) return;
+    setOutlookFocus({ berth: ONSAN_BERTHS[berthId].name, berthId, call_sign: null, vessel_name: null, omniOk: OMNIVERSE_BERTH_IDS.has(berthId) });
+  };
+  const widenOutlook = () => { setOutlookFocus(WIDE_FOCUS); requestTwinHome('wide'); };
+  useEffect(() => {
+    if (!outlookFocus || !selectedObject) return;
+    const f = focusFromSelection(selectedObject);
+    setSelectedObject(null);
+    if (f && (f.berthId !== outlookFocus.berthId || (f.call_sign || null) !== (outlookFocus.call_sign || null))) setOutlookFocus(f);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedObject]);
   useEffect(() => {
     if (!wantOutlook) return;
     if (wantOutlook === 'all') { setOutlookFocus(WIDE_FOCUS); requestTwinHome('wide'); return; }
@@ -525,6 +539,8 @@ export default function DigitalTwinPage() {
         <OutlookTimeline
           focus={outlookFocus}
           onClose={closeOutlook}
+          onBerth={focusBerthOutlook}
+          onWide={widenOutlook}
         />
       )}
 

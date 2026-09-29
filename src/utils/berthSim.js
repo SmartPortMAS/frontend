@@ -12,6 +12,10 @@
 //   · 선석이 다 차 있으면 들어오는 배는 정박지에서 기다린다(빈 선석이 나면 접안)
 //   · 기상 예보가 하역중단 이상이면 그 시간만큼 하역이 멈추고, 멈춘 만큼 출항이 늦어진다
 //   · 출항 예정 신고가 없으면 그 부두의 실측 재항 시간(중앙값)으로 잡고 '추정'으로 표시한다
+//   · 부적합 판정을 받은 배는 보류한다 — 판정 규칙(관제 화면 · 게이트)과 같게.
+//       입항 예정 선박: 접안하지 않고 정박지에서 기다린다(접안 직전 부적합 → 입항 보류 권고, VTS)
+//       접안한 선박  : 하역이 진행되지 않는다(하역 중 부적합 → 게이트 잠김, 터미널)
+//     대체 선석이나 화물 조정이 정해져 판정이 바뀌면 시뮬레이션도 달라진다. 언제 풀릴지는 지어내지 않는다.
 // 그리지 않는 것: 실제 항적(도선 · 예선 일정이 없다). 입출항 기동은 만 안쪽 항로를 따라가는 정해진 경로다.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -29,12 +33,14 @@ export const SIM = {
 export const PHASE_TEXT = {
   inbound: '입항 중', toAnchor: '입항 중', waiting: '정박지 대기', shifting: '접안 이동',
   prep: '하역 준비', work: '하역 중', stopped: '하역 중단 · 기상', finish: '하역 종료',
-  outbound: '출항 중', berthed: '접안',
+  outbound: '출항 중', berthed: '접안', heldOut: '입항 보류', held: '하역 보류',
 };
 export const PHASE_COLOR = {
   inbound: '#60a5fa', toAnchor: '#60a5fa', waiting: '#fbbf24', shifting: '#60a5fa',
   prep: '#a5b4fc', work: '#34d399', stopped: '#f87171', finish: '#a5b4fc', outbound: '#c4b5fd', berthed: '#ffd166',
+  heldOut: '#f87171', held: '#f87171',
 };
+const HOLD_LEVEL = '부적합';
 const STOP_STATUS = new Set(['하역중단', '이안', '호스분리']);
 
 const norm = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
@@ -83,6 +89,7 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
 
   const plans = [];
   const seen = new Set();
+  const heldRows = new Map();   // 선석마다 보류된 배의 수 — 일정 줄을 배마다 따로 잡는다
   // 선석마다 자리(slot)가 비는 시각 — 0 이면 비어 있음, Infinity 면 언제 빌지 모름
   const freeAt = new Map(berths.map((b) => [b.id, Array.from({ length: Math.max(1, b.capacity || 1) }, () => 0)]));
 
@@ -103,14 +110,18 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
     if (slot < 0 || slots[slot] !== 0) slot = slots.findIndex((x) => x === 0);
     if (slot < 0) { slots.push(0); slot = slots.length - 1; }
 
+    const held = c.level === HOLD_LEVEL;
     const plan = {
       key: `c-${c.callsgn}`, callsgn: c.callsgn, name: c.name, berthId: b.id, berthName: b.name, slot,
       kind: 'now', level: c.level || null, fixedWhy: c.fixedWhy || null, cargo: c.cargo || null,
-      eta: c.arrivedAt || null, etd: schedEnd, endBasis,
+      eta: c.arrivedAt || null, etd: schedEnd, endBasis: held ? null : endBasis,
       appearAt: t0, berthAt: c.arrivedAt && c.arrivedAt < now ? c.arrivedAt : t0, waitFrom: null,
       workStart: null, workEnd: null, leaveAt: null, goneAt: null, halts: [], delayH: 0,
+      hold: held ? 'work' : null,
     };
-    if (schedEnd) {
+    if (held) {
+      slots[slot] = Infinity;   // 하역 보류 — 언제 풀릴지 모른다. 그 자리는 계속 차 있다
+    } else if (schedEnd) {
       const prepEnd = Math.max(now, (c.arrivedAt || now - SIM.PREP_H * H) + SIM.PREP_H * H);
       const need = Math.max(0, (schedEnd - SIM.FINISH_H * H - prepEnd) / H);
       plan.workStart = prepEnd;
@@ -141,6 +152,22 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
     seen.add(norm(a.callsgn));
     const slots = freeAt.get(b.id);
     const eta = Math.max(a.eta, a.atAnchor ? t0 : t0 + 0);
+    if (a.level === HOLD_LEVEL) {
+      // 입항 보류 — 접안하지 않고 정박지에서 기다린다. 선석의 자리는 쓰지 않는다
+      const row = heldRows.get(b.id) || 0;
+      heldRows.set(b.id, row + 1);
+      plans.push({
+        key: `s-${a.callsgn}-${a.eta}`, callsgn: a.callsgn, name: a.name, berthId: b.id, berthName: b.name, slot: 0,
+        lane: 100 + row,
+        kind: 'plan', level: a.level, fixedWhy: a.fixedWhy || null, cargo: a.cargo || null,
+        eta: a.eta, etd: a.etd || null, endBasis: null,
+        appearAt: a.atAnchor ? t0 : Math.max(t0, eta - SIM.APPROACH_H * H),
+        waitFrom: eta, berthAt: null, halts: [], delayH: 0, waitH: Math.round((t1 - eta) / H),
+        workStart: null, workEnd: null, leaveAt: null, goneAt: null, workTotalH: null,
+        hold: 'entry',
+      });
+      continue;
+    }
     // 가장 먼저 비는 자리
     let slot = 0;
     slots.forEach((v, i) => { if (v < slots[slot]) slot = i; });
@@ -179,7 +206,7 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
   // 3) 사건 — 시간축 아래 한 줄씩 읽는다
   const events = [];
   for (const p of plans) {
-    if (p.kind === 'plan' && p.eta >= t0 && p.eta < t1) events.push({ at: p.eta, type: p.waitFrom ? 'wait' : 'arrive', plan: p });
+    if (p.kind === 'plan' && p.eta >= t0 && p.eta < t1) events.push({ at: p.eta, type: p.hold === 'entry' ? 'hold' : p.waitFrom ? 'wait' : 'arrive', plan: p });
     if (p.kind === 'plan' && p.waitFrom && p.berthAt && p.berthAt < t1) events.push({ at: p.berthAt, type: 'berth', plan: p });
     for (const h of p.halts) if (h.from < t1) events.push({ at: h.from, to: h.to, type: 'halt', plan: p });
     if (p.leaveAt && p.leaveAt < t1) events.push({ at: p.leaveAt, type: 'leave', plan: p });
@@ -196,12 +223,13 @@ export function stateAt(p, t) {
     const anchorIn = p.waitFrom;
     if (t < anchorIn) return { phase: 'toAnchor', k: (t - p.appearAt) / Math.max(1, anchorIn - p.appearAt) };
     const shiftFrom = p.berthAt != null ? p.berthAt - SIM.SHIFT_H * H : Infinity;
-    if (t < shiftFrom) return { phase: 'waiting' };
+    if (t < shiftFrom) return { phase: p.hold === 'entry' ? 'heldOut' : 'waiting' };
     if (t < p.berthAt) return { phase: 'shifting', k: (t - shiftFrom) / (SIM.SHIFT_H * H) };
   } else if (p.berthAt != null && t < p.berthAt) {
     return { phase: 'inbound', k: (t - p.appearAt) / Math.max(1, p.berthAt - p.appearAt) };
   }
-  if (p.berthAt == null) return { phase: 'waiting' };
+  if (p.berthAt == null) return { phase: p.hold === 'entry' ? 'heldOut' : 'waiting' };
+  if (p.hold === 'work') return { phase: 'held', progress: null };
   if (p.workStart == null) return { phase: 'berthed', progress: null };
   if (t < p.workStart) return { phase: 'prep', progress: progressAt(p, t) };
   if (t < p.workEnd) {
@@ -222,5 +250,6 @@ function progressAt(p, t) {
   return Math.max(0, Math.min(1, done / (p.workTotalH * H)));
 }
 
-export const isAtBerth = (phase) => ['prep', 'work', 'stopped', 'finish', 'berthed'].includes(phase);
+export const isAtBerth = (phase) => ['prep', 'work', 'stopped', 'finish', 'berthed', 'held'].includes(phase);
+export const isWaiting = (phase) => phase === 'waiting' || phase === 'heldOut';
 export const isStopStatus = (status) => STOP_STATUS.has(status);

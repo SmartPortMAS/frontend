@@ -6,7 +6,7 @@ import { ONSAN_BERTHS_3D, ONSAN_WEATHER_GROUP } from '../../../utils/geoUtils';
 import useSensorStore from '../../../stores/useSensorStore';
 import useVesselThread from '../../../hooks/useVesselThread';
 import HelpTip from '../../common/HelpTip';
-import { buildPlans, stateAt, isAtBerth, isStopStatus, PHASE_TEXT, SIM } from '../../../utils/berthSim';
+import { buildPlans, stateAt, isAtBerth, isWaiting, isStopStatus, PHASE_TEXT, SIM } from '../../../utils/berthSim';
 import { simClock } from '../../../utils/simClock';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,6 +24,9 @@ import { simClock } from '../../../utils/simClock';
 //            입출항 경로는 만 안쪽 항로를 따라가는 정해진 경로다(실제 항적이 아니다).
 //   선석 하나를 지목해 열면 그 선석의 판정(기상 · 흘수 여유 · 혼재)을 자세히 보고, 머리 단추로 열면 온산 전체를 본다.
 //   어느 쪽이든 3D 에서는 항만 전체가 같이 움직인다.
+//   두 보기는 같은 시뮬레이션의 두 배율이다 — 온산 전체에서 선석(일정 줄 이름 · 3D 선석 · 선석 현황 띠)을 누르면
+//   그 시각 그대로 그 선석으로 내려가고, 선석에서 [온산 전체]를 누르면 그 시각 그대로 올라온다.
+//   부적합 판정을 받은 배는 보류한다(berthSim) — 입항 예정 선박은 정박지에서 '입항 보류', 접안한 배는 '하역 보류'.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // 판정 등급 색 — 어두운 3D 바탕용. 관제 화면 LEVEL_STYLE 과 뜻은 같고 밝기만 다르다.
@@ -75,7 +78,8 @@ const shortGroup = (g) => String(g || '').replace(/\(.*\)$/, '').replace(/부두
 const ms = (iso) => (iso ? new Date(iso).getTime() : null);
 // 시간이 지나도 바뀌지 않는 사유 — 화물 혼재 · 선석 조건. 기상 · 조위는 시각마다 예보로 다시 본다.
 const FIXED_CAUSE = /혼재|호환|격리|반응|취급 화물|선석 길이|DWT|최대 접안/;
-const shortWhy = (t) => String(t || '').replace(/^.*?(으나|지만)\s*/, '').split(' — ')[0]
+// 사유 문장은 앞 구절만 — "이웃 화물과 혼재 충돌이 있어 지금 접안한 선석이 …" → "이웃 화물과 혼재 충돌"
+const shortWhy = (t) => String(t || '').replace(/^.*?(으나|지만)\s*/, '').split(' — ')[0].split(/(?:이|가) 있어 /)[0]
   .replace(/(이|가) 있습니다$|입니다$|습니다$/, '').trim();
 const fixedOf = (reasons) => { const why = (reasons || []).find((r) => FIXED_CAUSE.test(r)); return why ? shortWhy(why) : null; };
 const causeWord = (why) => (/혼재|호환|격리|반응/.test(why || '') ? '혼재' : '선석 조건');
@@ -89,6 +93,7 @@ const EVENT_MARK = {
   wait: { mark: '◆', word: '대기', color: '#fbbf24' },
   berth: { mark: '▼', word: '접안', color: '#60a5fa' },
   halt: { mark: '■', word: '하역 중단', color: '#f87171' },
+  hold: { mark: '◆', word: '입항 보류', color: '#f87171' },
   leave: { mark: '▲', word: '출항', color: '#c4b5fd' },
 };
 
@@ -112,7 +117,7 @@ function loadGroupOutlooks() {
   return groupCache.flight;
 }
 
-export default function OutlookTimeline({ focus, onClose }) {
+export default function OutlookTimeline({ focus, onClose, onBerth, onWide }) {
   const wide = Boolean(focus.wide) || !focus.berthId;
   const setOutlookPreview = useSensorStore((s) => s.setOutlookPreview);
   const setTwinViewShift = useSensorStore((s) => s.setTwinViewShift);
@@ -137,7 +142,6 @@ export default function OutlookTimeline({ focus, onClose }) {
   const [sig, setSig] = useState('');            // 배들의 단계가 바뀔 때마다 달라지는 표식 — 3D 에 다시 알린다
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [allBerths, setAllBerths] = useState(false);
   const [everyLane, setEveryLane] = useState(false);   // 온산 전체를 볼 때 — 72시간 안에 바뀌지 않는 자리도 보이나
   const panelRef = useRef(null);
   const stripRef = useRef(null);
@@ -148,15 +152,21 @@ export default function OutlookTimeline({ focus, onClose }) {
   const sigRef = useRef('');
   const speedRef = useRef(1);
   const autoPlayed = useRef(false);
+  const keepT = useRef(null);   // 보기를 바꿀 때(온산 전체 ↔ 선석) 이어 갈 시각
   useEffect(() => { speedRef.current = speed; }, [speed]);
 
   // 지목 선석(또는 온산 전체)의 예보 판정
   useEffect(() => {
     if (!wide && !focus.call_sign && !threadLoaded) return undefined;   // 선석의 지금 배를 알고 나서 한 번 읽는다
     let alive = true;
-    setData(null); setError(null);
-    simClock.active = false; simClock.t = t0;
-    cursorRef.current = -1; setCursor(-1); setPlaying(false); autoPlayed.current = false;
+    setData(null); setError(null); setPlaying(false);
+    if (simClock.active) {
+      keepT.current = simClock.t;   // 보던 시각을 그대로 — 새 판정을 읽은 뒤 그 시각에 다시 선다
+    } else {
+      keepT.current = null;
+      simClock.t = t0;
+      cursorRef.current = -1; setCursor(-1); autoPlayed.current = false;
+    }
     const req = wide
       ? loadGroupOutlooks().then((m) => { const d = [...m.values()][0]; if (!d) throw new Error('예보 없음'); return d; })
       : fetchTwinOutlook({ berth: focus.berth, call_sign: callSign });
@@ -286,6 +296,12 @@ export default function OutlookTimeline({ focus, onClose }) {
             level: planBad ? worse(gl || '적합', planBad) : gl,
           };
         });
+      // 이 선석으로 배정됐지만 부적합이라 정박지에서 보류된 배 — 선석은 비어 있어도 이 배정은 부적합이다
+      const heldOut = plans.filter((pl) => pl.hold === 'entry' && pl.berthId === focus.berthId && pl.eta <= t);
+      heldOut.forEach((pl) => {
+        level = worse(level, pl.level);
+        notes.push(`${pl.name} 입항 보류${pl.fixedWhy ? `(${causeWord(pl.fixedWhy)})` : ''}`);
+      });
       ghosts.filter((g) => g.level).forEach((g) => {
         level = worse(level, g.level);
         if (g.planBad) notes.push(`${g.vessel_name} ${g.planBad}${g.fixedWhy ? `(${causeWord(g.fixedWhy)})` : ''}`);
@@ -297,7 +313,7 @@ export default function OutlookTimeline({ focus, onClose }) {
       if (fixedHere) level = worse(level, fixedHere.level);
       const headline = [wx, fixedHere ? fixedHere.why : null, ...notes].filter(Boolean).join(' · ')
         || (level === '적합' ? '정상' : p.headline || p.status);
-      return { ...p, level, gate: GATE_OF[level] || p.gate, headline, ghosts, fixedHere };
+      return { ...p, level, gate: GATE_OF[level] || p.gate, headline, ghosts, fixedHere, heldOut };
     });
   }, [rawPts, plans, wide, extra, focus.berthId, focusDraught, focusPlan, fixed, arrInfo]);
   const n = pts.length;
@@ -353,12 +369,21 @@ export default function OutlookTimeline({ focus, onClose }) {
     return () => cancelAnimationFrame(raf);
   }, [playing, n, plans, tEnd]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 재료가 다 모이면 한 번 자동으로 돌린다
+  // 재료가 다 모이면 한 번 자동으로 돌린다. 보기를 바꿔 온 것이면 보던 시각에 멈춰 선다
   useEffect(() => {
-    if (autoPlayed.current || !data || !sim || !n) return;
+    if (!data || !sim || !n) return;
+    if (keepT.current != null) {
+      const t = keepT.current;
+      keepT.current = null;
+      autoPlayed.current = true;
+      cursorRef.current = -2;   // 같은 시각이어도 화면을 다시 맞춘다
+      applyTime(t);
+      return;
+    }
+    if (autoPlayed.current) return;
     autoPlayed.current = true;
     setPlaying(true);
-  }, [data, sim, n]);
+  }, [data, sim, n]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const live = cursor === -1;
   const tNow = live ? t0 : simClock.t;
@@ -392,10 +417,12 @@ export default function OutlookTimeline({ focus, onClose }) {
       let word = level !== '적합' ? q.status : null;
       plans.forEach((pl) => {
         if (pl.berthId !== id || !pl.level || pl.level === '적합') return;
-        if (!isAtBerth(stateAt(pl, t).phase)) return;
+        const ph = stateAt(pl, t).phase;
+        if (!isAtBerth(ph) && ph !== 'heldOut') return;
         if ((RANK[pl.level] ?? 0) > (RANK[level] ?? 0)) {
           level = pl.level;
-          word = pl.fixedWhy ? causeWord(pl.fixedWhy) : pl.level;   // 등급은 색이 말한다 — 글은 한 낱말
+          // 등급은 색이 말한다 — 글은 한 낱말
+          word = ph === 'heldOut' ? '입항 보류' : ph === 'held' ? '하역 보류' : pl.fixedWhy ? causeWord(pl.fixedWhy) : pl.level;
         }
       });
       out[id] = { level, headline: word || '정상', status: q?.status || null, wide: true };
@@ -432,18 +459,19 @@ export default function OutlookTimeline({ focus, onClose }) {
 
   // ── 일정 줄 ──────────────────────────────────────────────────────────────
   // 줄 하나 = 선석의 자리 하나. 막대 = 그 자리에 머무는 배(실선 = 지금 접안, 점선 = 입항 예정).
-  const showAll = wide || allBerths;
+  const showAll = wide;
   const lanesAll = useMemo(() => {
     const rows = [];
     Object.keys(ONSAN_BERTHS_3D).forEach((id) => {
       if (!showAll && id !== focus.berthId) return;
       const mine = plans.filter((p) => p.berthId === id);
       if (!mine.length) return;
-      const slots = [...new Set(mine.map((p) => p.slot || 0))].sort((x, y) => x - y);
+      const laneOf = (p) => p.lane ?? (p.slot || 0);
+      const slots = [...new Set(mine.map(laneOf))].sort((x, y) => x - y);
       slots.forEach((s) => {
-        const items = mine.filter((p) => (p.slot || 0) === s);
+        const items = mine.filter((p) => laneOf(p) === s);
         // 72시간 안에 들어오거나 나가는 배가 있는 자리인가
-        const changes = items.some((p) => p.kind === 'plan' || (p.leaveAt != null && p.leaveAt < tEnd));
+        const changes = items.some((p) => p.kind === 'plan' || p.hold || (p.leaveAt != null && p.leaveAt < tEnd));
         rows.push({ key: `${id}-${s}`, id, items, changes });
       });
     });
@@ -478,14 +506,24 @@ export default function OutlookTimeline({ focus, onClose }) {
     const out = [];
     if (p.waitFrom != null) {
       const wl = xPct(p.waitFrom); const wr = xPct(p.berthAt ?? tEnd);
+      const held = p.hold === 'entry';
+      const rgb = held ? '248,113,113' : '251,191,36';
+      const tipW = held
+        ? `${p.name} · 입항 보류(부적합${p.fixedWhy ? ` · ${causeWord(p.fixedWhy)}` : ''}) · 입항 예정 ${hm(p.eta)} · 정박지 대기 — 대체 선석 검토`
+        : `${p.name} · 정박지 대기 ${hm(p.waitFrom)}${p.berthAt ? ` → 접안 ${hm(p.berthAt)}` : ' · 72시간 안에 빈 자리 없음'}`;
       out.push(
-        <span
-          key={`${p.key}-w`} title={`${p.name} · 정박지 대기 ${hm(p.waitFrom)}${p.berthAt ? ` → 접안 ${hm(p.berthAt)}` : ' · 72시간 안에 빈 자리 없음'}`}
+        <button
+          key={`${p.key}-w`} type="button" title={tipW} onClick={() => jumpTo(p.appearAt, true)}
           style={{
-            position: 'absolute', left: `${wl}%`, width: `${Math.max(wr - wl, 0.6)}%`, top: top + 3, height: h - 6, borderRadius: 2,
-            background: 'repeating-linear-gradient(90deg, rgba(251,191,36,0.75) 0 4px, rgba(251,191,36,0.2) 4px 8px)',
+            position: 'absolute', left: `${wl}%`, width: `${Math.max(wr - wl, 0.6)}%`, top: top + (p.berthAt == null ? 0 : 3), height: p.berthAt == null ? h : h - 6,
+            borderRadius: 2, border: 'none', padding: '0 5px', cursor: 'pointer', fontFamily: 'inherit',
+            background: `repeating-linear-gradient(90deg, rgba(${rgb},0.75) 0 4px, rgba(${rgb},0.2) 4px 8px)`,
+            color: '#fff', fontSize: 10.5, fontWeight: 700, lineHeight: `${h}px`, textAlign: 'left',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 0 3px rgba(0,0,0,0.9)',
           }}
-        />,
+        >
+          {p.berthAt == null ? `${p.name} · ${held ? '입항 보류' : '대기'}` : ''}
+        </button>,
       );
     }
     if (from == null) return out;
@@ -495,7 +533,7 @@ export default function OutlookTimeline({ focus, onClose }) {
     const tip = [
       `${p.name} · ${shortBerthName(p.berthId)}`,
       p.kind === 'now' ? '접안 중' : `입항 예정 ${hm(p.eta)}${p.waitH ? ` · 대기 ${p.waitH}시간` : ''}`,
-      p.leaveAt ? `${basis} ${hm(p.leaveAt)}${haltH ? ` · 기상 중단 ${haltH}시간` : ''}${p.delayH ? ` · 예정보다 ${p.delayH}시간 늦음` : ''}` : '출항 예정 미신고',
+      p.hold === 'work' ? '하역 보류(부적합) — 게이트 잠김' : p.leaveAt ? `${basis} ${hm(p.leaveAt)}${haltH ? ` · 기상 중단 ${haltH}시간` : ''}${p.delayH ? ` · 예정보다 ${p.delayH}시간 늦음` : ''}` : '출항 예정 미신고',
       p.level || null, p.cargo || null,
     ].filter(Boolean).join(' · ');
     out.push(
@@ -556,6 +594,7 @@ export default function OutlookTimeline({ focus, onClose }) {
     if (p.fixedHere) steps.push(`${p.fixedHere.action || '하역 개시 전 재확인'} — ${p.fixedHere.why}`);
     if (p.weather_level && p.weather_level !== '적합') steps.push(`${whenLabel(p.at_utc)}부터 ${p.status} 예보 — 그 전에 하역 종료 또는 개시 연기`);
     if (p.draught_verdict && p.draught_verdict !== 'OK') steps.push('조위 오르는 시각으로 이동 또는 수심 깊은 선석');
+    if ((p.heldOut || []).length) steps.push(`${p.heldOut.map((pl) => pl.name).join(' · ')} 대체 선석 검토(${causeWord(p.heldOut[0].fixedWhy)}) — 그때까지 입항 보류`);
     const bad = (p.ghosts || []).filter((g) => g.level && g.level !== '적합');
     const names = (list) => list.map((g) => g.vessel_name).join(' · ');
     const swap = bad.filter((g) => g.planBad);
@@ -586,6 +625,8 @@ export default function OutlookTimeline({ focus, onClose }) {
   const count = (type) => events.filter((e) => e.type === type).length;
   const flowWords = [
     count('arrive') + count('wait') ? `입항 ${count('arrive') + count('wait')}척` : null,
+    plans.filter((p) => p.hold === 'entry' && (showAll || p.berthId === focus.berthId)).length
+      ? `입항 보류 ${plans.filter((p) => p.hold === 'entry' && (showAll || p.berthId === focus.berthId)).length}척` : null,
     count('leave') ? `출항 ${count('leave')}척` : null,
     count('wait') ? `정박지 대기 ${count('wait')}척` : null,
     count('halt') ? `하역 중단 ${count('halt')}회` : null,
@@ -609,10 +650,12 @@ export default function OutlookTimeline({ focus, onClose }) {
     `접안 ${tally((x) => isAtBerth(x.st.phase))}`,
     `하역 중 ${tally((x) => x.st.phase === 'work')}`,
     tally((x) => x.st.phase === 'stopped') ? `하역 중단 ${tally((x) => x.st.phase === 'stopped')}` : null,
+    tally((x) => x.st.phase === 'held') ? `하역 보류 ${tally((x) => x.st.phase === 'held')}` : null,
     `대기 ${tally((x) => x.st.phase === 'waiting')}`,
+    tally((x) => x.st.phase === 'heldOut') ? `입항 보류 ${tally((x) => x.st.phase === 'heldOut')}` : null,
     `입출항 ${tally((x) => MOVING.has(x.st.phase))}`,
   ].filter(Boolean).join(' · ');
-  const movingNow = present.filter((x) => MOVING.has(x.st.phase) || x.st.phase === 'waiting');
+  const movingNow = present.filter((x) => MOVING.has(x.st.phase) || isWaiting(x.st.phase));
 
   // 지금 커서가 가리키는 시각의 내용
   const view = wide
@@ -639,7 +682,7 @@ export default function OutlookTimeline({ focus, onClose }) {
             + (gh.draught ? `흘수 ${gh.draught.toFixed(1)} m`
               + (gh.ukc != null ? ` · 여유 ${signed(gh.ukc)} m (필요 ${ukcRequired(gh.draught).toFixed(2)})` : '') : '흘수 미신고')).join(' / ');
         })(),
-        recipient: (point.ghosts || []).some((gh) => gh.level && gh.level !== '적합')
+        recipient: (point.heldOut || []).length || (point.ghosts || []).some((gh) => gh.level && gh.level !== '적합')
           ? '선석 운영 주체 · VTS (입항 전)'
           : point.fixedHere?.recipient && !(point.weather_level && point.weather_level !== '적합')
             ? point.fixedHere.recipient
@@ -699,6 +742,8 @@ export default function OutlookTimeline({ focus, onClose }) {
           <div><strong>앞으로 72시간</strong>을 시간 순으로 돌려 봅니다 — 접안한 배가 하역을 마치고 떠나고, 입항 예정 선박이 신고한 시각에 들어와 배정 선석에 댑니다. 3D 화면의 배와 선석 색이 같이 움직입니다.</div>
           <div style={{ marginTop: 4 }}><strong>자료</strong> · 입항 · 출항 예정 시각과 배정 선석은 PORT-MIS 신고, 지금 접안은 항만공사 선박위치, 기상은 기상청 단기예보를 부두 기준으로 판정한 것, 흘수 여유는 국립해양조사원 조석예보입니다. 판정 규칙은 관제 화면과 같습니다.</div>
           <div style={{ marginTop: 4 }}><strong>규칙</strong> · 선석이 다 차 있으면 들어오는 배는 정박지에서 기다렸다가 자리가 나면 댑니다. 기상 예보가 하역중단 이상이면 그 시간만큼 하역이 멈추고 출항이 늦어집니다. 출항 예정 신고가 없는 배는 그 부두의 재항 시간 실측(중앙값)으로 잡습니다.</div>
+          <div style={{ marginTop: 4 }}><strong>부적합 판정</strong> · 판정 규칙과 같게 움직입니다. 부적합인 입항 예정 선박은 접안하지 않고 정박지에서 <strong>입항 보류</strong>, 접안해 있는 부적합 선박은 게이트가 잠겨 <strong>하역 보류</strong>입니다. 대체 선석이나 화물 조정이 정해져 판정이 바뀌면 흐름도 달라집니다.</div>
+          <div style={{ marginTop: 4 }}><strong>두 보기</strong> · 온산 전체에서 선석을 누르면 같은 시각의 그 선석으로, 선석에서 [온산 전체]를 누르면 같은 시각의 전체로 넘어갑니다.</div>
           <div style={{ marginTop: 4 }}><strong>계산으로 채운 것</strong> · 입항 기동 {SIM.APPROACH_H}시간, 하역 준비 {SIM.PREP_H}시간, 마무리 {SIM.FINISH_H}시간, 출항 기동 {SIM.DEPART_H}시간으로 두고 하역은 그 사이를 일정하게 진행한다고 봅니다. 입출항 경로는 정해진 항로이며 실제 항적이 아닙니다.</div>
           <div style={{ marginTop: 4 }}><strong>일정 줄</strong> · 실선은 지금 접안한 배, 점선은 입항 예정 선박, 노란 빗금은 정박지 대기, 막대 아래 초록 줄은 하역 구간(빨간 토막은 기상 중단)입니다. 막대나 아래 사건을 누르면 그 시각으로 갑니다.</div>
           <div style={{ marginTop: 4 }}>쓰는 때: 하역 도중 기상이 나빠지는 시각을 미리 보고 종료 · 개시 연기를 알리거나, 선석이 겹치는 입항을 미리 조정할 때.</div>
@@ -807,11 +852,18 @@ export default function OutlookTimeline({ focus, onClose }) {
           {lanes.length > 0 && (
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
               <div style={{ width: 61, flexShrink: 0, display: 'grid', gap: 3, alignContent: 'start' }}>
-                {lanes.map((r) => (
+                {lanes.map((r) => (wide && r.first && onBerth ? (
+                  <button
+                    key={r.key} type="button" onClick={() => onBerth(r.id)} title={`${ONSAN_BERTHS_3D[r.id]?.name} — 이 선석의 판정을 자세히`}
+                    style={{ height: rowH, lineHeight: `${rowH}px`, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', color: '#bae6fd', fontWeight: 700, background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', textDecorationColor: 'rgba(186,230,253,0.35)', textUnderlineOffset: 2 }}
+                  >
+                    {shortBerthName(r.id)}
+                  </button>
+                ) : (
                   <span key={r.key} style={{ height: rowH, lineHeight: `${rowH}px`, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', color: r.id === focus.berthId ? '#e8f0f2' : '#94a3b8', fontWeight: r.id === focus.berthId ? 800 : 500 }}>
                     {r.first ? shortBerthName(r.id) : ''}
                   </span>
-                ))}
+                )))}
               </div>
               <div style={{ flex: 1, minWidth: 0, position: 'relative', height: lanes.length * (rowH + 3) - 3 }}>
                 {stopSpans.map((sp) => (
@@ -842,18 +894,18 @@ export default function OutlookTimeline({ focus, onClose }) {
                       {everyLane ? '바뀌는 자리만' : `머무는 배 ${stillCount}`}
                     </button>
                   )}
-                  {!wide && (
-                    <button type="button" onClick={() => setAllBerths((v) => !v)} style={{ ...iconBtn, padding: '3px 8px' }} aria-pressed={allBerths}>
-                      {allBerths ? '이 선석만' : '온산 전체'}
+                  {!wide && onWide && (
+                    <button type="button" onClick={onWide} style={{ ...iconBtn, padding: '3px 8px' }} title="같은 시각의 온산항 전체로">
+                      온산 전체
                     </button>
                   )}
                 </span>
               </span>
             </div>
           )}
-          {lanes.length === 0 && !wide && sim && (
+          {lanes.length === 0 && !wide && sim && onWide && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
-              <button type="button" onClick={() => setAllBerths(true)} style={{ ...iconBtn, padding: '3px 8px' }}>온산 전체</button>
+              <button type="button" onClick={onWide} style={{ ...iconBtn, padding: '3px 8px' }} title="같은 시각의 온산항 전체로">온산 전체</button>
             </div>
           )}
 
