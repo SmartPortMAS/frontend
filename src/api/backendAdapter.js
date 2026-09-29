@@ -128,6 +128,37 @@ function isRecentlyPresent(row) {
 
 const callsgnKey = (cs) => (cs ? String(cs).trim().toUpperCase() : '');
 
+// [2026-09-29] 시연용 주입 화물 — cargo_basis 가 '시연-혼재충돌 …(의도적 주입)'으로 시작하는 행.
+const isDemoBasis = (b) => typeof b === 'string' && b.startsWith('시연');
+
+/** 주입 화물 목록. 선석은 재항 화물(berth-cargo)의 시설을 먼저 쓰고, 없으면 위치 판정 선석을 쓴다. */
+function demoInjectedList(berthCargo, vesselCargo, vessels) {
+  const byCs = new Map((vessels ?? []).filter((v) => v.callsgn).map((v) => [callsgnKey(v.callsgn), v]));
+  const out = [];
+  const seen = new Set();
+  const take = (rows, wharfFromRow) => {
+    for (const r of rows ?? []) {
+      if (!isDemoBasis(r.cargo_basis)) continue;
+      const cs = callsgnKey(r.callsgn);
+      const k = `${cs}|${r.chem_id ?? r.cargo_name}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const v = byCs.get(cs);
+      out.push({
+        callsgn: r.callsgn,
+        vessel_name: r.vessel_name ?? v?.vessel_name ?? null,
+        cargo_name: r.cargo_name,
+        chem_id: r.chem_id ?? null,
+        wharf: (wharfFromRow ? r.facility_name : null) ?? v?.presence_berth_name ?? null,
+        basis: r.cargo_basis,
+      });
+    }
+  };
+  take(berthCargo, true);
+  take(vesselCargo, false);
+  return out;
+}
+
 function liquidByShipType(row) {
   return row.is_liquid_cargo_vessel == null ? null : Boolean(row.is_liquid_cargo_vessel);
 }
@@ -202,6 +233,8 @@ function mapVessel(row, cargoByCallsgn, ambiguousCallsgns, cargoListByCallsgn) {
     // 같은 입항 건에 함께 실은 화물 전부(cargo 포함). 판정 요청의 cargos 로 간다.
     cargos: cargoRows.map((c) => ({
       name: c.cargo_name, chem_id: c.chem_id, cas_no: c.cas_no ?? null, un_no: c.dg_un_no,
+      // 시연을 위해 넣은 화물인가(cargo_basis 가 '시연'으로 시작) — 화면이 칩으로 밝힌다
+      is_demo: isDemoBasis(c.cargo_basis),
     })),
   };
 }
@@ -354,6 +387,9 @@ export async function fetchBackendDashboard() {
     // 선석별 재항 위험물 화물 원본 — 안전 심사 폼이 "재항 선박에서 불러오기"에 쓴다.
     // (화물을 수기로 고르는 대신 지금 실제로 붙어 있는 배를 선택하게 하기 위함)
     berthCargo: berthCargo ?? [],
+    demoInjected: demoInjectedList(berthCargo, vesselCargo, vessels),
+    // 서버가 준 화물이 전부 합성인가 — 화면의 '합성 자료' 칩이 본다
+    cargoAllSynthetic: (() => { const rows = vesselCargo ?? berthCargo ?? []; return rows.length > 0 && rows.every((r) => r.is_synthetic); })(),
     // KPI 는 지도 상한(200척)과 무관하게 전체를 세야 하므로 매핑 전 원본에서 센다.
     realTrafficLiquidTotal: presentVessels.filter(
       (r) => shipType(r) === true || hasCargo(r)

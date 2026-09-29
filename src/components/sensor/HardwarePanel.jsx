@@ -3,6 +3,8 @@ import useHardwareData from '../../hooks/useHardwareData';
 import HelpTip from '../common/HelpTip';
 import { COLORS } from '../../utils/constants';
 import { isOperator } from '../../utils/operatorMode';
+import DemoChip from '../common/DemoChip';
+import { useDemoCargo } from '../../utils/demoCargo';
 import { FaLock, FaLockOpen, FaPlug, FaExclamationTriangle, FaFlask, FaShip } from 'react-icons/fa';
 
 // 하역 개시 인터락 — 선석 A·B 게이트 실물(라즈베리파이 + 릴레이 + 상시닫힘 밸브 + LCD).
@@ -82,6 +84,7 @@ function GateCard({ gate, onCommand, operator }) {
   const reason = locked ? shortReason(sent) : null;
   const both = sent?.lock_by?.weather && sent?.lock_by?.assessment;
   const vessel = Array.isArray(gate.vessels) && gate.vessels[0];
+  const demo = useDemoCargo();
   const dv = gate.demo_verdict;
 
   return (
@@ -138,6 +141,11 @@ function GateCard({ gate, onCommand, operator }) {
           : Array.isArray(gate.vessels) && <Chip color={COLORS.textDim}>접안 선박 없음</Chip>}
         {dv && <Chip color={['부적합', '판정불가'].includes(dv.level) ? COLORS.red : COLORS.yellow} strong>시연 판정 {dv.level}</Chip>}
         {st.simulate && <Chip color={COLORS.yellow}>모의 장치</Chip>}
+        {/* 판정으로 잠겼는데 그 판정이 시연용 주입 화물에서 나왔을 수 있으면 밝힌다 */}
+        {vessel?.blocking && (() => {
+          const d = demo.around(vessel.call_sign, gate.berth);
+          return d.any ? <DemoChip derived={!d.own.length} entries={[...d.own, ...d.near]} /> : null;
+        })()}
       </div>
 
       {st.denied && !gate.offline && (
