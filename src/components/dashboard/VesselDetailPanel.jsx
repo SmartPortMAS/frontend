@@ -12,6 +12,7 @@ import { alertId, typeLabel } from '../../utils/alertUtils';
 import AgentChip from '../../utils/AgentChip';
 import ConflictBasisList from '../common/ConflictBasisList';
 import DemoChip from '../common/DemoChip';
+import SyntheticChip from '../common/SyntheticChip';
 import { useDemoCargo } from '../../utils/demoCargo';
 import { fetchAlternativeBerths, estimateEta, estimateBerthRelease } from '../../api/backendAdapter';
 
@@ -209,13 +210,11 @@ export default function VesselDetailPanel() {
         <span style={{ color: status.color, fontWeight: 700 }}>{status.label}</span> · {vessel.sog} kn
       </Row>
       <Row label="호출부호 / MMSI">{vessel.callsgn} / {vessel.mmsi}</Row>
-      <Row label="화물">
+      <Row label={<>화물<SyntheticChip align="right" /></>}>
         {vessel.cargo
-          /* 화물명이 합성(is_synthetic — 신고 원문 비공개로 실선종 기반 규칙 배정)
-             이라는 표식은 화면에 두지 않는다(2026-08-23 결정). 시연 UI 는 "실제로
-             도입됐을 때의 제품"을 보여주고, 데이터 계보의 사실 명시는 설계서·
-             보고서 한계점 절이 담당한다. 이 원칙을 되돌리려면 여기서
-             vessel.cargo.is_synthetic 을 쓰면 된다 — 필드는 계속 내려온다. */
+          /* [2026-09-29] 화물이 합성이라는 표식을 칩으로 되살렸다(SyntheticChip). 2026-08-23 에는
+             화면에 두지 않기로 했는데, 화면이 실제 배·선석을 쓰게 되면서 화물만 만든 값이라는 사실이
+             보이지 않게 됐다 — 현우 9월 원칙(가상을 실제처럼 꾸미지 않는다). */
           ? (vessel.cargos?.length > 1
             // 같은 입항 건에 실은 화물 전부 — 한 줄에 하나씩(UN 번호 포함)
             ? (

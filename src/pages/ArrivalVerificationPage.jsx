@@ -9,6 +9,7 @@ import { COLORS } from '../utils/constants';
 import { cargoNames, cargoSummary } from '../utils/cargoText';
 import HelpTip from '../components/common/HelpTip';
 import DemoChip from '../components/common/DemoChip';
+import SyntheticChip from '../components/common/SyntheticChip';
 import { useDemoCargo } from '../utils/demoCargo';
 import BerthAssignmentMap from '../components/dashboard/BerthAssignmentMap';
 import BerthOccupiedList from '../components/dashboard/BerthOccupiedList';
@@ -247,7 +248,7 @@ function UpcomingSection() {
               <th style={th}>입항(KST)</th>
               <th style={th}>선박</th>
               <th style={th}>신고</th>
-              <th style={th}>화물</th>
+              <th style={th}>화물<SyntheticChip /></th>
               <th style={th}>사전배정 계류시설</th>
               <th style={th}>수심</th>
               <th style={th}>흘수</th>

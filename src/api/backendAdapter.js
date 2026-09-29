@@ -388,6 +388,8 @@ export async function fetchBackendDashboard() {
     // (화물을 수기로 고르는 대신 지금 실제로 붙어 있는 배를 선택하게 하기 위함)
     berthCargo: berthCargo ?? [],
     demoInjected: demoInjectedList(berthCargo, vesselCargo, vessels),
+    // 서버가 준 화물이 전부 합성인가 — 화면의 '합성 자료' 칩이 본다
+    cargoAllSynthetic: (() => { const rows = vesselCargo ?? berthCargo ?? []; return rows.length > 0 && rows.every((r) => r.is_synthetic); })(),
     // KPI 는 지도 상한(200척)과 무관하게 전체를 세야 하므로 매핑 전 원본에서 센다.
     realTrafficLiquidTotal: presentVessels.filter(
       (r) => shipType(r) === true || hasCargo(r)

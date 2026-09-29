@@ -5,6 +5,7 @@ import { COLORS } from '../../utils/constants';
 import { cargoSummary } from '../../utils/cargoText';
 import HelpTip from '../common/HelpTip';
 import DemoChip from '../common/DemoChip';
+import SyntheticChip from '../common/SyntheticChip';
 import { useDemoCargo } from '../../utils/demoCargo';
 import useSensorStore from '../../stores/useSensorStore';
 
@@ -197,7 +198,7 @@ export default function BerthOccupiedList({ scope }) {
             <tr style={{ textAlign: 'left', color: COLORS.textDim, borderBottom: `1px solid ${COLORS.border}` }}>
               <th style={{ padding: '6px 8px' }}>선석</th>
               <th style={{ padding: '6px 8px' }}>선박</th>
-              <th style={{ padding: '6px 8px' }}>화물</th>
+              <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>화물<SyntheticChip /></th>
               <th style={{ padding: '6px 8px' }}>입출항</th>
               {/* '승인자'가 아니라 '확인자'다 — 이 시스템은 선석을 배정하지 않으므로
                   승인할 대상이 없다. 남는 기록은 "관제사가 이 판정을 봤다"뿐이고,
