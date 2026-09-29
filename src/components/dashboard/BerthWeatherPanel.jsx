@@ -11,7 +11,7 @@ const LEVEL_STYLE = {
   '하역중단': { color: COLORS.yellow, label: '하역작업 중단' },
   '이안': { color: '#D2601A', label: '부두 이안' },
   '호스분리': { color: COLORS.red, label: '로딩암/호스 분리' },
-  '판단불가': { color: COLORS.textDim, label: '판단불가 (fail-safe)' },
+  '판단불가': { color: COLORS.textDim, label: '판단불가' },
 };
 
 function ThresholdChip({ name, t }) {
@@ -117,7 +117,7 @@ export default function BerthWeatherPanel() {
         {!usingBackend && (
         <label
           style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: COLORS.textSecondary }}
-          title={usingBackend ? '서버가 DB 실측 관측치로 직접 판정 중 — 이 입력은 백엔드 미응답(폴백) 시에만 사용됩니다' : undefined}
+          title={usingBackend ? '실측 관측값으로 판정 중 — 이 입력은 판정 서버가 응답하지 않을 때만 쓰입니다' : undefined}
         >
           풍속 (m/s)
           <input type="number" step="0.1" value={windSpeed} disabled={usingBackend}

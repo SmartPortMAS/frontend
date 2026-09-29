@@ -60,7 +60,7 @@ async function doRefresh() {
       // 둘 다 실데이터 소스가 없는 항목이다(진행률은 유량 센서 미설치).
       // 실선박이 하나라도 잡히면 화면은 그쪽을 쓰므로 평상시엔 보이지 않는다.
       const backend = await fetchBackendDashboard();
-      if (!backend) throw new Error('백엔드 응답 없음 (8001)');
+      if (!backend) throw new Error('판정 서버 응답 없음');
 
       // 하역 진행률(operations)만 실데이터 소스가 없어 내장 mock 을 쓴다.
       // 선박 목록(vessels)은 넘기지 않는다 — 화면이 실AIS(real_traffic)만 보게 해서
