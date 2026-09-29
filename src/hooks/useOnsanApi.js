@@ -229,7 +229,7 @@ function localAssessWeather({ berthGroup, windSpeed, waveHeight, isStale, precip
   if (isStale) {
     return {
       berth_group: berthGroup, status: '판단불가',
-      reasons: ['관측값 유효기간 초과(stale) → fail-safe 판단불가'],
+      reasons: ['관측값이 오래돼 판단할 수 없습니다'],
       thresholds_used: th, is_local_fallback: true,
     };
   }
@@ -757,7 +757,7 @@ export default function useOnsanApi() {
         risk_level_basis: { rule_engine_floor: '판단불가', imdg_segregation_code: null, flammability_grade: '정보 없음', gate_hits: [] },
         gates: [{
           rule: '-', name: '안전 판정', hit: true, severity: 'HOLD',
-          reason: target ? '백엔드 안전 에이전트 응답 없음 — 판단 보류(fail-safe)'
+          reason: target ? '안전 에이전트 응답 없음 — 판단 보류'
             : `화물 '${req.cargo_name}' CAS 매핑 없음 — MSDS 조회 불가`,
         }],
         explanation: { summary: '판정을 확정할 수 없어 보류합니다. (모르면 가능하다고 하지 않는다)', reasoning: [], checklist: [] },
@@ -821,7 +821,7 @@ export default function useOnsanApi() {
             + '접안 전 사전 검토는 판정 잡이 PORT-MIS 신고 선석으로 10분마다 합니다(확인 대기 목록).'
           : !cargo ? `화물 '${cargoName}' 식별 정보(chem_id·CAS)가 없어 조회할 수 없습니다.`
             : !draughtM ? '이 배의 흘수가 지금 수신되지 않아(AIS 위치 목록 밖) 다시 판정하지 않았습니다. 위의 기록된 판정을 보세요.'
-              : '백엔드 응답이 없어 판단을 보류합니다.',
+              : '판정 서버가 응답하지 않아 판단을 보류합니다.',
         is_local_fallback: true, source: 'LOCAL_FALLBACK',
       };
       setOrchestration(result);

@@ -440,9 +440,10 @@ export default function VesselDetailPanel() {
             {assessment.source === 'NO_CARGO'
               ? '※ 판정 입력(화물)이 없어 안전 에이전트를 호출하지 않았습니다. 모르는 화물을 안전으로 보지 않습니다'
               : assessment.is_local_fallback
-                ? '※ 백엔드 안전 에이전트 미응답 — 판단 보류(fail-safe). 임의로 안전 판정하지 않습니다'
+                ? '※ 안전 에이전트가 응답하지 않아 판단을 보류합니다. 임의로 안전 판정하지 않습니다'
                 // IMDG 7.2 는 한 선박 안 적부 기준이라 부두 간 판정에 쓰지 않는다 — 실제 기준만 적는다.
-                : '※ 백엔드 안전 에이전트 판정 — MSDS 혼재금지 + 46 CFR 150 호환성 그룹 기준'}
+                // [2026-09-29] 앞머리 '백엔드 안전 에이전트 판정 —' 는 뺐다(사용자 요청).
+                : '※ MSDS 혼재금지 + 46 CFR 150 호환성 그룹 기준'}
             {assessment.msds_sections_used?.length > 0
               && ` · 근거 섹션 ${assessment.msds_sections_used.length}개`}
           </div>
