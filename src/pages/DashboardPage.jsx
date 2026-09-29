@@ -4,9 +4,9 @@ import WeatherPanel from '../components/dashboard/WeatherPanel';
 import PortMap from '../components/dashboard/PortMap';
 import PortCallTable from '../components/dashboard/PortCallTable';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
-import BerthBoard from '../components/dashboard/BerthBoard';
 import BerthDetailPanel from '../components/dashboard/BerthDetailPanel';
 import useDashboardData from '../hooks/useDashboardData';
+import useSensorStore from '../stores/useSensorStore';
 import { fetchPendingApprovals, fetchBerthAssignments } from '../api/backendAdapter';
 import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt } from 'react-icons/fa';
 
@@ -85,14 +85,9 @@ export default function DashboardPage() {
     return () => { alive = false; clearInterval(t); };
   }, []);
   const onsanBerthRows = (berthRows ?? []).filter((b) => b.port_name === '온산항');
-  const showBerthBoard = () => {
-    const el = document.getElementById('berth-board');
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el.classList.remove('flash');
-    void el.offsetWidth;   // 같은 타일을 다시 눌러도 깜빡이게
-    el.classList.add('flash');
-  };
+  // [2026-09-30] 선석 현황판은 추적 띠의 '선박 찾기' 창 안으로 옮겼다(현우) — 타일이 그 창을 연다
+  const setPickerOpen = useSensorStore((s) => s.setPickerOpen);
+  const showBerthBoard = () => setPickerOpen(true);
   const occupiedBerths = onsanBerthRows.filter((b) => (b.slots || []).some((s) => s.call_sign)).length;
 
   return (
@@ -126,21 +121,18 @@ export default function DashboardPage() {
           36건까지 늘면서 첫 화면을 통째로 덮어, 지도·기상·선석 판정이 스크롤 아래로
           밀렸기 때문. 미확인 건수는 벨 배지에 항상 떠 있어 놓치지 않는다. */}
 
-      {/* 온산 관제 지도 + 선석 현황판 — 첫 화면에서 "어디에 어떤 배가, 어떤 판정으로" 한 번에 보인다.
-          [2026-09-29 밤] 선석 점유 타일은 이 현황판으로, 확인 대기 판정 타일은 선박 판정의 확인 대기로 간다 —
+      {/* 온산 관제 지도 — 첫 화면에서 "어디에 어떤 배가, 어떤 판정으로" 보인다(배 색 = 선종, 고리 = 판정).
+          [2026-09-29 밤] 선석 점유 타일은 선석 현황판으로, 확인 대기 판정 타일은 선박 판정의 확인 대기로 간다 —
           예전엔 둘 다 선박 판정 화면으로 가서 두 타일의 차이가 보이지 않았다(현우).
-          부두 기상 판정 패널과 부두별 접안 이력 목록은 선석 상세 서랍(현황판 칸 · 지도 선석 원)으로 옮겼다 —
-          둘 다 부두 하나에 관한 정보라 그 부두를 고른 자리에서 보는 것이 자연스럽다. */}
-      <div className="dash-section dash-map-row">
-        <div className="glass-card">
-          <div className="glass-card-header">
-            <h3 className="glass-card-title">온산항 관제 지도</h3>
-          </div>
-          <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
-            <PortMap />
-          </div>
+          [2026-09-30] 선석 현황판은 '선박 찾기' 창 안으로 옮기고 지도를 넓혔다(현우). 부두 기상 · 최근 접안 ·
+          재항 시간은 선석 상세 서랍(지도의 선석 원 · 이름표, 선석 현황판의 부두 이름)에서 본다. */}
+      <div className="dash-section glass-card">
+        <div className="glass-card-header">
+          <h3 className="glass-card-title">온산항 관제 지도</h3>
         </div>
-        <BerthBoard />
+        <div style={{ height: 'clamp(520px, 72vh, 900px)' }}>
+          <PortMap />
+        </div>
       </div>
 
       {/* 기상 패널 (Full Width) */}

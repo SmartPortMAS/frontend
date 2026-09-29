@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Scene from '../components/three/Scene';
 import { findBerthIdByName, ONSAN_BERTHS, ONSAN_BERTHS_3D, OMNIVERSE_BERTH_IDS } from '../utils/geoUtils';
@@ -37,7 +37,7 @@ export default function DigitalTwinPage() {
   //   ?berth=S-Oil 2부두  → 그 선석으로 카메라 이동 + 인접 선석 강조 (안전/환경 관제에서)
   //   ?omniverse=1        → 정밀 검토 스트림을 바로 켠다 (선박 상세 계류 검증에서)
   // 화면끼리 역할이 나뉘어 있어도 흐름이 끊기면 사용자는 매번 처음부터 찾아야 한다.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const focusBerth = searchParams.get('berth') || null;
   // 3D 장면에는 온산 11개 선석만 있다. 안전/환경 관제는 울산 전역(SK·가스부두 등)을
   // 다루므로, 장면 밖 선석으로 넘어오는 경우가 실제로 생긴다(2026-09-03 실측: SK3부두).
@@ -47,22 +47,27 @@ export default function DigitalTwinPage() {
   //   ?outlook=OTK 1부두   → 그 선석의 "앞으로 72시간" 판정 흐름을 바로 연다 (시연 영상·캡처용)
   const wantOutlook = searchParams.get('outlook') || null;
 
-  // 상단 띠에 흘릴 실경고 — 심각한 것부터 최대 6건. 화면 폭이 한정돼 있어
-  // 전부 흘리면 한 바퀴가 너무 길어진다(현재 36건).
+  // 상단 띠에 세울 실경고 — 심각한 것부터 전부 돈다.
+  // [2026-09-30] 예전엔 앞 6건만 돌며 '위험 16 · 표시 4/6'이라 적어, 16건 중 왜 6건인지 알 수 없었고
+  //   5초마다 글이 툭 바뀌었다(현우). 전부 돌리고, 새 건은 아래에서 올라오며, 띠 아래 선이 다음 건까지 남은 시간을
+  //   채운다. 마우스를 올리면 멈추고 ‹ › 로 넘긴다.
   const { data: dashForTicker } = useDashboardData();
   const allAlerts = dashForTicker?.alerts ?? [];
-  const tickerItems = allAlerts.slice(0, 6);
+  const tickerItems = useMemo(() => {
+    const order = { DANGER: 0, WARNING: 1, INFO: 2 };
+    return [...allAlerts].sort((x, y) => (order[x.level] ?? 9) - (order[y.level] ?? 9));
+  }, [allAlerts]);
   const dangerCount = allAlerts.filter((a) => a.level === 'DANGER').length;
-  // 한 건씩 세워서 보여주고 자동으로 넘긴다(아래 배너 주석 참고)
+  const warnCount = allAlerts.filter((a) => a.level === 'WARNING').length;
   const [tickerIdx, setTickerIdx] = useState(0);
+  const [tickerHold, setTickerHold] = useState(false);
+  const [tickerTick, setTickerTick] = useState(0);   // 멈춤을 풀면 진행 선을 처음부터
   useEffect(() => {
-    if (tickerItems.length < 2) return undefined;
-    const id = setInterval(
-      () => setTickerIdx((i) => (i + 1) % tickerItems.length),
-      TICKER_ROTATE_MS,
-    );
-    return () => clearInterval(id);
-  }, [tickerItems.length]);
+    if (tickerItems.length < 2 || tickerHold) return undefined;
+    const id = setTimeout(() => setTickerIdx((i) => (i + 1) % tickerItems.length), TICKER_ROTATE_MS);
+    return () => clearTimeout(id);
+  }, [tickerItems.length, tickerHold, tickerIdx, tickerTick]);
+  const stepTicker = (d) => setTickerIdx((i) => (i + d + tickerItems.length) % tickerItems.length);
   const [showMap, setShowMap] = useState(false);
   const [showOmniverseStream, setShowOmniverseStream] = useState(false);
   // 'checking' | 'ok' | 'unreachable'
@@ -117,6 +122,7 @@ export default function DigitalTwinPage() {
   const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
   const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
   const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
+  const requestTwinHome = useSensorStore((s) => s.requestTwinHome);
 
   // ── 앞으로 72시간 — 이 화면 안의 판정 흐름 (2026-09-27) ────────────────────
   // 정보창·연결 바·?outlook= 에서 요청한다. 열리면 카메라가 그 선석으로 가고(BerthFocus, 링은 끔),
@@ -135,6 +141,13 @@ export default function DigitalTwinPage() {
     clearOutlookRequest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outlookRequest?.at]);
+  // [2026-09-30] 72시간을 닫으면 처음 화면으로 — 선택 해제 · 주소 인자(?berth · ?outlook) 해제 · 카메라 조감(현우)
+  const closeOutlook = () => {
+    setOutlookFocus(null);
+    setSelectedObject(null);
+    if (searchParams.get('berth') || searchParams.get('outlook')) setSearchParams({}, { replace: true });
+    requestTwinHome();
+  };
   useEffect(() => {
     if (!wantOutlook) return;
     const id = findBerthIdByName(wantOutlook);
@@ -243,45 +256,52 @@ export default function DigitalTwinPage() {
         const p = alertParts(a);
         const st = levelStyle(a.level);
         return (
-          <div style={{
-            position: 'absolute', top: 0, left: 0, width: '100%', height: 38,
-            background: 'rgba(11,18,32,0.94)', borderBottom: `2px solid ${st.color}`,
-            zIndex: 2000, display: 'flex', alignItems: 'center', gap: 10,
-            padding: '0 14px', color: '#e8eef7', fontSize: 13, boxSizing: 'border-box',
-          }}>
+          <div
+            className="twin-ticker"
+            onMouseEnter={() => setTickerHold(true)}
+            onMouseLeave={() => { setTickerHold(false); setTickerTick((t) => t + 1); }}
+            style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: 38,
+              background: 'rgba(11,18,32,0.94)', borderBottom: '2px solid rgba(232,238,247,0.12)',
+              zIndex: 2000, display: 'flex', alignItems: 'center', gap: 10,
+              padding: '0 14px', color: '#e8eef7', fontSize: 13, boxSizing: 'border-box', overflow: 'hidden',
+            }}
+          >
             <FaExclamationTriangle color={st.color} style={{ flexShrink: 0 }} />
             <span style={{
               flexShrink: 0, background: st.color, color: '#0b1220', fontWeight: 800,
               fontSize: 11, padding: '2px 7px', borderRadius: 4, letterSpacing: '0.02em',
             }}>{st.label}</span>
-            {/* [2026-09-29 밤] 문장 대신 칸 — 대상 · 선석 · 등급 · 이유 · 조치(관제 경고 벨과 같은 규칙) */}
-            <span style={{ flexShrink: 0, fontWeight: 800 }}>{p.title}</span>
-            {p.place && <span style={{ flexShrink: 0, color: '#c3cede' }}>{p.place}{p.stage ? ` · ${p.stage}` : ''}</span>}
-            {p.level && <span style={{ flexShrink: 0, fontWeight: 800, color: st.color }}>{p.level}</span>}
-            <span style={{
-              flex: 1, minWidth: 0, color: '#b8c4d6',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }} title={p.full}>
-              {p.why}{p.action ? `  →  ${p.action}${p.recipient ? ` (${p.recipient})` : ''}` : ''}
+            {/* 문장 대신 칸 — 대상 · 선석 · 등급 · 이유 · 조치(관제 경고 벨과 같은 규칙). 새 건은 아래에서 올라온다 */}
+            <div className="tk-slide" key={`${tickerIdx}-${a.type}`}>
+              <span style={{ flexShrink: 0, fontWeight: 800 }}>{p.title}</span>
+              {p.place && <span style={{ flexShrink: 0, color: '#c3cede' }}>{p.place}{p.stage ? ` · ${p.stage}` : ''}</span>}
+              {p.level && <span style={{ flexShrink: 0, fontWeight: 800, color: st.color }}>{p.level}</span>}
+              <span style={{
+                flex: 1, minWidth: 0, color: '#b8c4d6',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }} title={p.full}>
+                {p.why}{p.action ? `  →  ${p.action}${p.recipient ? ` (${p.recipient})` : ''}` : ''}
+              </span>
+            </div>
+            <span style={{ flexShrink: 0, color: '#8b98ab', fontSize: 11.5 }}>
+              <span style={{ color: '#ff8a80', fontWeight: 700 }}>위험 {dangerCount}</span> · 주의 {warnCount}
             </span>
-            <span style={{ flexShrink: 0, color: '#8b98ab', fontSize: 11 }}>
-              위험 {dangerCount} · 표시 {tickerIdx + 1}/{tickerItems.length}
-            </span>
-            {/* 어느 건을 보고 있는지 — 자동으로 넘어가므로 위치 표시가 필요하다 */}
-            <span style={{ flexShrink: 0, display: 'flex', gap: 4 }}>
-              {tickerItems.map((it, i) => (
-                <button
-                  key={`${it.type}-${i}`}
-                  onClick={() => setTickerIdx(i)}
-                  aria-label={`경고 ${i + 1}번 보기`}
-                  style={{
-                    width: 7, height: 7, padding: 0, borderRadius: '50%', border: 'none',
-                    cursor: 'pointer',
-                    background: i === tickerIdx ? st.color : 'rgba(232,238,247,0.3)',
-                  }}
-                />
-              ))}
-            </span>
+            {tickerItems.length > 1 && (
+              <span className="tk-nav">
+                <button type="button" onClick={() => stepTicker(-1)} aria-label="이전 경고">‹</button>
+                <span>{tickerIdx + 1}/{tickerItems.length}</span>
+                <button type="button" onClick={() => stepTicker(1)} aria-label="다음 경고">›</button>
+              </span>
+            )}
+            {/* 다음 경고까지 남은 시간 — 띠 아래 선이 차오른다(멈추면 선도 멈춘다) */}
+            {tickerItems.length > 1 && (
+              <span
+                key={`p-${tickerIdx}-${tickerTick}`}
+                className="tk-progress"
+                style={{ background: st.color, animationDuration: `${TICKER_ROTATE_MS}ms`, animationPlayState: tickerHold ? 'paused' : 'running' }}
+              />
+            )}
           </div>
         );
       })()}
@@ -289,9 +309,10 @@ export default function DigitalTwinPage() {
       {/* HUD Overlays — 2D 지도/스트리밍 중에는 숨김 */}
       {!showMap && !showOmniverseStream && (
         <>
-          <RadarMap />
+          {/* 72시간을 보는 동안 레이더 · 선박 목록은 접는다 — 아래 72시간 패널과 겹쳤다(현우) */}
+          {!outlookFocus && <RadarMap />}
           <CCTVPanel />
-          <VesselTrafficList />
+          {!outlookFocus && <VesselTrafficList />}
           <BerthStatusBar />
         </>
       )}
@@ -474,7 +495,7 @@ export default function DigitalTwinPage() {
       {outlookFocus && !showOmniverseStream && !showMap && (
         <OutlookTimeline
           focus={outlookFocus}
-          onClose={() => setOutlookFocus(null)}
+          onClose={closeOutlook}
           onOmniverse={outlookFocus.omniOk ? () => requestOmniverse(outlookFocus) : null}
         />
       )}

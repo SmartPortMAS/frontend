@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FaShip, FaMapMarkerAlt, FaClipboardCheck, FaShieldAlt, FaCube, FaLock, FaLockOpen, FaTimes, FaSearch } from 'react-icons/fa';
 import useSensorStore from '../../stores/useSensorStore';
@@ -31,7 +30,8 @@ export default function VesselTrail() {
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const requestThreadFocus = useSensorStore((s) => s.requestThreadFocus);
   const { thread } = useVesselThread();
-  const [finding, setFinding] = useState(false);
+  const finding = useSensorStore((s) => s.pickerOpen);
+  const setFinding = useSensorStore((s) => s.setPickerOpen);
 
   const go = (step) => {
     if (step.key !== 'where') setSelectedVessel(null);   // 상세 패널이 다른 화면을 덮지 않게(추적은 그대로)
@@ -64,7 +64,7 @@ export default function VesselTrail() {
         <button
           type="button"
           className={`trail-find${finding ? ' open' : ''}`}
-          onClick={() => setFinding((f) => !f)}
+          onClick={() => setFinding(!finding)}
           aria-expanded={finding}
           aria-haspopup="dialog"
         >

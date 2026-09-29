@@ -225,6 +225,15 @@ html, body, #root {
   white-space: nowrap;
   pointer-events: none;
 }
+/* [2026-09-30] 지도 선석 이름표(누르면 선석 서랍) — 원 가운데에 놓는 표식 */
+.berth-tag-icon { background: none; border: none; }
+.berth-tag {
+  position: absolute; left: 0; top: 0; transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.92); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--navy); font-size: 11px; font-weight: 800; padding: 1px 6px; white-space: nowrap;
+  cursor: pointer; box-shadow: 0 1px 3px rgba(18, 53, 79, 0.18);
+}
+.berth-tag:hover { border-color: var(--navy); background: #fff; }
 .leaflet-tooltip.berth-label::before { display: none; }
 
 /* 선석배정현황 지도 — 점유 중인 선석의 이름표를 초록 박스로 채운다(원 마커 대신) */
@@ -1793,3 +1802,34 @@ tr.row-track > td:first-child { box-shadow: inset 3px 0 0 #12354F; }
 .console-link:hover { background: #FBEFD9; }
 @media (prefers-reduced-motion: reduce) { .berth-board.flash { animation: none; } .berth-drawer { animation: none; } }
 .bd-bar.plan > span { padding: 0 4px; color: #16232B; font-weight: 700; }
+
+/* [2026-09-30] 선박 찾기 안의 선석 현황판(대시보드에서 옮김) */
+.vp-pop { width: min(960px, calc(100vw - 48px)); max-height: min(660px, calc(100vh - 170px)); }
+.vp-body { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
+.vp-board-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.vp-board-head h4 { margin: 0; display: flex; align-items: baseline; gap: 2px; }
+.vp-board-head .bb-count { margin-left: 6px; font-size: 16px; }
+.vp-cell {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  border: 1px solid var(--border); border-top: 3px solid var(--bb-tone, var(--border)); border-radius: 6px;
+  background: #F7F9FB; padding: 5px 6px 6px;
+}
+.vp-cell.busy { background: var(--card); }
+.vp-cell.mine { box-shadow: 0 0 0 2px #12354F; }
+.vp-cell-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.vp-cell-head strong { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vp-cell-head:hover strong { color: #12354F; text-decoration: underline; }
+button.bb-ship { width: 100%; text-align: left; border: none; border-left: 4px solid var(--ship-tone, #8A99A6); cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 600; }
+button.bb-ship.none { border-left-style: dashed; }
+button.bb-ship:hover { filter: brightness(0.94); }
+@media (max-width: 760px) { .vp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* [2026-09-30] 3D 경고 띠 — 새 건은 아래에서 올라오고, 아래 선이 다음 건까지 남은 시간을 채운다 */
+.tk-slide { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; animation: tkIn 0.45s ease-out; }
+@keyframes tkIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.tk-progress { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; transform-origin: left center; animation-name: tkProg; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes tkProg { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.tk-nav { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; color: #8b98ab; font-size: 11.5px; font-family: ui-monospace, Consolas, monospace; }
+.tk-nav button { width: 20px; height: 20px; border-radius: 4px; border: 1px solid rgba(232, 238, 247, 0.25); background: transparent; color: #e8eef7; cursor: pointer; font-size: 14px; line-height: 16px; padding: 0; }
+.tk-nav button:hover { border-color: #e8eef7; }
+@media (prefers-reduced-motion: reduce) { .tk-slide { animation: none; } .tk-progress { animation: none; transform: scaleX(1); opacity: 0.35; } }

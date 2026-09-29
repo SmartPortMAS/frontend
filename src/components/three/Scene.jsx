@@ -1,8 +1,9 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import { OrbitControls, Sky } from '@react-three/drei';
 import BerthFocus from './BerthFocus';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
-import { Suspense, useRef } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 
 // [2026-09-29] 가벼운 모드 — 느린 PC 에서 3D 가 버벅인다(동안·현우). 처음 3초의 프레임을 재서 30 아래면
 // 그림자(장면에서 가장 비싼 패스)를 끄고 해상도를 1배로 내린다. 결과·자료는 그대로고 그림만 단순해진다.
@@ -40,6 +41,29 @@ import useSensorStore from '../../stores/useSensorStore';
 // 채우는 경로가 없어 useFrame 이 즉시 return 했고, 읽는 필드명(wind_speed·visibility)도
 // 실제 계약(wind_speed_ms·visibility_m)과 달라 연결해도 동작하지 않았다.
 // 파티클만 만들어 놓고 한 번도 렌더하지 않는 순수 비용이었다.
+
+// 3D 처음 화면 — Canvas 의 첫 카메라 위치 · OrbitControls 첫 목표와 같아야 한다
+const HOME_POS = [330, 230, -250];
+const HOME_TARGET = [0, 0, 0];
+
+/** 처음 화면(조감)으로 카메라를 천천히 되돌린다 — store.requestTwinHome() 이 부른다 */
+function CameraHome() {
+  const { camera, controls } = useThree();
+  const at = useSensorStore((s) => s.twinHomeAt);
+  const goal = useRef(null);
+  useEffect(() => {
+    if (!at) return;
+    goal.current = { pos: new THREE.Vector3(...HOME_POS), look: new THREE.Vector3(...HOME_TARGET) };
+  }, [at]);
+  useFrame(() => {
+    const g = goal.current;
+    if (!g) return;
+    camera.position.lerp(g.pos, 0.07);
+    if (controls) { controls.target.lerp(g.look, 0.07); controls.update(); }
+    if (camera.position.distanceTo(g.pos) < 1.5) goal.current = null;
+  });
+  return null;
+}
 
 function SimulationEnvironment({ focusBerth, focusRings = true }) {
   const predictionOffset = useSensorStore((s) => s.predictionOffset);
@@ -112,6 +136,7 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
       <Water />
       <Port />
       <BerthFocus berthName={focusBerth} showRings={focusRings} />
+      <CameraHome />
 
       {/* [2026-09-29] 후처리는 매 프레임 화면 전체를 다시 그려 느린 PC 에서 가장 큰 비용이었다(동안·현우 체감).
           장식이라 기본은 끄고, 촬영 때만 ?fx=1 로 켠다. */}
@@ -125,7 +150,7 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
 
       <OrbitControls
         makeDefault
-        target={[0, 0, 0]}
+        target={HOME_TARGET}
         minPolarAngle={Math.PI / 8}
         maxPolarAngle={Math.PI / 2 - 0.05}
         minDistance={30}
@@ -144,7 +169,7 @@ export default function Scene({ focusBerth, focusRings = true }) {
   return (
     <Canvas
       key={lite ? 'lite' : 'full'}
-      camera={{ position: [330, 230, -250], fov: 50 }}
+      camera={{ position: HOME_POS, fov: 50 }}
       style={{ background: '#0a1628' }}
       shadows={!lite}
       gl={{

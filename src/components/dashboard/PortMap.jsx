@@ -54,6 +54,16 @@ const createVesselIcon = (vessel, level, isTracked) => {
   });
 };
 
+// 선석 이름표 — 누를 수 있는 표식(마커). 배 표식보다 위(zIndexOffset), 추적 중인 배보다는 아래.
+// [2026-09-30] 예전 이름표는 원에 붙은 툴팁이라 원 가운데를 배 표식이 덮으면 선석을 누를 수 없었고,
+//   툴팁을 누를 수 있게 해도 Leaflet 이 누르는 순간 포인터를 놓쳐 click 이 나지 않았다.
+const berthTagIcon = (text, tone) => L.divIcon({
+  className: 'berth-tag-icon',
+  html: `<div class="berth-tag"${tone ? ` style="border-color:${tone};color:${tone}"` : ''}>${text}</div>`,
+  iconSize: [0, 0],
+  iconAnchor: [0, 0],
+});
+
 const formatKST = (utcString) => {
   if (!utcString) return '-';
   return new Date(utcString).toLocaleString('ko-KR', {
@@ -261,6 +271,9 @@ export default function PortMap() {
         zoom={ONSAN_ZOOM}
         style={{ height: '100%', width: '100%', background: COLORS.bg }}
         attributionControl={false}
+        // [2026-09-30] Leaflet 키보드 조작을 끈다 — 켜 두면 지도를 처음 누를 때 지도 틀에 초점을 주며 페이지가
+        //   스크롤돼, 누른 자리와 뗀 자리가 달라져 선석 · 배 클릭이 씹혔다(지도 아래쪽에서 늘 재현).
+        keyboard={false}
         whenReady={() => {
           // 컨테이너 크기가 정해진 뒤에 맞춰야 한다 — 렌더 직후엔 높이가 0 이라
           // fitBounds 가 엉뚱한 줌으로 잡힌다.
@@ -338,11 +351,23 @@ export default function PortMap() {
           >
             {/* 부두 이름을 항상 띄운다 — 한 레이어에 Tooltip 을 두 개 달면 앞의 permanent 옵션에 뒤 문구가
                 덮어써진다(Leaflet bindTooltip). 이름(+기상 판정)만 둔다. */}
-            <Tooltip permanent direction="center" className="berth-label">
-              {b.name.replace(/부두$/, '')}
-              {verdict && verdict !== '정상' ? ` · ${verdict}` : ''}
-            </Tooltip>
           </Circle>
+          );
+        })}
+
+        {Object.entries(ONSAN_BERTHS).map(([id, b]) => {
+          const verdict = berthWeather && ONSAN_WEATHER_GROUP[id] === berthWeather.berth_group ? berthWeather.status : null;
+          const escalated = verdict && verdict !== '정상';
+          const text = `${b.name.replace(/부두$/, '')}${escalated ? ` · ${verdict}` : ''}`;
+          return (
+            <Marker
+              key={`tag-${id}`}
+              position={posOf(b)}
+              icon={berthTagIcon(text, escalated ? WEATHER_STATUS_COLORS[verdict] : null)}
+              zIndexOffset={2500}
+              keyboard={false}
+              eventHandlers={{ click: () => setSelectedBerth(b.name) }}
+            />
           );
         })}
 

@@ -39,6 +39,12 @@ function MockNotice() {
   );
 }
 
+// 트윈 상태 어휘 → 화면 말(예전엔 'MOORING' 처럼 영문 대문자가 그대로 나왔다)
+const STATUS_KO = {
+  mooring: '접안', docked: '접안', operating: '하역 중', anchored: '정박지 대기', underway: '항해 중',
+  service: '항내 소형선', approaching: '입항 중', departing: '출항 중', active: '접안 선박 있음', idle: '공석',
+};
+
 export default function InfoPopup({ object, onClose }) {
   const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
   const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
@@ -69,17 +75,16 @@ export default function InfoPopup({ object, onClose }) {
     vessel_name: type === 'Ship' ? object.id : null,
     omniOk: omniReady,
   };
-  let outlookNote = '이 선석의 앞으로 72시간을 판정 규칙대로 돌립니다. 이 화면의 선석 색이 시각마다 바뀌어 하역이 언제 막히는지 보입니다.';
-  if (!sceneReady) {
-    outlookNote = type === 'Ship' && !object.berth
-      ? '선석에 붙은 배만 볼 수 있습니다 — 이 배는 항해 중이거나 정박지에서 대기 중입니다.'
-      : '이 선석은 3D 장면에 없습니다 — 장면은 온산 부두만 재현합니다.';
-  }
+  // [2026-09-30] 단추 아래 설명 문장은 뺐다(현우) — 누를 수 없을 때만 짧게 이유를 적는다
+  const outlookNote = sceneReady ? null
+    : type === 'Ship' && !object.berth ? '접안한 배만 — 지금 항해 · 대기 중'
+      : '3D 장면 밖 선석';
 
   return (
-    <Html fullscreen zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
-      {/* Omniverse/2D Map 버튼(top 50~88) 아래에 배치 — 버튼에 가려지지 않음 */}
-      <div style={{ position: 'absolute', top: 100, right: 16, pointerEvents: 'auto', width: '300px' }}>
+    // [2026-09-30] 레이더 · 선박 목록(z 1000) 위로 — 정보창을 열면 레이더가 가렸다(현우). 경고 띠(2000)보다는 아래.
+    <Html fullscreen zIndexRange={[1500, 1400]} style={{ pointerEvents: 'none' }}>
+      {/* 머리 단추(top 50~88)와 두 줄 선석 현황 띠 아래에 배치 — 가려지지 않음 */}
+      <div style={{ position: 'absolute', top: 108, right: 16, pointerEvents: 'auto', width: '300px' }}>
         <div className="glass-hud" style={{ width: '100%' }}>
           <div className="hud-header">
             <div className="hud-title">
@@ -97,7 +102,7 @@ export default function InfoPopup({ object, onClose }) {
             {object.status && (
               <div className="hud-status">
                 <span className="status-dot" data-status={object.status}></span>
-                <span className="status-text">{String(object.status).toUpperCase()}</span>
+                <span className="status-text">{STATUS_KO[object.status] || String(object.status)}</span>
               </div>
             )}
 
@@ -109,15 +114,13 @@ export default function InfoPopup({ object, onClose }) {
                 {/* 적재량은 수집 소스가 없다(useLiveTwinShips: cargoAmount=null).
                     예전엔 "0 / 50,000 t" + 0% 진행바를 그렸는데, 50,000 은 근거 없는
                     하드코딩이었고 0 t 는 "빈 배"라는 틀린 정보였다. 모르면 비운다. */}
-                <Row label="적재량" value={object.cargoAmount != null
-                  ? `${object.cargoAmount.toLocaleString()} t`
-                  : '미수집 (적재량 소스 없음)'} />
+                {object.cargoAmount != null && <Row label="적재량" value={`${object.cargoAmount.toLocaleString()} t`} />}
                 {object.callsgn && <Row label="호출부호" value={object.callsgn} />}
                 {object.mmsi && <Row label="MMSI" value={object.mmsi} />}
                 {object.vessel_speed != null && (
                   <Row label="속력 / 침로" value={`${object.vessel_speed} kn / ${object.vessel_heading ?? '-'}°`} />
                 )}
-                {object.is_real && (
+                {object.is_real && showDisclosure() && (
                   <div style={{ marginTop: '8px', fontSize: '11px', color: '#10b981' }}>
                     항만공사 선박위치 수신 — 위치·속력·항해상태는 실측입니다
                   </div>
@@ -202,15 +205,10 @@ export default function InfoPopup({ object, onClose }) {
                 >
                   <FaPlay /> 앞으로 72시간 판정 흐름
                 </button>
-                <div style={{ marginTop: '6px', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.5 }}>{outlookNote}</div>
+                {outlookNote && <div style={{ marginTop: '6px', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.5 }}>{outlookNote}</div>}
               </div>
             )}
 
-            {type === 'Ship' && object.is_real && (
-              <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.6 }}>
-                이 배의 판정과 근거(선석 · 기상 · 혼재)는 <strong style={{ color: '#e8f0f2' }}>선박 판정</strong> 화면의 [근거]에서 봅니다.
-              </div>
-            )}
           </div>
         </div>
       </div>

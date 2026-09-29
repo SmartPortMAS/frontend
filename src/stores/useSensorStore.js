@@ -91,6 +91,9 @@ const useSensorStore = create((set, get) => ({
   // [2026-09-29 밤] 선석 상세 서랍 — 지도의 선석 원·선석 현황판에서 연다(선석 이름).
   //   접안 선박 · 부두 기상 · 최근 접안 · 재항 시간을 한 서랍에서 본다. 선박 상세와 같은 자리라 서로 닫는다.
   selectedBerth: null,
+  // [2026-09-30] 선박 찾기 창(선석 현황 포함) — 추적 띠 단추와 대시보드 '온산 선석 점유' 타일이 연다
+  pickerOpen: false,
+  setPickerOpen: (v) => set({ pickerOpen: Boolean(v) }),
   setSelectedBerth: (name) => set(() => (name ? { selectedBerth: name, selectedVessel: null } : { selectedBerth: null })),
 
   // 트윈 HUD 접기 상태 — CCTV 를 접으면 그 아래 선박 목록이 따라 올라가야 한다.
@@ -159,6 +162,9 @@ const useSensorStore = create((set, get) => ({
   // 시간축 커서가 가리키는 시각의 판정 — Port 가 그 선석의 색·라벨을 이 값으로 바꾼다.
   outlookPreview: null,
   setOutlookPreview: (v) => set({ outlookPreview: v }),
+  // [2026-09-30] 3D 처음 화면(조감)으로 — 72시간을 닫으면 카메라가 첫 위치로 돌아간다(현우)
+  twinHomeAt: 0,
+  requestTwinHome: () => set({ twinHomeAt: Date.now() }),
 
   // 경고 → 안전 심사 연결. 경고 카드에서 선석을 고르면 그 경고의 내용이 여기 담기고,
   // 안전 심사 폼(SafetyGatesPanel)이 받아서 폼을 채운다.

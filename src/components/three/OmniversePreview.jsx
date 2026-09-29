@@ -13,12 +13,14 @@ import useSensorStore from '../../stores/useSensorStore';
 
 const VIDEO_SRC = '/omniverse/precision_review.mp4';
 
+// [2026-09-30] 온산 전체 선석(조감)부터 — 현우: "어떤 선석을 보여주나? 전체 선석을 보여줘야 하지 않나"
+//   Omniverse 장면은 온산 선석 11곳 전체를 재현하고, 정밀 검토는 그중 지목한 선석으로 내려가 계류 · 조위 · 흘수 여유를 본다.
+//   녹화 전이라 지금은 조감 한 장(9/17 캡처, 선석 판정 색) → OTK1부두 사례 두 시점(9/28 캡처)을 잇는다.
 const SCENE = {
-  vessel: 'GINGA MARGAY',
-  berth: 'OTK1부두',
   frames: [
-    { src: '/omniverse/ginga_scene_1000.jpg', time: '10:00', stage: '접안 직전', level: '적합', margin: '+1.08 m', tone: '#2dd4bf' },
-    { src: '/omniverse/ginga_scene_1640.jpg', time: '16:40', stage: '하역 중 · 저조', level: '주의', margin: '+0.75 m', tone: '#fbbf24' },
+    { src: '/omniverse/onsan_overview.jpg', time: '조감', stage: '온산 선석 11곳', caption: '온산 전체 선석 · 선석 판정 색', level: null, margin: null, tone: '#38bdf8' },
+    { src: '/omniverse/ginga_scene_1000.jpg', time: '10:00', stage: '접안 직전', caption: 'GINGA MARGAY · OTK1부두', level: '적합', margin: '+1.08 m', tone: '#2dd4bf' },
+    { src: '/omniverse/ginga_scene_1640.jpg', time: '16:40', stage: '하역 중 · 저조', caption: 'GINGA MARGAY · OTK1부두', level: '주의', margin: '+0.75 m', tone: '#fbbf24' },
   ],
 };
 const FRAME_MS = 4200;
@@ -63,13 +65,17 @@ function Stills() {
           />
         ))}
         <div style={{
+          position: 'absolute', left: 18, top: 16, padding: '4px 12px', borderRadius: 999,
+          background: 'rgba(2, 8, 20, 0.66)', color: '#e8f0f2', fontSize: 13, fontWeight: 700,
+        }}>{cur.caption}</div>
+        <div style={{
           position: 'absolute', left: 18, bottom: 18, display: 'flex', alignItems: 'baseline', gap: 12,
           padding: '10px 18px', borderRadius: 10, background: 'rgba(2, 8, 20, 0.72)', backdropFilter: 'blur(6px)',
         }}>
           <span style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 26, fontWeight: 700, color: '#e8f0f2' }}>{cur.time}</span>
           <span style={{ fontSize: 13, color: '#cbd5e1' }}>{cur.stage}</span>
-          <span style={{ fontSize: 22, fontWeight: 800, color: cur.tone }}>{cur.level}</span>
-          <span style={{ fontSize: 15, color: '#e8f0f2' }}>흘수 여유 <b style={{ color: cur.tone }}>{cur.margin}</b></span>
+          {cur.level && <span style={{ fontSize: 22, fontWeight: 800, color: cur.tone }}>{cur.level}</span>}
+          {cur.margin && <span style={{ fontSize: 15, color: '#e8f0f2' }}>흘수 여유 <b style={{ color: cur.tone }}>{cur.margin}</b></span>}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
@@ -142,7 +148,7 @@ export default function OmniversePreview() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px' }}>
           <strong style={{ fontSize: 15 }}>정밀 검토</strong>
           <span style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8', border: '1px solid rgba(56,189,248,0.5)', borderRadius: 999, padding: '1px 9px' }}>Omniverse</span>
-          <span style={{ fontSize: 13, color: '#cbd5e1' }}>{SCENE.vessel} · {SCENE.berth}</span>
+          <span style={{ fontSize: 13, color: '#cbd5e1' }}>온산 선석 전체 → 지목 선석</span>
           <button
             type="button" onClick={() => setOpen(false)} title="닫기 (Esc)" aria-label="닫기"
             style={{ marginLeft: 'auto', background: 'rgba(232,240,242,0.08)', color: '#e8f0f2', border: '1px solid rgba(232,240,242,0.25)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
