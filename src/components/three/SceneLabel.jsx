@@ -23,7 +23,9 @@ export default function SceneLabel({ position, fixed = false, children }) {
   });
   return (
     <group ref={ref} position={position}>
-      <Html center zIndexRange={[20, 0]} distanceFactor={fixed || near ? undefined : FACTOR}>
+      {/* 크기 방식이 바뀌면 새로 세운다 — drei Html 은 화면 위 자리가 바뀔 때만 배율을 다시 적어서,
+          카메라가 멈춰 있는 동안 방식만 바뀌면 예전 배율이 남았다 */}
+      <Html key={fixed || near ? 'fixed' : 'scaled'} center zIndexRange={[20, 0]} distanceFactor={fixed || near ? undefined : FACTOR}>
         {children}
       </Html>
     </group>

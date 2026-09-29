@@ -5,6 +5,9 @@ import { COLORS, WEATHER_STATUS_COLORS } from '../../../utils/constants';
 import { VERDICT_RANK, berthKey } from '../../../utils/verdict';
 import { stateAt, isAtBerth } from '../../../utils/berthSim';
 
+// 칸이 좁아 기상 판정은 짧게 적는다(전체 글은 마우스를 올리면)
+const SHORT_WX = { 하역중단: '중단', 이안: '이안', 호스분리: '분리' };
+
 // 어두운 3D 바탕용 판정 색 — 관제 화면(utils/verdict)과 뜻은 같고 밝기만 다르다(OutlookTimeline LEVEL_COLOR 와 같음)
 const DOT = { 적합: '#10b981', 주의: '#f59e0b', 부적합: '#ef4444', 판정불가: '#a78bfa' };
 
@@ -66,7 +69,7 @@ export default function BerthStatusBar() {
             title={`${b.name} — ${names || '공석'}${verdict ? ` · 부두 기상 ${verdict}` : ''}`}
             style={{
               cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', minWidth: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden',
               padding: '3px 4px', borderRadius: '6px', fontSize: '11.5px', letterSpacing: '-0.02em',
               // 어두운 HUD 위라 라이트 화면용 글자색(COLORS.textPrimary, 짙은 남색)을 쓰면 점유 선석 이름이 사라졌다
               color: ships.length ? '#E8F0F2' : '#8FA3B0',
@@ -80,9 +83,10 @@ export default function BerthStatusBar() {
               boxShadow: worst ? `0 0 6px ${dotColor}` : 'none',
             }} />
             {b.name.replace(/\s*부두$/, '').replace('터미널', '').replace(/\s+/g, '')}
-            {ships.length > 0 && <span style={{ fontSize: '10px', color: '#8FA3B0', fontFamily: 'ui-monospace, Consolas, monospace' }}>{ships.length}/{cap}</span>}
+            {/* 기상으로 막힌 선석은 척수 대신 판정을 적는다 — 둘 다 적으면 칸을 넘쳐 옆 칸을 덮었다 */}
+            {ships.length > 0 && !escalated && <span style={{ fontSize: '10px', color: '#8FA3B0', fontFamily: 'ui-monospace, Consolas, monospace' }}>{ships.length}/{cap}</span>}
             {escalated && (
-              <span style={{ color: WEATHER_STATUS_COLORS[verdict], fontWeight: 800 }}>{verdict}</span>
+              <span style={{ color: WEATHER_STATUS_COLORS[verdict], fontWeight: 800 }}>{SHORT_WX[verdict] || verdict}</span>
             )}
           </div>
         );

@@ -418,8 +418,11 @@ export default function Port() {
               <div style={{
                 ...berthLabelStyle,
                 ...(marked ? { border: `1px solid ${stripeColor}`, color: stripeColor } : {}),
+                // 크기를 고정한 이름표는 이웃 선석과 높이를 엇갈린다(부두군 전체가 막히면 네 개가 나란히 선다)
+                ...(preview?.wide && marked && !outlookPreview?.berthId
+                  ? { transform: `translateY(${-(Object.keys(ONSAN_BERTHS_3D).indexOf(id) % 3) * 22}px)`, fontSize: '11px', padding: '2px 6px' } : {}),
               }}>
-                {berth.name}
+                {preview?.wide && !outlookPreview?.berthId ? berth.name.replace(/\s*부두$/, '').replace(/\s+/g, '') : berth.name}
                 {labelSuffix}
               </div>
             </SceneLabel>
