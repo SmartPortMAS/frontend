@@ -10,6 +10,7 @@ import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs, FaMapMarker
 import { simulateMooring } from '../../utils/mooringPhysics';
 import { alertId, typeLabel } from '../../utils/alertUtils';
 import AgentChip from '../../utils/AgentChip';
+import ConflictBasisList from '../common/ConflictBasisList';
 import { fetchAlternativeBerths, estimateEta, estimateBerthRelease } from '../../api/backendAdapter';
 
 const RISK_COLORS = {
@@ -325,40 +326,9 @@ export default function VesselDetailPanel() {
               예전엔 프론트가 대표 화물의 충돌만 게이트로 다시 조립했고, 충돌이 없으면 "인접 선석 화물과
               혼재금지·격리 충돌 없음"을 고정으로 찍어 선석이 없는 배(비교 대상 없음)에도 떴다.
               근거가 없는 응답(조회 실패·화물 미확인 등 fail-safe)만 게이트 목록을 쓴다. */}
-          {assessment.verdict_basis?.length > 0 ? (() => {
-            // [2026-09-29] '이웃 화물 충돌: 4부두 1·2선석 질산 — 기준A / 기준B' → 굵은 대상 + 기준별 하위 줄.
-            //   백엔드가 이웃 화물당 한 줄로 묶는다(safety.service._verdict_basis). 형식이 다르면 그대로 보인다.
-            //   충돌이 3건을 넘으면 나머지는 접는다 — 10건이 넘는 배(질산 적재선)는 배지 아래가 목록에 묻혔다.
-            const line = (b) => {
-              const m = b.match(/^이웃 화물 충돌: (.+?) — (.+)$/);
-              if (!m) return <li key={b}>{b}</li>;
-              return (
-                <li key={b}>
-                  <b style={{ color: riskColor }}>충돌</b> {m[1]}
-                  <ul style={{ margin: 0, paddingLeft: '14px', fontSize: '12px', color: COLORS.textSecondary, listStyle: 'circle' }}>
-                    {m[2].split(' / ').map((r) => <li key={r}>{r}</li>)}
-                  </ul>
-                </li>
-              );
-            };
-            const hits = assessment.verdict_basis.filter((b) => b.startsWith('이웃 화물 충돌: '));
-            const rest = hits.slice(3);
-            const shown = assessment.verdict_basis.filter((b) => !rest.includes(b));
-            const ulStyle = { margin: '4px 0', paddingLeft: '16px', fontSize: '12.5px', lineHeight: 1.7 };
-            return (
-              <>
-                <ul style={ulStyle}>{shown.map(line)}</ul>
-                {rest.length > 0 && (
-                  <details style={{ marginBottom: '4px' }}>
-                    <summary style={{ cursor: 'pointer', fontSize: '11.5px', color: COLORS.info, fontWeight: 600 }}>
-                      이웃 화물 충돌 {rest.length}건 더 보기
-                    </summary>
-                    <ul style={ulStyle}>{rest.map(line)}</ul>
-                  </details>
-                )}
-              </>
-            );
-          })() : assessment.gates_hit.length > 0 && (
+          {assessment.verdict_basis?.length > 0 ? (
+            <ConflictBasisList basis={assessment.verdict_basis} color={riskColor} />
+          ) : assessment.gates_hit.length > 0 && (
             <ul style={{ margin: '4px 0', paddingLeft: '16px', fontSize: '12.5px', lineHeight: 1.7 }}>
               {assessment.gates_hit.map((g, i) => (
                 <li key={`${g.rule}-${i}`}>
