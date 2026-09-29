@@ -5,6 +5,8 @@ import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
 import { alertId, levelStyle, typeLabel, groupAlertsByBerth } from '../../utils/alertUtils';
 import HelpTip from '../common/HelpTip';
+import DemoChip from '../common/DemoChip';
+import { useDemoCargo } from '../../utils/demoCargo';
 import { FaCheck, FaCheckCircle, FaExclamationTriangle, FaShieldAlt, FaShip, FaCube } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,7 +35,8 @@ import { FaCheck, FaCheckCircle, FaExclamationTriangle, FaShieldAlt, FaShip, FaC
 function shortReason(message, berth) {
   let t = (message || '').replace(`${berth}: `, '');
   t = t.replace(/^\[[^\]]+\]\s*[^@]{1,40}@\s*/, '');
-  const paren = t.search(/\s?\(/);
+  // 띄어 쓴 괄호(긴 설명)만 자른다. '정일2부두(376m)'처럼 붙은 괄호에서 자르면 문장이 중간에 끊겼다(9/29).
+  const paren = t.search(/\s\(/);
   if (paren > 20) t = t.slice(0, paren);
   const dash = t.indexOf(' — ', 40);
   if (dash > 0 && t.length > 80) t = t.slice(0, dash);
@@ -56,6 +59,7 @@ function summarizeAlerts(items, berth) {
 export default function ActiveRiskPanel() {
   const { data } = useDashboardData();
   const setSafetyPrefill = useSensorStore((s) => s.setSafetyPrefill);
+  const demo = useDemoCargo();
   const prefill = useSensorStore((s) => s.safetyPrefill);
   const alertAcks = useSensorStore((s) => s.alertAcks);
   const ackAlert = useSensorStore((s) => s.ackAlert);
@@ -151,6 +155,9 @@ export default function ActiveRiskPanel() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <strong style={{ fontSize: '13.5px' }}>{g.berth}</strong>
+                  {demo.atWharf(g.berth).length > 0
+                    ? <DemoChip entries={demo.atWharf(g.berth)} />
+                    : <DemoChip derived entries={demo.nearWharf(g.berth)} />}
                   {types.map((t) => (
                     <span key={t} style={{
                       fontSize: '10.5px', fontWeight: 800, color,

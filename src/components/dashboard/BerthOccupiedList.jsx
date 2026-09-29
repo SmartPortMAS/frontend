@@ -4,6 +4,8 @@ import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
 import { cargoSummary } from '../../utils/cargoText';
 import HelpTip from '../common/HelpTip';
+import DemoChip from '../common/DemoChip';
+import { useDemoCargo } from '../../utils/demoCargo';
 import useSensorStore from '../../stores/useSensorStore';
 
 function formatKST(iso) {
@@ -116,6 +118,7 @@ export default function BerthOccupiedList({ scope }) {
   // 선석×슬롯 구조를 평평한 행 목록으로 편다 — 이 표는 "지금 뭐가 어디 붙어
   // 있나"만 보면 되므로 빈 슬롯은 뺀다.
   const requestConsole = useSensorStore((st) => st.requestConsole);
+  const demo = useDemoCargo();
   // [2026-09-28] 판정 전 행의 단추를 입항 선박 표와 같은 뜻으로 맞췄다 — "판정 요청"은 서버가 판정해
   // 이력에 기록하고, "근거 →"는 우하단 에이전트 판단 과정을 그 배로 열어 왜 그 결론인지 본다.
   // 예전엔 여기만 '판단 과정 →'이 판정 실행 입구여서 두 표의 단추 뜻이 달랐다(현우 지적).
@@ -220,6 +223,7 @@ export default function BerthOccupiedList({ scope }) {
                 <td style={{ padding: '6px 8px' }}>{row.vessel_name || '(선명 미상)'} ({row.call_sign || '-'})</td>
                 <td style={{ padding: '6px 8px', color: COLORS.textSecondary }} title={(row.cargo_names || []).join(', ')}>
                   {(row.cargo_names?.length ? cargoSummary(row.cargo_names, 3) : row.cargo_name) || '-'}
+                  {' '}<DemoChip entries={demo.ofShip(row.call_sign)} />
                 </td>
                 <td style={{ padding: '6px 8px', color: COLORS.textDim }}>{periodLabel(row)}</td>
                 <td style={{ padding: '6px 8px', color: COLORS.textDim }}>{row.acknowledged_by || '-'}</td>
@@ -266,6 +270,10 @@ export default function BerthOccupiedList({ scope }) {
                       <span style={{ color: VERDICT_COLOR[row.status] ?? COLORS.textPrimary, fontSize: '12px', fontWeight: 700 }}>
                         {row.status}
                       </span>
+                      {row.status !== '적합' && (() => {
+                        const d = demo.around(row.call_sign, row.wharf_name);
+                        return d.any ? <DemoChip derived entries={[...d.own, ...d.near]} /> : null;
+                      })()}
                       <button
                         type="button"
                         onClick={() => requestConsole(row.call_sign, { chem_id: row.cargo_chem_id, name: row.cargo_name }, {

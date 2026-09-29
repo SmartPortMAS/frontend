@@ -8,6 +8,8 @@ import useSensorStore from '../stores/useSensorStore';
 import { COLORS } from '../utils/constants';
 import { cargoNames, cargoSummary } from '../utils/cargoText';
 import HelpTip from '../components/common/HelpTip';
+import DemoChip from '../components/common/DemoChip';
+import { useDemoCargo } from '../utils/demoCargo';
 import BerthAssignmentMap from '../components/dashboard/BerthAssignmentMap';
 import BerthOccupiedList from '../components/dashboard/BerthOccupiedList';
 import AgentConsole from '../components/dashboard/AgentConsole';
@@ -109,6 +111,7 @@ function UpcomingSection() {
   }, [reloadKey]);
 
   const requestConsole = useSensorStore((st) => st.requestConsole);
+  const demo = useDemoCargo();
   // 판정 감시 작업은 10분마다 "지금 항내에 있는 배"만 훑는다. 아직 오지 않은 배는 관제사가
   // 여기서 직접 판정을 요청한다 — 결과는 판정 이력에 남고 표가 다시 읽는다.
   const setJudgeBusy = useSensorStore((st) => st.setJudgeBusy);
@@ -270,8 +273,11 @@ function UpcomingSection() {
                 </td>
                 <td style={{ ...td, whiteSpace: 'nowrap', color: r.report_type === '최종' ? COLORS.textPrimary : COLORS.textSecondary }}>{r.report_type || '-'}</td>
                 {/* 이 입항 건에 단 화물 전부 — 입항 후 위치 화면과 같은 키(입항 건)라 같은 화물이다 */}
-                <td style={{ ...td, maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={cargoNames(r.cargos).join(', ')}>
-                  {r.cargos?.length ? cargoSummary(r.cargos, 3) : <span style={{ color: COLORS.textDim }}>미확인</span>}
+                <td style={{ ...td, maxWidth: 200 }} title={cargoNames(r.cargos).join(', ')}>
+                  <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {r.cargos?.length ? cargoSummary(r.cargos, 3) : <span style={{ color: COLORS.textDim }}>미확인</span>}
+                  </div>
+                  <DemoChip entries={demo.ofShip(r.call_sign)} />
                 </td>
                 <td style={td}>
                   <div>{r.wharf_name || r.facility_name}</div>
@@ -295,6 +301,10 @@ function UpcomingSection() {
                     <div title={(r.assessment.reasons || []).join('\n')}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <LevelPill level={r.assessment.level} />
+                        {r.assessment.level !== '적합' && (() => {
+                          const d = demo.around(r.call_sign, r.wharf_name || r.facility_name);
+                          return d.any ? <DemoChip derived entries={[...d.own, ...d.near]} /> : null;
+                        })()}
                         <button
                           type="button"
                           onClick={() => requestConsole(r.call_sign, r.chem_id ? { chem_id: r.chem_id, name: r.cargo_name } : null, {

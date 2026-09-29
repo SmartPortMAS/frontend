@@ -9,6 +9,8 @@ import { ONSAN_BERTHS, onsanAdjacentBerthNames } from '../../utils/geoUtils';
 import ReasoningGraph from './ReasoningGraph';
 import ConflictNetworkGraph from './ConflictNetworkGraph';
 import HelpTip from '../common/HelpTip';
+import DemoChip from '../common/DemoChip';
+import { useDemoCargo } from '../../utils/demoCargo';
 import ConflictBasisList from '../common/ConflictBasisList';
 import { FaShieldAlt, FaCheckCircle, FaTimesCircle, FaQuestionCircle } from 'react-icons/fa';
 
@@ -76,6 +78,7 @@ function shortBasis(d) {
 }
 
 export default function SafetyGatesPanel() {
+  const demo = useDemoCargo();
   const { assessSafetyVerdict, assessSafetyGates } = useOnsanApi();
   // 이 패널의 판정 결과는 DashboardPage "최근 안전 심사" KPI가 참조하므로
   // 여기서만 전역 스토어(gateAssessment)에 반영한다 — 다른 화면에서 선박을
@@ -577,6 +580,12 @@ export default function SafetyGatesPanel() {
                       marginLeft: '8px', fontSize: '11px', color: COLORS.red,
                       border: `1px solid ${COLORS.red}`, borderRadius: '4px', padding: '1px 6px',
                     }}>{g.severity === 'BLOCK' ? '같이 두면 안 됨' : '확인 필요'}</span>
+                    {demo.isInjectedAt(g.detail?.adjacentCargoName, berths) && (
+                      <DemoChip
+                        style={{ marginLeft: 6 }}
+                        entries={demo.list.filter((e) => e.cargo_name === g.detail?.adjacentCargoName)}
+                      />
+                    )}
                     <div style={{ color: COLORS.textSecondary, marginTop: '3px' }}>{plainReason(g.detail)}</div>
                     <div style={{ color: COLORS.textDim, fontSize: '11px', marginTop: '3px' }}>근거 · {shortBasis(g.detail)}</div>
                   </div>

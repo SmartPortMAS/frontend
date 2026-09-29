@@ -11,6 +11,8 @@ import { simulateMooring } from '../../utils/mooringPhysics';
 import { alertId, typeLabel } from '../../utils/alertUtils';
 import AgentChip from '../../utils/AgentChip';
 import ConflictBasisList from '../common/ConflictBasisList';
+import DemoChip from '../common/DemoChip';
+import { useDemoCargo } from '../../utils/demoCargo';
 import { fetchAlternativeBerths, estimateEta, estimateBerthRelease } from '../../api/backendAdapter';
 
 const RISK_COLORS = {
@@ -84,6 +86,7 @@ const DRAUGHT_VERDICT_STYLE = {
 };
 
 export default function VesselDetailPanel() {
+  const demo = useDemoCargo();
   const vessel = useSensorStore((s) => s.selectedVessel);
   const navigate = useNavigate();
   const [moorSim, setMoorSim] = useState(null);
@@ -218,11 +221,14 @@ export default function VesselDetailPanel() {
             ? (
               <span>
                 {vessel.cargos.map((c) => (
-                  <span key={c.chem_id} style={{ display: 'block' }}>{c.name} ({c.un_no})</span>
+                  <span key={c.chem_id} style={{ display: 'block' }}>
+                    {c.name} ({c.un_no}){' '}
+                    {c.is_demo && <DemoChip entries={demo.ofShip(vessel.callsgn).filter((e) => e.cargo_name === c.name)} />}
+                  </span>
                 ))}
               </span>
             )
-            : `${vessel.cargo.name} (${vessel.cargo.un_no})`)
+            : <span>{vessel.cargo.name} ({vessel.cargo.un_no}) <DemoChip entries={demo.ofShip(vessel.callsgn)} /></span>)
           : vessel.liquid_by_ship_type === true ? '액체화물선 · 화물 미확인'
             : vessel.liquid_by_ship_type === false ? '일반화물' : '미확인'}
       </Row>

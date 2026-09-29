@@ -3,6 +3,8 @@ import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS } from '../../utils/constants';
 import HelpTip from '../common/HelpTip';
+import DemoChip from '../common/DemoChip';
+import { useDemoCargo } from '../../utils/demoCargo';
 import { cargoNames, cargoSummary } from '../../utils/cargoText';
 
 const formatKST = (utcString) => {
@@ -107,6 +109,7 @@ function compareVessels(a, b, getValue) {
 }
 
 export default function PortCallTable() {
+  const demo = useDemoCargo();
   const { data } = useDashboardData();
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
 
@@ -271,6 +274,7 @@ export default function PortCallTable() {
                   </td>
                   <td style={{ ...cellStyle, color: cargo.dim ? COLORS.textDim : COLORS.textPrimary }} title={cargo.title}>
                     {cargo.text}
+                    {' '}<DemoChip entries={demo.ofShip(v.callsgn)} />
                   </td>
                   <td style={cellStyle}>
                     {v.berth
