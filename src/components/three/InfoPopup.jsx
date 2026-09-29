@@ -101,7 +101,8 @@ export default function InfoPopup({ object, onClose }) {
 
             {type === 'Ship' && (
               <div className="hud-details">
-                <Row label="배정 선석" value={ONSAN_BERTHS[object.berth]?.name || object.berth || '미배정'} />
+                {/* AIS 위치로 본 접안 선석 — 배정이 아니다(2026-09-29 라벨 수정) */}
+                <Row label="접안 선석" value={ONSAN_BERTHS[object.berth]?.name || object.berth || '접안 안 함'} />
                 <Row label="화물" value={object.cargoType || '미확인'} />
                 {/* 적재량은 수집 소스가 없다(useLiveTwinShips: cargoAmount=null).
                     예전엔 "0 / 50,000 t" + 0% 진행바를 그렸는데, 50,000 은 근거 없는

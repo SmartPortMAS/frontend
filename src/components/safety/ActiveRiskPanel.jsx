@@ -70,7 +70,12 @@ export default function ActiveRiskPanel() {
   // 헤더 경고 벨에는 전량 그대로 남는다 — 화면에서 지우는 게 아니라 자리를 가린다.
   const allAlerts = data?.alerts ?? [];
   const navigate = useNavigate();
-  const alerts = useMemo(() => allAlerts.filter((a) => a.berth_name), [allAlerts]);
+  // [2026-09-29] 참고(INFO — 판정에 쓰지 않는 IMDG 부두 간 격리 등)는 선석 카드에서 뺀다. 3부두 카드가
+  //   참고 5줄과 그래프 경로로 채워져 '인접 선석 혼재' 위험처럼 보였다. 몇 건인지는 아래에 적는다.
+  const alerts = useMemo(() => allAlerts.filter((a) => a.berth_name && a.level !== 'INFO'), [allAlerts]);
+  const referenceCount = allAlerts.filter((a) => a.level === 'INFO').length;
+  // 이 화면에서는 헤더 벨이 숨으므로, 선석이 없는 경고가 있다는 사실만은 여기서 알린다.
+  const noBerthCount = allAlerts.filter((a) => !a.berth_name && a.level !== 'INFO').length;
   const vessels = data?.real_traffic ?? [];
   const berths = useMemo(() => groupAlertsByBerth(alerts), [alerts]);
 
@@ -104,6 +109,13 @@ export default function ActiveRiskPanel() {
 
       <div style={{ fontSize: '12.5px', color: COLORS.textSecondary, marginBottom: '10px' }}>
         경고 <strong>{alerts.length}</strong> · 미확인 <strong style={{ color: unackedTotal ? COLORS.red : COLORS.textSecondary }}>{unackedTotal}</strong>
+        {(noBerthCount > 0 || referenceCount > 0) && (
+          <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginTop: '3px' }}>
+            {noBerthCount > 0 && `계류시설 미상 ${noBerthCount}건은 대시보드 경고 벨에서 봅니다`}
+            {noBerthCount > 0 && referenceCount > 0 && ' · '}
+            {referenceCount > 0 && `판정에 쓰지 않는 참고 ${referenceCount}건(부두 간 IMDG 격리 등)은 뺐습니다`}
+          </div>
+        )}
       </div>
 
       {berths.length === 0 ? (

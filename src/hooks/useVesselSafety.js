@@ -35,11 +35,20 @@ function toPanelShape(result) {
     })),
     checklist: result.explanation?.checklist || [],
     summary: result.explanation?.summary || '',
+    // [2026-09-29] 확인 필요('대상 — 이유')와 화물 특성(LLM 1~2문장)
+    needs_check: result.explanation?.needs_check || [],
+    // [2026-09-29] 등급의 근거 — 백엔드가 **모든 화물**에서 모아 화물 이름을 붙인 줄(verdict_basis).
+    //   예전 패널은 gates_hit(대표 화물의 충돌만 프론트가 다시 조립)을 보여줘, 다른 화물의 충돌이 빠졌다.
+    verdict_basis: result.explanation?.basis || [],
+    // 화물 특성·유해성·체크리스트는 대표 화물 하나로 만든다 — 누구 기준인지 제목에 적는다.
+    governing_name: result.target_cargo_name || '',
+    profile: result.explanation?.profile || '',
     hazards: result.explanation?.reasoning || [],
     basis: result.risk_level_basis,
     msds_sections_used: result.msds_sections_used || [],
     // [2026-09-25] 화물별 판정(여러 종을 실은 배). 대표 등급은 is_governing 인 화물의 것.
     cargo_verdicts: result.cargo_verdicts || [],
+    onboard_conflicts: result.onboard_conflicts || [],
     is_local_fallback: Boolean(result.is_local_fallback),
     source: result.source,
   };
@@ -110,6 +119,9 @@ export default function useVesselSafety(vessel) {
       // chem_id 도 넘긴다 — 화물 목록과 같은 키로 대표 화물을 식별해야 중복 판정이 안 생긴다.
       chem_id: effCargo?.chem_id || null,
       cargo_name: cargoName, cas_no: cargoCasNo, adjacent_operations: adjacent, extra_cargos: extraCargos,
+      // 호출부호 — 백엔드가 이 배의 입항 건 신고에서 하역방식을 채운다. 없으면 용기등급 Ⅰ 화물마다
+      // "하역방식 신고가 없어"가 확인 필요로 떴다(신고엔 '펌프'가 있다, 2026-09-29).
+      call_sign: callSign,
     };
 
     // 서술이 먼저 도착할 수도 있다(네트워크 상황). 그때 늦게 온 판정이 서술을
@@ -147,7 +159,7 @@ export default function useVesselSafety(vessel) {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargoName, cargoCasNo, berth, isLiquid, adjacentKey, extraKey]);
+  }, [cargoName, cargoCasNo, berth, isLiquid, adjacentKey, extraKey, callSign]);
 
   // 액체화물선이 아니면 판정 대상이 아니다. 액체화물선인데 화물을 모르면 판단불가.
   if (!isLiquid) return { assessment: EMPTY, loading: false, narrativeLoading: false };
