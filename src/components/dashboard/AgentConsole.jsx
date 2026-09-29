@@ -11,6 +11,8 @@ import { fetchPendingApprovals, postAcknowledgement } from '../../api/backendAda
 import { COLORS, OPERATOR_NAME } from '../../utils/constants';
 import { ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 import { cargoSummary } from '../../utils/cargoText';
+import DemoChip from '../common/DemoChip';
+import { useDemoCargo } from '../../utils/demoCargo';
 
 // 기록된 판정 카드 — 표와 같은 색·같은 말
 const LEVEL_COLOR = { '적합': COLORS.teal, '주의': COLORS.yellow, '부적합': COLORS.red, '판정불가': COLORS.yellow };
@@ -502,6 +504,9 @@ export default function AgentConsole({ mode = 'qa' }) {
   const [qaCargoOff, setQaCargoOff] = useState(false);
   const qaCargo = qaCargoOff ? null : (target?.cargo?.name || selectedVessel?.cargo?.name || null);
 
+  const demo = useDemoCargo();
+  const demoAround = demo.around(target?.callsgn, target?.presence_berth_name ?? null);
+
   const messages = useMemo(
     () => toMessages({ orchestration, berthWeather, vessel: target }),
     [orchestration, berthWeather, target]
@@ -714,6 +719,15 @@ export default function AgentConsole({ mode = 'qa' }) {
                 {berthNow || '선석 미확인'} · {cargoSummary(target.cargos?.length ? target.cargos : [target.cargo].filter(Boolean)) || '화물 미확인'}
                 {target.draught_m ? ` · 흘수 ${target.draught_m} m` : ''}
               </div>
+              {demoAround.any && (
+                <div style={{ fontSize: 11, color: COLORS.textSecondary, marginTop: 4, display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <DemoChip derived={!demoAround.own.length} entries={[...demoAround.own, ...demoAround.near]} />
+                  <span>
+                    {[...new Set([...demoAround.own, ...demoAround.near].map((e) => `${e.cargo_name}${e.wharf ? `(${e.wharf})` : ''}`))].join(', ')}
+                    {' '}— 시연을 위해 넣은 화물입니다
+                  </span>
+                </div>
+              )}
             </div>
             {loading && (
               <span style={{ color: COLORS.info, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
