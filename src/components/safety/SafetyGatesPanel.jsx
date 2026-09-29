@@ -10,7 +10,7 @@ import ReasoningGraph from './ReasoningGraph';
 import ConflictNetworkGraph from './ConflictNetworkGraph';
 import HelpTip from '../common/HelpTip';
 import DemoChip from '../common/DemoChip';
-import { normKey } from '../../hooks/useVesselThread';
+import useVesselThread, { normKey } from '../../hooks/useVesselThread';
 import { useDemoCargo } from '../../utils/demoCargo';
 import ConflictBasisList from '../common/ConflictBasisList';
 import { FaShieldAlt, FaCheckCircle, FaTimesCircle, FaQuestionCircle } from 'react-icons/fa';
@@ -113,6 +113,11 @@ export default function SafetyGatesPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chemicals]);
   const [showAllGates, setShowAllGates] = useState(false);
+  // [2026-09-29 밤] 두 가지 쓰임을 머리에서 고른다(현우: "선박 판정이 이미 혼재 에이전트를 돌리는데 이 화면은 무엇인가").
+  //   ship   판정 근거 — 고른 배를 그 배의 선석 · 화물 전부 · 실제 이웃 화물로 심사한다. 선박 판정의 혼재 단계와 같은
+  //          에이전트 · 같은 입력이라, 판정의 결론을 화물쌍 · 규정 그래프로 펼쳐 보는 자리다.
+  //   whatif 가정 심사 — 화물 · 선석 · 이웃 화물을 직접 골라 본다(재배정 검토, 규정 확인). 판정 이력에는 남지 않는다.
+  const [mode, setMode] = useState('ship');
 
   // ── 재항 선박에서 불러오기 ────────────────────────────────────────────────
   // 지금까지는 화물·선석을 사람이 골라 넣어야 했다. 실제 관제는 "지금 저 배가
@@ -145,7 +150,10 @@ export default function SafetyGatesPanel() {
     return [...m.values()];
   })();
   const berthedVessels = berthedShips.slice(0, 60);
-  const berthedTotal = berthedShips.length;
+  // 선명 — 화물 행에는 호출부호만 있어 선박위치 · 판정 자료에서 찾는다
+  const { options: threadOptions, thread } = useVesselThread();
+  const nameOf = (cs) => threadOptions.find((o) => normKey(o.callsgn) === normKey(cs))?.name
+    || (dash?.real_traffic || []).find((v) => normKey(v.callsgn) === normKey(cs))?.vessel_name || cs;
 
   // 불러온 배 — 이 배의 나머지 화물과 백엔드 이웃 화물(선박 상세 패널·판정 잡과 같은 인접 계산)을
   // 심사에 싣는다. 사람이 위 칸을 바꾸면 수동 입력으로 돌아간다(null).
@@ -187,7 +195,7 @@ export default function SafetyGatesPanel() {
     }));
     if (!main) { setShipLoad(null); return; }
     const load = {
-      callsgn: ship.callsgn, berth: ship.facility_name, main: main.chem_id,
+      callsgn: ship.callsgn, name: nameOf(ship.callsgn), berth: ship.facility_name, main: main.chem_id,
       names: identified.map((r) => r.cargo_name || r.chem_id),
       unidentified: ship.rows.length - ship.rows.filter((r) => r.chem_id).length,
       extras: identified.slice(1).map((r) => ({ chem_id: r.chem_id, cas_no: r.cas_no ?? null })),
@@ -198,8 +206,36 @@ export default function SafetyGatesPanel() {
       .then((list) => setShipLoad((s) => (s === load || s?.callsgn === load.callsgn ? { ...s, adjacent: list } : s)))
       .catch(() => setShipLoad((s) => (s?.callsgn === load.callsgn ? { ...s, adjacent: null } : s)));
   };
-  // 폼이 불러온 배 그대로일 때만 그 배의 화물·이웃을 싣는다.
-  const shipActive = shipLoad && form.cargo_chem_id === shipLoad.main && form.berth_name === shipLoad.berth;
+  // 아직 접안 전인 배(입항 전 · 접안 직전) — PORT-MIS 사전배정 선석 · 입항 건 화물로 싣는다(선박 판정 표와 같은 입력)
+  const loadFromArrival = (arr) => {
+    const identified = (arr.cargos || []).filter((c) => c.chem_id)
+      .filter((c, i, list) => list.findIndex((x) => x.chem_id === c.chem_id) === i);
+    const main = identified[0];
+    const berth = arr.wharf_name || arr.facility_name;
+    if (!main || !berth) { setShipLoad(null); return false; }
+    setForm((f) => ({ ...f, cargo_chem_id: main.chem_id, berth_name: berth, adjacent_berth: '', adjacent_chem_id: '' }));
+    const load = {
+      callsgn: arr.call_sign, name: arr.vessel_name || arr.call_sign, berth, main: main.chem_id,
+      names: identified.map((c) => c.name || c.chem_id),
+      unidentified: (arr.cargos || []).length - identified.length,
+      extras: identified.slice(1).map((c) => ({ chem_id: c.chem_id, cas_no: c.cas_no ?? null })),
+      adjacent: undefined,
+    };
+    setShipLoad(load);
+    fetchAdjacentCargos({ wharf_name: berth, call_sign: arr.call_sign })
+      .then((list) => setShipLoad((s) => (s?.callsgn === load.callsgn ? { ...s, adjacent: list } : s)))
+      .catch(() => setShipLoad((s) => (s?.callsgn === load.callsgn ? { ...s, adjacent: null } : s)));
+    return true;
+  };
+  /** 추적 중인 배를 싣는다 — 지금 접안해 있으면 재항 화물, 아니면 입항 신고 */
+  const loadTracked = (cs) => {
+    const idx = berthedVessels.findIndex((sh) => normKey(sh.callsgn) === normKey(cs));
+    if (idx !== -1) { loadFromBerthed(idx); return true; }
+    if (thread?.arrival && normKey(thread.arrival.call_sign) === normKey(cs)) return loadFromArrival(thread.arrival);
+    return false;
+  };
+  // 폼이 불러온 배 그대로일 때만 그 배의 화물·이웃을 싣는다(판정 근거 모드에서만).
+  const shipActive = mode === 'ship' && shipLoad && form.cargo_chem_id === shipLoad.main && form.berth_name === shipLoad.berth;
 
   // ── 경고에서 넘어온 선석 자동 채움 ────────────────────────────────────────
   // 오른쪽 "현재 위험 선석" 카드나 헤더 경고 벨에서 선석을 누르면 여기로 온다.
@@ -213,6 +249,7 @@ export default function SafetyGatesPanel() {
   useEffect(() => {
     if (!prefill?.berth_name) return undefined;
     setShipLoad(null);   // 경고가 지목한 조합을 재현한다 — 앞서 불러온 배의 입력을 섞지 않는다
+    setMode('whatif');
     const rows = dash?.berth_cargo ?? [];
     const atBerth = rows.filter((r) => r.facility_name === prefill.berth_name);
     const [flaggedA, flaggedB] = prefill.chem_ids ?? [];
@@ -330,18 +367,25 @@ export default function SafetyGatesPanel() {
   // [2026-09-29 밤] 선박 추적 띠에서 넘어오면 그 배를 불러와 바로 심사한다 — 같은 배를 다시 찾지 않게
   const tracked = useSensorStore((s) => s.trackedVessel);
   const threadFocus = useSensorStore((s) => s.threadFocus);
-  const trackedName = tracked && shipLoad && normKey(tracked.callsgn) === normKey(shipLoad.callsgn) ? tracked.vessel_name : null;
+  const trackedName = tracked && shipLoad && normKey(tracked.callsgn) === normKey(shipLoad.callsgn) ? (tracked.vessel_name || shipLoad.name) : shipLoad?.name || null;
   const handledFocus = useRef(null);
   const autoRun = useRef(null);
   useEffect(() => {
     if (threadFocus?.target !== 'cargo' || !tracked?.callsgn || handledFocus.current === threadFocus.at) return;
-    const idx = berthedVessels.findIndex((s) => normKey(s.callsgn) === normKey(tracked.callsgn));
-    if (idx === -1) return;
+    setMode('ship');
+    if (!loadTracked(tracked.callsgn)) return;
     handledFocus.current = threadFocus.at;
     autoRun.current = tracked.callsgn;
-    loadFromBerthed(idx);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadFocus?.at, tracked?.callsgn, berthedVessels.length]);
+  }, [threadFocus?.at, tracked?.callsgn, berthedVessels.length, thread?.arrival?.call_sign]);
+  // 이 화면에 들어왔을 때 추적 중인 배가 있으면 판정 근거 모드에 그 배를 실어 둔다(심사는 누를 때)
+  const seeded = useRef(null);
+  useEffect(() => {
+    if (mode !== 'ship' || !tracked?.callsgn || seeded.current === tracked.callsgn) return;
+    if (shipLoad && normKey(shipLoad.callsgn) === normKey(tracked.callsgn)) { seeded.current = tracked.callsgn; return; }
+    if (loadTracked(tracked.callsgn)) seeded.current = tracked.callsgn;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, tracked?.callsgn, berthedVessels.length, thread?.arrival?.call_sign]);
   useEffect(() => {
     if (!autoRun.current || !shipActive || !Array.isArray(shipLoad?.adjacent)) return;
     if (normKey(shipLoad.callsgn) !== normKey(autoRun.current)) return;
@@ -349,6 +393,11 @@ export default function SafetyGatesPanel() {
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shipActive, shipLoad?.adjacent]);
+
+  const toShip = () => {
+    setMode('ship');
+    if (tracked?.callsgn && !(shipLoad && normKey(shipLoad.callsgn) === normKey(tracked.callsgn))) loadTracked(tracked.callsgn);
+  };
 
   const style = RISK_STYLE[result?.risk_level] || { color: COLORS.textDim };
   const hits = (result?.gates || []).filter((g) => g.hit);
@@ -395,13 +444,19 @@ export default function SafetyGatesPanel() {
         <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
           <FaShieldAlt style={{ marginRight: '8px', color: COLORS.teal }} />화물 혼재 심사
           <HelpTip title="화물 혼재 심사">
-            <div>대상 선석의 화물과 같은 선석·인접 선석 화물의 조합 위험을 봅니다.</div>
+            <div><strong>판정 근거</strong> — 고른 선박을 그 배의 선석 · 화물 전부 · 실제 이웃 화물로 심사합니다. 선박 판정의 혼재 단계와 같은 에이전트 · 같은 입력이라,
+              판정의 결론을 화물쌍과 규정 그래프로 펼쳐 봅니다.</div>
+            <div style={{ marginTop: 4 }}><strong>가정 심사</strong> — 화물 · 선석 · 이웃 화물을 직접 골라 봅니다(재배정 검토 · 규정 확인). 판정 이력에는 남지 않습니다.</div>
+            <div style={{ marginTop: 4 }}>대상 선석의 화물과 같은 선석·인접 선석 화물의 조합 위험을 봅니다.</div>
             <div style={{ marginTop: 4 }}>인접 선석 — MSDS 반응성 · 산적 호환성그룹 / 같은 선석 동시 취급 — IMDG 격리 · 포장등급.
               IMDG 격리표는 배 한 척 안의 적재 규정이라 부두 사이 판정에서는 참고로만 표시합니다.</div>
             <div style={{ marginTop: 4, color: COLORS.textSecondary }}>흘수·DWT 에 따른 접안 가능성은 우하단 "에이전트 판단 과정"에서 선석 검증 에이전트가 검토합니다.</div>
           </HelpTip>
         </h3>
-        <span style={{ fontSize: '12.5px', color: COLORS.textSecondary, fontWeight: 600 }}>혼재 · 격리 · 포장등급</span>
+        <div className="seg" role="tablist" aria-label="심사 방식">
+          <button type="button" role="tab" aria-selected={mode === 'ship'} className={mode === 'ship' ? 'on' : ''} onClick={toShip}>판정 근거</button>
+          <button type="button" role="tab" aria-selected={mode === 'whatif'} className={mode === 'whatif' ? 'on' : ''} onClick={() => setMode('whatif')}>가정 심사</button>
+        </div>
       </div>
 
       {/* 경고에서 넘어왔을 때 무엇이 채워졌는지 밝힌다 — 조용히 바뀌면 뭘 심사하는지 모른다 */}
@@ -422,54 +477,46 @@ export default function SafetyGatesPanel() {
         </div>
       )}
 
-      {/* 재항 선박에서 불러오기 — 수기 입력 대신 실제 붙어 있는 배를 고른다.
-          목록 기준(PORT-MIS 재항 + 위험물 신고, 화물은 선종 기반 합성) 설명은
-          화면에서 뺐다 — 관제사에게는 소음이고, 데이터 계보는 설계문서 몫이다
-          (2026-08-21 피드백). */}
-      {berthedVessels.length > 0 && (
-        <div style={{
-          marginBottom: '12px', background: COLORS.card,
-          border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '10px 12px',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '12px', color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>
-              재항 선박에서 불러오기
-            </span>
-            <select
-              defaultValue=""
-              onChange={(e) => { loadFromBerthed(e.target.value); e.target.value = ''; }}
-              style={{ ...inputStyle, flex: 1 }}
-            >
-              <option value="">선박 선택</option>
-              {berthedVessels.map((s, i) => {
-                const names = cargoNames(s.rows.map((r) => r.cargo_name || '물질 미확인'));
-                return (
-                  <option key={`${s.callsgn}-${s.facility_name}`} value={i}>
-                    {s.facility_name} · {s.callsgn} · {names[0]}{names.length > 1 ? ` 외 ${names.length - 1}종` : ''}
-                    {s.rows.some((r) => r.chem_id) ? '' : ' (판정 불가)'}
-                  </option>
-                );
-              })}
-            </select>
-            <span style={{ fontSize: '11px', color: COLORS.textDim, whiteSpace: 'nowrap' }}>
-              {berthedVessels.length} / {berthedTotal}척
-            </span>
-          </div>
-          {shipActive && (
-            <div style={{ fontSize: '12px', color: shipLoad.adjacent === null ? COLORS.red : COLORS.teal, marginTop: '6px' }}>
-              <strong>{trackedName || shipLoad.callsgn}</strong>
-              <span title={shipLoad.names.join(', ')}> · 화물 {shipLoad.names.length}종</span>
-              {shipLoad.unidentified > 0 && ` · 미확인 ${shipLoad.unidentified}건 제외`}
-              {' · '}
-              {shipLoad.adjacent === undefined ? '이웃 화물 조회 중…'
-                : shipLoad.adjacent === null ? '이웃 화물 조회 실패'
-                  : `이웃 화물 ${shipLoad.adjacent.length}건`}
+      {/* 판정 근거 — 고른 배 한 척의 선석 · 화물 · 이웃 화물(선박 판정의 혼재 단계와 같은 입력). 손으로 고치는 칸이 없다. */}
+      {mode === 'ship' && (
+        <div className="sg-ship">
+          <select
+            id="safety-ship-pick"
+            value=""
+            onChange={(e) => { if (e.target.value !== '') loadFromBerthed(e.target.value); }}
+            aria-label="재항 선박"
+          >
+            <option value="">{shipLoad ? '다른 재항 선박' : '재항 선박 고르기'}</option>
+            {berthedVessels.map((sh, i) => {
+              const names = cargoNames(sh.rows.map((r) => r.cargo_name || '물질 미확인'));
+              return (
+                <option key={`${sh.callsgn}-${sh.facility_name}`} value={i}>
+                  {sh.facility_name} · {nameOf(sh.callsgn)} · {names[0]}{names.length > 1 ? ` 외 ${names.length - 1}종` : ''}
+                  {sh.rows.some((r) => r.chem_id) ? '' : ' (판정 불가)'}
+                </option>
+              );
+            })}
+          </select>
+          {shipLoad ? (
+            <div className="sg-facts">
+              <span><em>선박</em><strong>{trackedName || shipLoad.callsgn}</strong></span>
+              <span><em>선석</em><strong>{shipLoad.berth}</strong></span>
+              <span title={shipLoad.names.join(', ')}><em>화물</em><strong>{shipLoad.names.length}종</strong>
+                {shipLoad.unidentified > 0 && <small> · 미확인 {shipLoad.unidentified}</small>}
+              </span>
+              <span className={shipLoad.adjacent === null ? 'bad' : ''}>
+                <em>이웃 화물</em>
+                <strong>{shipLoad.adjacent === undefined ? '…' : shipLoad.adjacent === null ? '조회 실패' : `${shipLoad.adjacent.length}건`}</strong>
+              </span>
             </div>
+          ) : (
+            <div className="sg-facts empty"><span>선박 추적 띠나 위 목록에서 선박을 고르면 그 배의 선석 · 화물 · 이웃 화물이 실립니다</span></div>
           )}
         </div>
       )}
 
-      {/* 입항 정보 폼 */}
+      {/* 가정 심사 — 화물 · 선석 · 이웃 화물을 직접 고른다 */}
+      {mode === 'whatif' && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '12px' }}>
         <label style={labelStyle}>화물
           <select value={form.cargo_chem_id} onChange={set('cargo_chem_id')} style={inputStyle} disabled={chemicals.length === 0}>
@@ -503,10 +550,11 @@ export default function SafetyGatesPanel() {
           </select>
         </label>
       </div>
+      )}
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
         <button
           onClick={run}
-          disabled={running || !form.cargo_chem_id || (shipActive && shipLoad.adjacent == null)}
+          disabled={running || !form.cargo_chem_id || (mode === 'ship' && (!shipActive || shipLoad.adjacent == null))}
           style={{
             marginLeft: 'auto',
             background: running ? COLORS.card : `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,

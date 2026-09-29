@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { FaShip, FaMapMarkerAlt, FaClipboardCheck, FaShieldAlt, FaCube, FaLock, FaLockOpen, FaTimes } from 'react-icons/fa';
+import { FaShip, FaMapMarkerAlt, FaClipboardCheck, FaShieldAlt, FaCube, FaLock, FaLockOpen, FaTimes, FaSearch } from 'react-icons/fa';
 import useSensorStore from '../../stores/useSensorStore';
 import useVesselThread from '../../hooks/useVesselThread';
+import VesselPicker from './VesselPicker';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 선박 추적 띠 (2026-09-29 밤)
@@ -28,7 +30,8 @@ export default function VesselTrail() {
   const trackVessel = useSensorStore((s) => s.trackVessel);
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
   const requestThreadFocus = useSensorStore((s) => s.requestThreadFocus);
-  const { thread, options } = useVesselThread();
+  const { thread } = useVesselThread();
+  const [finding, setFinding] = useState(false);
 
   const go = (step) => {
     if (step.key !== 'where') setSelectedVessel(null);   // 상세 패널이 다른 화면을 덮지 않게(추적은 그대로)
@@ -41,9 +44,11 @@ export default function VesselTrail() {
     navigate(step.path);
   };
 
-  const pick = (callsgn) => {
-    const o = options.find((x) => x.callsgn === callsgn);
-    trackVessel(o ? { callsgn: o.callsgn, vessel_name: o.name } : null);
+  // 선박 찾기에서 고르면 추적하고, 대시보드에 있으면 지도가 그 배로 간다
+  const pick = (v) => {
+    trackVessel(v);
+    setFinding(false);
+    if (pathname === '/') requestThreadFocus('where');
   };
 
   return (
@@ -56,25 +61,23 @@ export default function VesselTrail() {
             <span>{[thread.berth, STAGE_TEXT[thread.stage]].filter(Boolean).join(' · ') || thread.callsgn}</span>
           </div>
         ) : null}
-        <select
-          className="trail-pick"
-          aria-label="선박 선택"
-          value={tracked?.callsgn && options.some((o) => o.callsgn === tracked.callsgn) ? tracked.callsgn : ''}
-          onChange={(e) => pick(e.target.value)}
+        <button
+          type="button"
+          className={`trail-find${finding ? ' open' : ''}`}
+          onClick={() => setFinding((f) => !f)}
+          aria-expanded={finding}
+          aria-haspopup="dialog"
         >
-          <option value="">{thread ? '다른 선박' : '선박 선택'}</option>
-          {options.map((o) => (
-            <option key={o.callsgn} value={o.callsgn}>
-              {o.name} · {o.berth || '-'}{o.level ? ` · ${o.level}` : ''}
-            </option>
-          ))}
-        </select>
+          <FaSearch aria-hidden="true" /> {thread ? '다른 선박' : '선박 찾기'}
+        </button>
         {thread && (
           <button type="button" className="trail-clear" onClick={() => trackVessel(null)} title="선택 해제" aria-label="선택 해제">
             <FaTimes />
           </button>
         )}
       </div>
+
+      {finding && <VesselPicker current={tracked?.callsgn} onPick={pick} onClose={() => setFinding(false)} />}
 
       <ol className="trail-steps">
         {STEPS.map((step, i) => {

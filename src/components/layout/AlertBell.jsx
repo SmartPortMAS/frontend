@@ -20,7 +20,7 @@ import { FaExclamationTriangle, FaCheck, FaTimes, FaChevronRight } from 'react-i
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ALERT_OWNED_PATHS = ['/safety'];
-const LEVEL_TONE = { 부적합: COLORS.red, 주의: COLORS.yellow, 판정불가: COLORS.textSecondary };
+const LEVEL_TONE = { 부적합: COLORS.red, 주의: COLORS.yellow, 판정불가: COLORS.purple };   // 화면 공용 판정 색
 
 export default function AlertBell() {
   const { data } = useDashboardData();

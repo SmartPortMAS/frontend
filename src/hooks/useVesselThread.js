@@ -43,11 +43,17 @@ async function refresh() {
 const LEVEL_TONE = { 적합: 'ok', 주의: 'warn', 부적합: 'bad', 판정불가: 'unknown' };
 const LEVEL_RANK = { 부적합: 0, 판정불가: 1, 주의: 2, 적합: 3 };
 
-/** 판정 이유 문장에서 혼재 단계의 결과만 뽑는다 */
-function cargoStep(reasons) {
+/** 판정 이유 문장에서 혼재 단계의 결과만 뽑는다.
+ *  [2026-09-29 밤] '같은 선박 화물끼리 혼재 충돌 — 격리 적재 확인'은 혼재 심사가 '주의'로 낸다(선내 적부 확인).
+ *  이유 문장에 '충돌'이 있다고 늘 빨강 '충돌'로 적으면 혼재 심사 화면(주의)과 띠가 다른 말을 했다. */
+function cargoStep(reasons, level) {
   const text = (reasons || []).join(' ');
   if (!text) return null;
-  if (/혼재 충돌/.test(text)) return { value: '충돌', tone: 'bad' };
+  if (/혼재 충돌/.test(text)) {
+    return level === '부적합' && !/같은 선박 화물끼리/.test(text)
+      ? { value: '충돌', tone: 'bad' }
+      : { value: '주의', tone: 'warn' };
+  }
   if (/혼재 등급이 '주의'/.test(text)) return { value: '주의', tone: 'warn' };
   const m = text.match(/혼재 판정:([^.]*)/);
   if (m) {
@@ -94,13 +100,28 @@ export function threadOf(callsgn, data, traffic) {
     steps: {
       where: { value: where || '—', tone: where ? 'info' : 'none' },
       verdict: { value: level || '판정 전', tone: LEVEL_TONE[level] || 'none' },
-      cargo: cargoStep(reasons) || { value: '—', tone: 'none' },
+      cargo: cargoStep(reasons, level) || { value: '—', tone: 'none' },
       scene: { value: berth || '—', tone: berth ? 'info' : 'none' },
       gate: gate
         ? { value: gateLocked ? '잠김' : '해제', tone: gateLocked ? 'bad' : 'ok' }
         : { value: '—', tone: 'none' },
     },
   };
+}
+
+/** 호출부호 → 지금 판정 { level, stage } — 접안 중이면 선석 판정, 아니면 입항 판정.
+ *  지도 표식 고리·선석 현황판·선박 찾기가 같은 판정을 같은 색으로 칠하려고 한곳에서 만든다. */
+function verdictIndex(data) {
+  const m = new Map();
+  for (const r of data.arrivals) {
+    const k = normKey(r.call_sign);
+    if (k && r.assessment?.level) m.set(k, { level: r.assessment.level, stage: r.stage });
+  }
+  for (const s of slotsOf(data.berths)) {
+    const k = normKey(s.call_sign);
+    if (k && s.status) m.set(k, { level: s.status, stage: s.stage || '하역중' });
+  }
+  return m;
 }
 
 /** 고를 수 있는 선박 — 벗어난 판정이 위로 */
@@ -141,5 +162,9 @@ export default function useVesselThread() {
     [tracked?.callsgn, loadedAt, traffic],
   );
   const options = useMemo(() => candidates(shared), [loadedAt]);   // eslint-disable-line react-hooks/exhaustive-deps
-  return { thread, options, gates: shared.gates, refresh };
+  const verdicts = useMemo(() => verdictIndex(shared), [loadedAt]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return {
+    thread, options, verdicts, refresh,
+    gates: shared.gates, berths: shared.berths, arrivals: shared.arrivals, loaded: loadedAt > 0,
+  };
 }

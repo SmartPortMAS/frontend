@@ -88,6 +88,10 @@ const useSensorStore = create((set, get) => ({
   orchestration: null,
   selectedBerthGroup: null, // 지도에서 선석 클릭 시 기상 판정 패널과 연동
   setSelectedBerthGroup: (v) => set({ selectedBerthGroup: v }),
+  // [2026-09-29 밤] 선석 상세 서랍 — 지도의 선석 원·선석 현황판에서 연다(선석 이름).
+  //   접안 선박 · 부두 기상 · 최근 접안 · 재항 시간을 한 서랍에서 본다. 선박 상세와 같은 자리라 서로 닫는다.
+  selectedBerth: null,
+  setSelectedBerth: (name) => set(() => (name ? { selectedBerth: name, selectedVessel: null } : { selectedBerth: null })),
 
   // 트윈 HUD 접기 상태 — CCTV 를 접으면 그 아래 선박 목록이 따라 올라가야 한다.
   // 두 패널이 각자 접힘을 들고 있으면 위치가 어긋나므로 여기서 공유한다.
@@ -105,6 +109,7 @@ const useSensorStore = create((set, get) => ({
   selectedVessel: null,
   setSelectedVessel: (v) => set(() => ({
     selectedVessel: v,
+    ...(v ? { selectedBerth: null } : {}),
     ...(v?.callsgn ? { trackedVessel: { callsgn: String(v.callsgn).trim(), vessel_name: v.vessel_name || null } } : {}),
   })),
   // 다른 화면(배정현황 등)에서 "이 배를 협상 콘솔에서 처리해 달라"는 요청.

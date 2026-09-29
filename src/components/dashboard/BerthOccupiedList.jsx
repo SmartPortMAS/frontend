@@ -8,19 +8,19 @@ import DemoChip from '../common/DemoChip';
 import SyntheticChip from '../common/SyntheticChip';
 import { useDemoCargo } from '../../utils/demoCargo';
 import useSensorStore from '../../stores/useSensorStore';
+import { VERDICT_COLOR as SHARED_VERDICT_COLOR } from '../../utils/verdict';
 
+// 'MM.DD HH:mm' — 표 칸에 들어가게 짧게(예전 '2026. 9. 29. 12시 0분 0초'는 두 줄로 꺾였다)
 function formatKST(iso) {
-  return new Date(iso).toLocaleString('ko-KR', { hour12: false, timeZone: 'Asia/Seoul' });
+  const d = new Date(new Date(iso).getTime() + 9 * 3600000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getUTCMonth() + 1)}.${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
 }
 
 // 판정 등급 색 — 지도 팝업(BerthAssignmentMap VERDICT_BG)과 같은 값을 쓴다.
 // 두 화면이 같은 등급을 다른 색으로 칠하면 관제사가 둘을 대조할 수 없다.
-const VERDICT_COLOR = {
-  '적합': COLORS.teal,
-  '주의': COLORS.yellow,
-  '부적합': COLORS.red,
-  '판정불가': COLORS.yellow,
-};
+// [2026-09-29 밤] 화면 공용 판정 색(utils/verdict) — 판정불가는 보라로 통일
+const VERDICT_COLOR = SHARED_VERDICT_COLOR;
 
 // 실제 입출항(portmis_vessel 우선, 없으면 upa_port_call, call_sign 대조)을 쓴다.
 //
@@ -45,8 +45,8 @@ function periodLabel(row) {
       ? '(재항 중)'
       : new Date(dep).getTime() <= Date.now()
         ? `출항 ${formatKST(dep)}`
-        : `출항예정 ${formatKST(dep)}`;
-    return `입항 ${formatKST(row.actual_arrival_utc)} ~ ${departurePart}`;
+        : `${formatKST(dep)} 출항 예정`;
+    return `${formatKST(row.actual_arrival_utc)} 입항 → ${departurePart}`;
   }
   // PORT-MIS 입출항 신고가 아직 안 잡힌 배 — 위치 판정으로만 접안을 안다.
   if (row.berth_basis) {
@@ -97,7 +97,8 @@ function overdueLabel(row) {
 // 맞춰 GET /dashboard/berth-assignments 기준 점유 목록으로 바꿨다.
 
 // [2026-09-27] 선석 현황 페이지의 목록을 부품으로 떼어 선박 판정 화면(붙어 있는 배)에 붙였다.
-export default function BerthOccupiedList({ scope }) {
+// bare — 선박 판정 화면의 '하역 중' 탭 안에 들어갈 때(카드·제목 없이 표만)
+export default function BerthOccupiedList({ scope, bare = false }) {
   const [berths, setBerths] = useState([]);
   const [error, setError] = useState(null);
 
@@ -180,8 +181,8 @@ export default function BerthOccupiedList({ scope }) {
     .sort((a, b) => a.wharf_name.localeCompare(b.wharf_name, 'ko'));
 
   return (
-    <div className="glass-card">
-      <div className="glass-card-header">
+    <div className={bare ? undefined : 'glass-card'}>
+      {!bare && <div className="glass-card-header">
         <h3 className="glass-card-title" style={{ display: 'flex', alignItems: 'center' }}>
           접안 선박 · 온산 {rows.length}척
           <HelpTip title="접안 선박">
@@ -190,7 +191,7 @@ export default function BerthOccupiedList({ scope }) {
             판정이 없으면 [판정 요청]으로 판정해 이력에 남기고, [근거]로 왜 그 결론인지 봅니다. 입항 선박 표와 같은 버튼입니다.
           </HelpTip>
         </h3>
-      </div>
+      </div>}
       {error && <p style={{ color: COLORS.red, fontSize: '13px' }}>{error}</p>}
       {rows.length === 0 ? (
         <p style={{ color: COLORS.textDim, fontSize: '13px' }}>점유 중인 선석이 없습니다.</p>
@@ -205,7 +206,7 @@ export default function BerthOccupiedList({ scope }) {
               {/* '승인자'가 아니라 '확인자'다 — 이 시스템은 선석을 배정하지 않으므로
                   승인할 대상이 없다. 남는 기록은 "관제사가 이 판정을 봤다"뿐이고,
                   그 값은 acknowledged_by 로 내려온다(응답에 approved_by 는 없다). */}
-              <th style={{ padding: '6px 8px' }}>확인자</th>
+              <th style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>확인자</th>
               <th style={{ padding: '6px 8px', minWidth: 150 }}>판정</th>
             </tr>
           </thead>

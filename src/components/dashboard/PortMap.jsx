@@ -1,11 +1,12 @@
-import { useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, CircleMarker, Rectangle, Tooltip, Polyline, Polygon } from 'react-leaflet';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Circle, Rectangle, Tooltip, Polyline, Polygon } from 'react-leaflet';
 import useVesselSafety from '../../hooks/useVesselSafety';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { cargoSummary } from '../../utils/cargoText';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
+import useVesselThread, { normKey } from '../../hooks/useVesselThread';
+import { VERDICT_COLOR, berthKey, verdictColor } from '../../utils/verdict';
 import { ONSAN_BERTHS, ONSAN_ADJACENCY, ONSAN_WEATHER_GROUP, onsanDisplayPos, findBerthIdByName } from '../../utils/geoUtils';
 import {
   COLORS,
@@ -19,27 +20,27 @@ import {
 const SHIP_SVG_PATH =
   'M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v-2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.34-.42-.6-.5L20 10.62V6c0-1.1-.9-2-2-2h-3V1H9v3H6c-1.1 0-2 .9-2 2v4.62l-1.29.42c-.26.08-.48.26-.6.5s-.15.52-.06.78L3.95 19zM6 6h12v3.73l-6-1.94-6 1.94V6z';
 
-// 기호는 배 모양 하나로 통일한다 — "배 아이콘과 점, 두 종류"가 헷갈린다는
-// 피드백(2026-08-17). 대신 '아는 정보의 양'을 크기와 링으로 구분한다:
-//   큰 배 + 붉은 펄스 링 = 재항 화물까지 확인된 배 (클릭 → 안전 심사·선석 후보)
-//   작은 배             = 위치만 수신된 배 (색 = 상태, 빨강이면 선종상 액체화물선)
-// 실제 VTS/ECDIS 도 확인 수준이 다른 표적을 다른 기호가 아니라 같은 기호의
-// 속성(크기·색) 차이로 구분한다.
-const createVesselIcon = (vessel) => {
-  const confirmed = Boolean(vessel.cargo); // 화물까지 확인된 배
-  // 화물 미확인 액체화물선은 속이 빈 배로 그린다 — "꽉 찬 빨강(확인)" 과
-  // "빈 빨강(화물 미확인)" 은 링 유무보다 한눈에 갈린다(2026-08-21 피드백).
-  const hollow = !confirmed && vessel.is_liquid_cargo_vessel;
-  const status = NAV_STATUS[vessel.nav_status_category] || NAV_STATUS.UNKNOWN;
-  const color = vessel.is_liquid_cargo_vessel ? COLORS.red : status.color;
-  const size = confirmed ? 34 : 20;
-
+// 기호는 배 모양 하나로 통일한다(2026-08-17).
+// [2026-09-29 밤] 색 규칙을 다시 잡았다(현우: "빨간 배는 다 실데이터 액체화물선인가?").
+//   배 색 = 선종 — 남색은 PORT-MIS 선종이 액체화물선인 배(실데이터), 회색은 그 밖의 배.
+//   고리 색 = 판정 — 선박 판정·선석 현황판·추적 띠와 같은 색(부적합 빨강 · 주의 주황 · 판정불가 보라 · 적합 초록).
+// 예전엔 빨강 = 액체화물선, 큰 배 + 고리 = '화물 확인'이었는데, 화물 행은 선종 기반으로 채운 값이라
+// 크기·고리 구분이 뜻이 없었고, 빨강이 위험처럼 읽혔다. 지도는 이제 판정을 직접 보인다.
+const OTHER_SHIP = '#8A99A6';
+const createVesselIcon = (vessel, level, isTracked) => {
+  const liquid = Boolean(vessel.is_liquid_cargo_vessel || vessel.cargo);
+  const size = isTracked ? 36 : liquid ? 26 : 16;
+  const cls = [
+    'vessel-marker',
+    liquid ? 'vessel-marker--liquid' : 'vessel-marker--lite',
+    level ? 'vessel-marker--ring' : '',
+    level === '부적합' ? 'vessel-marker--alarm' : '',
+    isTracked ? 'vessel-marker--tracked' : '',
+  ].filter(Boolean).join(' ');
   const html = `
-    <div class="vessel-marker ${confirmed ? 'vessel-marker--danger' : 'vessel-marker--lite'}"
-         style="width:${size}px;height:${size}px;">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-           width="${size}" height="${size}"
-           fill="${hollow ? 'white' : color}" stroke="${color}" stroke-width="${hollow ? 1.7 : 0}">
+    <div class="${cls}" style="width:${size}px;height:${size}px;${level ? `--ring:${verdictColor(level)};` : ''}">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}"
+           fill="${liquid ? COLORS.navy : OTHER_SHIP}">
         <path d="${SHIP_SVG_PATH}"/>
       </svg>
     </div>`;
@@ -65,54 +66,6 @@ const formatKST = (utcString) => {
   });
 };
 
-function VesselPopup({ vessel }) {
-  const status = NAV_STATUS[vessel.nav_status_category] || NAV_STATUS.UNKNOWN;
-  return (
-    <div style={{ color: COLORS.textPrimary, minWidth: '190px', fontSize: '13px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-        <strong style={{ fontSize: '14px' }}>{vessel.vessel_name}</strong>
-        {vessel.is_liquid_cargo_vessel && (
-          <span style={{
-            background: COLORS.red, color: '#fff', borderRadius: '4px',
-            padding: '1px 6px', fontSize: '11px', fontWeight: 'bold',
-          }}>위험물</span>
-        )}
-      </div>
-      <p style={{ margin: '2px 0' }}><strong>호출부호</strong> {vessel.callsgn} · <strong>MMSI</strong> {vessel.mmsi}</p>
-      <p style={{ margin: '2px 0' }}>
-        <strong>상태</strong>{' '}
-        <span style={{ color: status.color, fontWeight: 'bold' }}>{status.label}</span>
-        {' '}· <strong>속력</strong> {vessel.sog} kn
-      </p>
-      <p style={{ margin: '2px 0' }}>
-        <strong>{vessel.position_source === 'REAL_AIS' ? '위치 수신' : '입항'}</strong>{' '}
-        {formatKST(vessel.arrival_at_utc)} (KST)
-      </p>
-      {vessel.cargo && (
-        <p style={{ margin: '2px 0' }}>
-          <strong>화물</strong> {vessel.cargos?.length > 1
-            ? cargoSummary(vessel.cargos, 3)
-            : `${vessel.cargo.name} (${vessel.cargo.un_no})`}
-          {vessel.cargo_source === 'ASSUMED' && (
-            <span style={{
-              marginLeft: 5, padding: '0 5px', borderRadius: 3, fontSize: 10,
-              background: COLORS.cardHover, color: COLORS.textDim, border: `1px solid ${COLORS.border}`,
-            }}>가정</span>
-          )}
-        </p>
-      )}
-      {vessel.position_source === 'REAL_AIS' && (
-        <p style={{ margin: '4px 0 0', fontSize: '11px', color: COLORS.textDim }}>
-          {vessel.cargo_source === 'REAL'
-            ? '선박·위치·화물 모두 실측 (항만공사 선박위치 + 재항 신고 위험물)'
-            : '선박 위치는 실측 · 화물은 시나리오 가정 (화물 신고 자료 미확보)'}
-        </p>
-      )}
-      <p style={{ margin: '4px 0 0', color: COLORS.textDim, fontSize: '11px' }}>{vessel.port_call_id}</p>
-    </div>
-  );
-}
-
 // 지도에 겹치는 두 레이어를 범례에서 구분한다 — 둘 다 실 AIS 지만 아는 정보가 다르다.
 //   배 아이콘 : 위치 + 재항 화물까지 확인된 배 (클릭 -> 상세·안전판정)
 //   점       : 위치만 확인된 배
@@ -127,17 +80,7 @@ function VesselPopup({ vessel }) {
 // 배가 크게, 위치만 수신된 배가 작게 그려진다는 규칙은 빨강 항목 하나에만 적는다.
 // 범례는 한 단어씩만 — 문장 설명은 뺐다(2026-08-21 피드백: "구분만 확실하면
 // 된다"). 색·모양의 뜻은 hover 툴팁(title)이 보조한다.
-const LEGEND_BASE = [
-  { color: COLORS.red, label: '화물 확인', hint: '꽉 찬 빨강 + 링 — 재항 위험물 신고까지 확인된 배. 클릭하면 판정.' },
-  { color: COLORS.red, label: '액체화물선', hollow: true, hint: '빈 빨강 — PORT-MIS 선종상 액체화물선(화물 미신고). 클릭하면 선종 기반 추정 판정.' },
-  { color: COLORS.info, label: '온산 선석', hint: '파랑 원 — 클릭하면 선석별 기상 판정' },
-];
-const LEGEND_AIS = [
-  { color: NAV_STATUS.UNDER_WAY.color, label: '항해' },
-  { color: NAV_STATUS.MOORED.color, label: '접안' },
-  { color: NAV_STATUS.AT_ANCHOR.color, label: '대기' },
-  { color: NAV_STATUS.UNKNOWN.color, label: '소형선' },
-];
+const LEGEND_RINGS = ['부적합', '주의', '판정불가', '적합'];
 
 // 온산 2클러스터(처용리/산암리) 뷰.
 //
@@ -161,53 +104,48 @@ const ONSAN_ZOOM = 14;
 
 export default function PortMap() {
   const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
-  const setSelectedBerthGroup = useSensorStore((s) => s.setSelectedBerthGroup);
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
+  const setSelectedBerth = useSensorStore((s) => s.setSelectedBerth);
+  const selectedBerth = useSensorStore((s) => s.selectedBerth);
+  const tracked = useSensorStore((s) => s.trackedVessel);
+  const threadFocus = useSensorStore((s) => s.threadFocus);
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const { data } = useDashboardData();
-  // 켜자마자 지도가 KPI("관제 선박 N척")와 맞아 보이도록 기본 켬.
-  // 꺼 두면 화물 확인된 배 몇 척만 떠서 지도가 비어 보인다.
+  // 판정 고리 — 선박 판정·선석 현황판과 같은 자료(접안 중이면 선석 판정, 아니면 입항 판정)
+  const { verdicts } = useVesselThread();
+  const levelOf = (v) => verdicts.get(normKey(v.callsgn))?.level || null;
+  const isTracked = (v) => Boolean(tracked?.callsgn) && normKey(v.callsgn) === normKey(tracked.callsgn);
+  // 기타 선박(액체화물선이 아닌 배) 보이기 — 켜자마자 지도가 KPI("관제 선박 N척")와 맞아 보이도록 기본 켬.
   const [showAis, setShowAis] = useState(true);
-  // 아이콘(클릭 시 상세패널) 레이어 — 실AIS + berth-cargo 실화물 조인 선박을 우선 쓰고,
-  // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
-  // AgentConsole과 동일한 원칙. arrival_at_utc는 팝업이 그 필드로 시각을 표시해서 맞춰준다.
-  const realCargoVessels = useMemo(
-    () => (data?.real_traffic ?? [])
-      .filter((v) => v.cargo)
-      .map((v) => ({
-        ...v, position_source: 'REAL_AIS', cargo_source: 'REAL', arrival_at_utc: v.received_at_utc,
-      })),
+  // 액체화물선 — PORT-MIS 선종이 액체화물선이거나 재항 위험물 신고가 있는 배. 늘 그린다.
+  // 폴백 없음 — 실데이터가 없으면 아무것도 그리지 않는 편이 정직하다.
+  const vessels = useMemo(
+    () => (data?.real_traffic ?? []).filter((v) => v.is_liquid_cargo_vessel || v.cargo),
     [data]
   );
-  // 폴백 없음. 예전엔 화물 매칭이 0건이면 mock 데모 선박 6척으로 대체했는데,
-  // 수집이 끊기거나 매칭이 실패한 상황에서 가짜 배가 진짜처럼 지도에 떴다.
-  // 실데이터가 없으면 아무것도 그리지 않는 편이 정직하다.
-  const vessels = realCargoVessels;
-  // 실백엔드(upa_vessel_position) AIS 레이어 — 위 아이콘으로 이미 표시된 선박은
-  // 제외해 같은 배가 아이콘·점으로 두 번 찍히지 않게 한다.
+  // 기타 선박 — 같은 배가 두 번 찍히지 않게 위 목록을 뺀다.
   const realTraffic = useMemo(() => {
     const shown = new Set(vessels.map((v) => v.callsgn).filter(Boolean));
-    // 액체화물선만 보는 필터는 뒀다가 뺐다 — 화물 배정을 액체화물선 전수로
-    // 넓히면서(2026-08-15) 관제 대상이 배 아이콘으로 충분히 드러나 필요가 없어졌다.
-    //
-    // liquid_callsgns 로 선종 액체화물선을 덧칠하던 보정도 뺐다. 같은 판정(PORT-MIS
-    // portmis_vessel.is_liquid_cargo_vessel)을 backendAdapter.mapVessel 이 이미 하고
-    // 있어서, 여기서 한 번 더 하면 같은 기준이 두 군데 살아 있게 된다.
     return (data?.real_traffic ?? []).filter((v) => !shown.has(v.callsgn));
   }, [data, vessels]);
-  const realLiquidCount = useMemo(
-    () => realTraffic.filter((v) => v.is_liquid_cargo_vessel).length,
-    [realTraffic]
-  );
   // 지도는 성능 때문에 상한(MAP_VESSEL_LIMIT)까지만 그린다. 그 상한에 걸렸을 때
   // 범례에 "표시/전체"를 같이 적어, 숫자가 멈춘 이유를 화면에서 알 수 있게 한다.
-  const aisTotal = data?.real_traffic_total ?? realTraffic.length;
+  const otherTotal = Math.max(realTraffic.length, (data?.real_traffic_total ?? 0) - (data?.real_traffic_liquid_total ?? vessels.length));
   const mapRef = useRef(null);
 
-  const liquidCount = useMemo(
-    () => vessels.filter((v) => v.is_liquid_cargo_vessel).length,
-    [vessels]
-  );
+  // 선박 추적 띠의 '위치'를 누르면 지도가 그 배로 간다
+  useEffect(() => {
+    if (threadFocus?.target !== 'where' || !tracked?.callsgn) return;
+    const v = (data?.real_traffic ?? []).find((t) => normKey(t.callsgn) === normKey(tracked.callsgn));
+    const map = mapRef.current;
+    if (map && v?.latitude != null && v?.longitude != null) {
+      map.flyTo([v.latitude, v.longitude], Math.max(map.getZoom(), 15), { duration: 0.8 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadFocus?.at]);
+  const judgedCount = useMemo(() => vessels.filter((v) => levelOf(v)).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [vessels, verdicts]);
 
   // 실선석 점유 현황 (백엔드 /dashboard/berths — upa_port_call 실측)
   // 백엔드는 'OTK1부두', 화면은 'OTK 1부두'처럼 띄어쓰기가 달라 공백 제거 후 대조한다.
@@ -269,16 +207,27 @@ export default function PortMap() {
       <style>{`
         .vessel-divicon { background: none; border: none; }
         .vessel-marker { position: relative; display: flex; align-items: center; justify-content: center;
-          filter: drop-shadow(0 0 4px rgba(0,0,0,0.6)); }
-        .vessel-marker--danger::before {
-          content: ''; position: absolute; inset: -5px; border-radius: 50%;
-          border: 2px solid ${COLORS.red}; animation: vessel-pulse 1.6s ease-out infinite;
+          filter: drop-shadow(0 0 3px rgba(0,0,0,0.45)); }
+        .vessel-marker--ring::after {
+          content: ''; position: absolute; inset: -5px; border-radius: 50%; z-index: -1;
+          border: 3px solid var(--ring); background: rgba(255,255,255,0.7);
         }
-        .vessel-marker--lite { opacity: 0.82; filter: drop-shadow(0 0 2px rgba(0,0,0,0.45)); }
+        .vessel-marker--alarm::before {
+          content: ''; position: absolute; inset: -6px; border-radius: 50%;
+          border: 2px solid var(--ring); animation: vessel-pulse 1.6s ease-out infinite;
+        }
+        .vessel-marker--lite { opacity: 0.72; filter: drop-shadow(0 0 2px rgba(0,0,0,0.35)); }
+        .vessel-marker--tracked { filter: drop-shadow(0 0 7px rgba(18,53,79,0.85)); }
+        .vessel-marker--tracked.vessel-marker--ring::after { inset: -7px; border-width: 4px; }
+        .vessel-marker--tracked:not(.vessel-marker--ring)::after {
+          content: ''; position: absolute; inset: -7px; border-radius: 50%; z-index: -1;
+          border: 2px dashed ${COLORS.navy}; background: rgba(255,255,255,0.75);
+        }
         @keyframes vessel-pulse {
-          0% { transform: scale(0.7); opacity: 0.9; }
-          100% { transform: scale(1.5); opacity: 0; }
+          0% { transform: scale(0.8); opacity: 0.9; }
+          100% { transform: scale(1.6); opacity: 0; }
         }
+        @media (prefers-reduced-motion: reduce) { .vessel-marker--alarm::before { animation: none; } }
       `}</style>
 
       <MapContainer
@@ -344,60 +293,29 @@ export default function PortMap() {
               : null;
           const vColor = verdict ? WEATHER_STATUS_COLORS[verdict] || COLORS.info : COLORS.info;
           const escalated = verdict && verdict !== '정상';
+          const selected = selectedBerth && berthKey(selectedBerth) === berthKey(b.name);
           return (
           <Circle
             key={id}
             center={onsanDisplayPos(b)}
-            // 선석 원이 배 아이콘(34px)보다 작아 화면에서 묻혔다. 선석은 판정
-            // 단위이자 클릭 대상이라 배보다 눈에 먼저 들어와야 한다.
+            // 선석 원이 배 아이콘보다 작아 화면에서 묻혔다. 선석은 판정 단위이자 클릭 대상이라 배보다 눈에 먼저 들어와야 한다.
             radius={b.waterway === '부이(해상)' ? 340 : 230}
             pathOptions={{
-              color: vColor,
+              color: selected ? COLORS.navy : vColor,
               fillColor: vColor,
-              fillOpacity: escalated ? 0.5 : 0.25,
-              weight: escalated ? 4 : 3,
+              fillOpacity: escalated ? 0.5 : selected ? 0.32 : 0.22,
+              weight: selected ? 5 : escalated ? 4 : 3,
             }}
-            eventHandlers={{ click: () => setSelectedBerthGroup(ONSAN_WEATHER_GROUP[id] || null) }}
+            // [2026-09-29 밤] 누르면 선석 상세 서랍(접안 · 부두 기상 · 최근 접안 · 재항 시간)이 열린다.
+            //   예전엔 작은 팝업 + 대시보드 가운데 부두 기상 판정 패널로 스크롤했다.
+            eventHandlers={{ click: () => setSelectedBerth(b.name) }}
           >
-            {/* 부두 이름을 항상 띄운다. 원만 있으면 배 아이콘에 묻혀 "여기가 부두"라는
-                것도, 클릭 대상이라는 것도 화면에서 알 수 없었다.
-
-                한 레이어에 Tooltip 을 두 개 달면 안 된다 — Leaflet 의 bindTooltip 은
-                덮어쓰기라, 앞의 permanent 옵션에 뒤의 긴 문구가 붙어 "○○부두 —
-                클릭하면 선석별 하역 판정과 연동"이 지도에 상시 박혔다. 온산 선석은
-                서로 수백 m 안에 몰려 있어 그 라벨들이 겹쳐 지도를 덮었다.
-                라벨은 이름(+판정)만, 안내는 클릭 팝업에 둔다. */}
+            {/* 부두 이름을 항상 띄운다 — 한 레이어에 Tooltip 을 두 개 달면 앞의 permanent 옵션에 뒤 문구가
+                덮어써진다(Leaflet bindTooltip). 이름(+기상 판정)만 둔다. */}
             <Tooltip permanent direction="center" className="berth-label">
               {b.name.replace(/부두$/, '')}
-              {verdict ? ` · ${verdict}` : ''}
+              {verdict && verdict !== '정상' ? ` · ${verdict}` : ''}
             </Tooltip>
-            <Popup>
-              <div style={{ color: '#0d1b2a', fontSize: '13px', minWidth: '160px' }}>
-                <strong>{b.name}</strong> <span style={{ color: '#4a6a82' }}>({id})</span>
-                <p style={{ margin: '4px 0 0' }}>운영사 {b.operator}</p>
-                <p style={{ margin: '2px 0 0' }}>수역 {b.waterway} · 접안 {b.maxDwt.toLocaleString()} DWT</p>
-                <p style={{ margin: '2px 0 0', color: '#00755e', fontSize: '11px' }}>
-                  기상 임계군: {ONSAN_WEATHER_GROUP[id] || '-'}
-                </p>
-                {(() => {
-                  const occ = berthOcc(b.name);
-                  if (!occ) return null;
-                  const ships = occ.current_vessel_names || [];
-                  return (
-                    <p style={{
-                      margin: '4px 0 0', paddingTop: '4px', borderTop: '1px solid #e2e8f0',
-                      fontSize: '11px', color: ships.length ? '#b45309' : '#4a6a82',
-                    }}>
-                      실시간 점유: <strong>{ships.length ? '점유 중' : '여유'}</strong>
-                      {ships.length > 0 && ` — ${ships.slice(0, 3).join(', ')}`}
-                      <br />
-                      <span style={{ color: '#7a8b99' }}>출처: 입출항 기록 실측</span>
-                    </p>
-                  );
-                })()}
-                {b.rep && <p style={{ margin: '2px 0 0', color: COLORS.textDim, fontSize: '11px' }}>※ 터미널 대표 좌표 (표시용 이격)</p>}
-              </div>
-            </Popup>
           </Circle>
           );
         })}
@@ -414,48 +332,51 @@ export default function PortMap() {
           </Polygon>
         )}
 
-        {/* 위치만 수신된 배 — 같은 배 기호를 작게 그린다.
-            예전엔 점(CircleMarker)이었는데 "배는 아이콘인데 점은 뭐지?"라는 혼란이
-            있었다. 기호를 배 하나로 통일하고 아는 정보의 양은 크기·링으로 구분한다.
-            작은 배도 클릭하면 상세 패널이 열린다 — 화물·흘수가 없으면 패널이
-            "조회 불가"와 그 사유를 그대로 말한다(없는 정보를 숨기지 않는다). */}
-        {showAis && realTraffic.map((v) => (
-          <Marker
-            key={v.port_call_id}
-            position={[v.latitude, v.longitude]}
-            icon={createVesselIcon(v)}
-            eventHandlers={{ click: () => setSelectedVessel(v) }}
-          >
-            <Tooltip>
-              {v.vessel_name || v.callsgn} · {v.sog ?? '-'} kn ·{' '}
-              {(NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label}
-              {v.is_liquid_cargo_vessel && (
-                <><br /><strong style={{ color: '#b91c1c' }}>액체화물선 (PORT-MIS 선종 확인)</strong></>
-              )}
-              <br />수신 {formatKST(v.received_at_utc)} (KST)
-            </Tooltip>
-          </Marker>
-        ))}
+        {/* 기타 선박 — 작게, 회색으로. 누르면 선박 상세가 열린다(화물·흘수가 없으면 패널이 그 사유를 말한다). */}
+        {showAis && realTraffic.map((v) => {
+          const lv = levelOf(v);
+          const me = isTracked(v);
+          return (
+            <Marker
+              key={v.port_call_id}
+              position={[v.latitude, v.longitude]}
+              icon={createVesselIcon(v, lv, me)}
+              zIndexOffset={me ? 3000 : 0}
+              eventHandlers={{ click: () => setSelectedVessel(v) }}
+            >
+              <Tooltip>
+                <strong>{v.vessel_name || v.callsgn}</strong> · {(NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label}
+                {' '}· {v.sog ?? '-'} kn{lv ? ` · ${lv}` : ''}
+                <br />수신 {formatKST(v.received_at_utc)}
+              </Tooltip>
+            </Marker>
+          );
+        })}
 
-        {/* 선박 마커 */}
+        {/* 액체화물선 — 남색, 판정이 있으면 판정 색 고리. 추적 중인 배는 크게. */}
         {vessels.map((vessel) => {
           if (vessel.latitude == null || vessel.longitude == null) return null;
+          const lv = levelOf(vessel);
+          const me = isTracked(vessel);
           return (
             <Marker
               key={vessel.port_call_id}
               position={[vessel.latitude, vessel.longitude]}
-              icon={createVesselIcon(vessel)}
-              zIndexOffset={1000}
+              icon={createVesselIcon(vessel, lv, me)}
+              zIndexOffset={me ? 3000 : lv === '부적합' ? 2000 : 1000}
               eventHandlers={{
                 click: () => {
                   setSelectedObject(vessel);
-                  setSelectedVessel(vessel); // 선박 상세 패널 열기
+                  setSelectedVessel(vessel); // 선박 상세 패널 열기(추적도 이 배로)
                 },
               }}
             >
-              <Popup>
-                <VesselPopup vessel={vessel} />
-              </Popup>
+              <Tooltip>
+                <strong>{vessel.vessel_name || vessel.callsgn}</strong>
+                {vessel.berth ? ` · ${vessel.berth}` : ''}
+                {' '}· <span style={{ color: lv ? verdictColor(lv) : COLORS.textDim, fontWeight: 700 }}>{lv || '판정 전'}</span>
+                <br />{(NAV_STATUS[vessel.nav_status_category] || NAV_STATUS.UNKNOWN).label} · {vessel.sog ?? '-'} kn · 수신 {formatKST(vessel.received_at_utc)}
+              </Tooltip>
             </Marker>
           );
         })}
@@ -513,45 +434,46 @@ export default function PortMap() {
               onChange={() => setShowAis((s) => !s)}
               style={{ accentColor: COLORS.blue, cursor: 'pointer', flexShrink: 0 }}
             />
-            {/* 라벨은 짧게 — 배 수가 세 자리가 되어도 한 줄에 들어와야 한다.
-                상한(200척)에 걸렸을 때만 "표시/전체"를 함께 보여준다. */}
+            {/* 라벨은 짧게 — 상한(200척)에 걸렸을 때만 "표시/전체"를 함께 보여준다. */}
             <span style={{ whiteSpace: 'nowrap' }}>
-              실선박 위치 {realTraffic.length}
-              {aisTotal > realTraffic.length && (
-                <span style={{ color: COLORS.textDim }}>/{aisTotal}</span>
-              )}
-              {realLiquidCount > 0 && (
-                <span style={{ color: COLORS.red }}> · 액체 {realLiquidCount}</span>
+              기타 선박 {realTraffic.length}
+              {otherTotal > realTraffic.length && (
+                <span style={{ color: COLORS.textDim }}>/{otherTotal}</span>
               )}
             </span>
           </label>
         )}
       </div>
 
-      {/* 범례 + 현황 요약 */}
+      {/* 범례 — 배 색은 선종, 고리 색은 판정. 글 설명 없이 색 견본과 한 단어만 둔다. */}
       <div style={{
         position: 'absolute', bottom: 14, left: 14, zIndex: 1000,
         background: COLORS.glass, border: `1px solid ${COLORS.glassBorder}`,
         backdropFilter: 'blur(8px)', borderRadius: '10px',
         padding: '10px 14px', color: COLORS.textPrimary, fontSize: '12px',
+        display: 'grid', gap: 6,
       }}>
-        <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>
-          {vessels.length === liquidCount
-            ? <>액체화물선 <span style={{ color: COLORS.red }}>{liquidCount}척</span> 표시</>
-            : <>표시 {vessels.length}척 · 액체화물선 <span style={{ color: COLORS.red }}>{liquidCount}척</span></>}
+        <div style={{ fontWeight: 'bold' }}>
+          액체화물선 <span style={{ color: COLORS.navy }}>{vessels.length}척</span>
+          {judgedCount > 0 && <span style={{ color: COLORS.textSecondary, fontWeight: 600 }}> · 판정 {judgedCount}척</span>}
         </div>
-        {/* 점유·정박지 대기 줄은 뺐다(2026-09-27) — 위 타일(선박 판정 화면과 같은 기준)이 말한다.
-            여기서 계류시설 20곳 기준으로 다른 숫자를 또 적으면 두 숫자가 싸운다. */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', maxWidth: '250px' }}>
-          {[...LEGEND_BASE, ...(showAis ? LEGEND_AIS : [])].map((item) => (
-            <span key={item.label} title={item.hint || item.label}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
-              <span style={{
-                width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block',
-                background: item.hollow ? 'white' : item.color,
-                border: `2px solid ${item.color}`,
-              }} />
-              {item.label}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', alignItems: 'center' }}>
+          {[{ label: '액체화물선', color: COLORS.navy }, ...(showAis ? [{ label: '기타 선박', color: OTHER_SHIP }] : [])].map((it) => (
+            <span key={it.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill={it.color} aria-hidden="true"><path d={SHIP_SVG_PATH} /></svg>
+              {it.label}
+            </span>
+          ))}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            <span style={{ width: 12, height: 12, borderRadius: '50%', display: 'inline-block', background: `${COLORS.info}40`, border: `2px solid ${COLORS.info}` }} />
+            온산 선석
+          </span>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', alignItems: 'center' }}>
+          {LEGEND_RINGS.map((lv) => (
+            <span key={lv} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+              <span style={{ width: 12, height: 12, borderRadius: '50%', display: 'inline-block', background: '#fff', border: `3px solid ${VERDICT_COLOR[lv]}` }} />
+              {lv}
             </span>
           ))}
         </div>

@@ -16,7 +16,8 @@ import { useDemoCargo } from '../../utils/demoCargo';
 import { showDisclosure } from '../../utils/disclosure';
 
 // 기록된 판정 카드 — 표와 같은 색·같은 말
-const LEVEL_COLOR = { '적합': COLORS.teal, '주의': COLORS.yellow, '부적합': COLORS.red, '판정불가': COLORS.yellow };
+// 화면 공용 판정 색(utils/verdict) — 판정불가는 보라
+const LEVEL_COLOR = { '적합': COLORS.teal, '주의': COLORS.yellow, '부적합': COLORS.red, '판정불가': COLORS.purple };
 // 서버 종합 판정값(내부 이름)을 화면 말로. '적합선석없음'은 선석을 확인 못 한 판정불가, 나머지 둘은 원인이 붙은 부적합.
 const DECISION_KO = {
   '적합': '적합', '승인가능': '적합',
@@ -68,7 +69,7 @@ const RISK_COLOR = (lv) => ({
 
 const VERDICT_COLOR = {
   APPROVED: COLORS.teal, CAUTION: COLORS.yellow,
-  REJECTED: COLORS.red, UNKNOWN: COLORS.textDim, PENDING: COLORS.info,
+  REJECTED: COLORS.red, UNKNOWN: COLORS.purple, PENDING: COLORS.info,   // 판정불가 = 보라(화면 공용 판정 색)
 };
 
 // 도구 의견(백엔드 opinions) 중 한 축. 옛 응답(스냅샷)에는 없다 — 그때는 옛 근거로 대신한다.
@@ -384,6 +385,8 @@ export default function AgentConsole({ mode = 'qa' }) {
   const [localTarget, setLocalTarget] = useState(null);
   const consoleRequest = useSensorStore((st) => st.consoleRequest);
   const clearConsoleRequest = useSensorStore((st) => st.clearConsoleRequest);
+  // [2026-09-29 밤] 혼재 단계 → 화물 혼재 심사 화면(같은 혼재 에이전트, 같은 입력)으로 이어 준다
+  const requestThreadFocus = useSensorStore((st) => st.requestThreadFocus);
 
   // 판정 대상: 실AIS + berth-cargo(실 신고 위험물) 조인 결과를 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
@@ -946,6 +949,16 @@ export default function AgentConsole({ mode = 'qa' }) {
                       <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>{m.longTextLabel || '판단 사유 전문'}</summary>
                       <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{m.longText}</div>
                     </details>
+                  )}
+                  {/* 혼재 단계의 자세한 근거(화물쌍 · 규정 그래프)는 화물 혼재 심사 화면이 같은 입력으로 펼친다 */}
+                  {mode === 'reasoning' && m.agent === 'safety' && !/생략/.test(String(m.text)) && (
+                    <button
+                      type="button"
+                      className="console-link"
+                      onClick={() => { requestThreadFocus('cargo'); navigate('/safety'); }}
+                    >
+                      혼재 근거 자세히 →
+                    </button>
                   )}
                 </div>
               </div>

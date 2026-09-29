@@ -2,17 +2,19 @@ import { useNavigate } from 'react-router-dom';
 
 // to 가 있으면 타일이 그 화면으로 가는 단추가 된다(2026-09-27). "확인 대기 판정 17건"을 보고도
 // 어디서 확인하는지 알 수 없던 문제 — 숫자를 보여 주는 타일은 그 숫자의 자세한 화면으로 이어져야 한다.
-export default function KPICard({ title, value, unit, icon, change, trend = 'positive', to = null }) {
+// [2026-09-29 밤] onClick — 같은 화면 안의 자세한 자리(선석 현황판)로 갈 때
+export default function KPICard({ title, value, unit, icon, change, trend = 'positive', to = null, onClick = null }) {
   const navigate = useNavigate();
-  const clickable = Boolean(to);
+  const clickable = Boolean(to || onClick);
+  const go = () => (onClick ? onClick() : navigate(to));
   return (
     <div
       className="kpi-card"
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
       title={clickable ? `${title} 자세히 →` : undefined}
-      onClick={clickable ? () => navigate(to) : undefined}
-      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') navigate(to); } : undefined}
+      onClick={clickable ? go : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') go(); } : undefined}
       style={clickable ? { cursor: 'pointer' } : undefined}
     >
       <div className="kpi-icon" style={{

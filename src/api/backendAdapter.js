@@ -552,6 +552,15 @@ export async function fetchBerthAssignments() {
 }
 
 /**
+ * 한 부두의 최근 접안 이력 — GET /dashboard/history?facility_like= (출항까지 확정된 입출항 신고).
+ * [2026-09-29 밤] 대시보드 맨 아래 '부두별 접안 이력' 목록 대신 선석 상세 서랍에서 그 부두 것만 본다.
+ */
+export async function fetchBerthHistory(facilityLike, limit = 12) {
+  const qs = new URLSearchParams({ limit: String(limit), facility_like: facilityLike });
+  return getJson(`/dashboard/history?${qs}`);
+}
+
+/**
  * 확인 대기 판정 목록 — GET /approvals/pending.
  *
  * **작업 대기열이 아니다.** 여기 있는 항목을 확인하지 않아도 아무 자원도 잠기지
