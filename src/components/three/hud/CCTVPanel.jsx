@@ -1,7 +1,6 @@
 import { showDisclosure } from '../../../utils/disclosure';
 import { useState, useEffect, useMemo } from 'react';
 import useSensorStore from '../../../stores/useSensorStore';
-import useDashboardData from '../../../hooks/useDashboardData';
 import { ONSAN_BERTHS_3D } from '../../../utils/geoUtils';
 import { FaVideo, FaPause, FaPlay, FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import CctvTwinView from './CctvTwinView';
@@ -45,7 +44,6 @@ export default function CCTVPanel() {
   const [cycleIdx, setCycleIdx] = useState(0);
   const selectedObject = useSensorStore((s) => s.selectedObject);
   const ships = useSensorStore((s) => s.ships);
-  const { data } = useDashboardData();
 
   // 카메라 선택 — 이영서 요청(2026-08-17): "자동으로 바뀌는 게 맞나요? 선택 기능도"
   //
@@ -95,11 +93,7 @@ export default function CCTVPanel() {
   const mooredShip = ships.find(
     (s) => s.berth === berthId && ['operating', 'mooring', 'docked'].includes(s.status)
   );
-  // 이 부두의 실시간 하역 작업 (공용 API — React/Omniverse와 동일 소스)
-  const op = (data?.operations || []).find(
-    (o) => !o.is_real_record && o.berth === berth?.name && o.status !== 'COMPLETED'
-  );
-  const loading = op?.status === 'IN_PROGRESS' || mooredShip?.status === 'operating';
+  const loading = mooredShip?.status === 'operating';
   const isManual = pinned;
 
   // 접었을 때는 헤더 줄만 남긴다 — 3D 화면을 넓게 보려는 용도라 최소 폭으로.
@@ -114,12 +108,10 @@ export default function CCTVPanel() {
     );
   }
 
+  // [2026-09-30] 실제 배 이름 옆에 내장 예시 작업("메탄올 38% (4,500/12,000t)")을 붙이지 않는다 — 그 배가 싣지 않은
+  //   화물과 없는 진행률이 실선박 정보처럼 보였다(아젤리아 · OTK 1부두). 아는 것만: 배 이름 · 화물 · 접안.
   const footer = mooredShip
-    ? op
-      ? op.status === 'IN_PROGRESS'
-        ? `${mooredShip.id} · ${op.cargo} ${Math.round(op.progress_pct)}% (${(op.done_tons ?? 0).toLocaleString()}/${op.planned_tons?.toLocaleString()}t)`
-        : `${mooredShip.id} · ${op.cargo} 하역 대기`
-      : `${mooredShip.id} · 계류`
+    ? `${mooredShip.id}${mooredShip.cargoType ? ` · ${mooredShip.cargoType}` : ''} · 접안`
     : '공석';
 
   return (

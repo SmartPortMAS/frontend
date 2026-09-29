@@ -1,4 +1,3 @@
-import { Html } from '@react-three/drei';
 import { showDisclosure } from '../../utils/disclosure';
 import {
   FaTimes, FaShip, FaDatabase, FaWater, FaAnchor, FaFlask, FaPlay,
@@ -81,10 +80,14 @@ export default function InfoPopup({ object, onClose }) {
       : '3D 장면 밖 선석';
 
   return (
-    // [2026-09-30] 레이더 · 선박 목록(z 1000) 위로 — 정보창을 열면 레이더가 가렸다(현우). 경고 띠(2000)보다는 아래.
-    <Html fullscreen zIndexRange={[1500, 1400]} style={{ pointerEvents: 'none' }}>
-      {/* 머리 단추(top 50~88)와 두 줄 선석 현황 띠 아래에 배치 — 가려지지 않음 */}
-      <div style={{ position: 'absolute', top: 140, right: 16, pointerEvents: 'auto', width: '300px' }}>
+    // [2026-09-30] 캔버스 밖 화면 고정 요소다(DigitalTwinPage 가 띄운다). 예전엔 3D 안의 <Html fullscreen> 이라
+    //   카메라가 선석으로 가 있으면 정보창이 3D 원점을 따라 밀려 레이더를 덮거나 위가 잘렸다(현우 지적의 원인).
+    //   레이더 · 선박 목록(z 1000)보다 위, 경고 띠(2000)보다 아래. 길면 안에서 스크롤한다.
+    <>
+      <div style={{
+        position: 'absolute', top: 140, right: 16, zIndex: 1500, width: '300px',
+        maxHeight: 'calc(100% - 160px)', overflowY: 'auto', borderRadius: 12,
+      }}>
         <div className="glass-hud" style={{ width: '100%' }}>
           <div className="hud-header">
             <div className="hud-title">
@@ -168,7 +171,7 @@ export default function InfoPopup({ object, onClose }) {
                 <Row label="기상 임계군" value={ONSAN_WEATHER_GROUP[object.id]} />
                 <Row label="계류 선박" value={object.mooredShip || '없음'} />
                 <div style={{ marginTop: '8px', fontSize: '11px', color: '#8ba3b8' }}>
-                  ADJACENT_TO 인접(혼재 감시):{' '}
+                  이웃 선석(혼재 감시) ·{' '}
                   {adjacents.length > 0
                     ? adjacents.join(', ')
                     : '없음'}
@@ -212,6 +215,6 @@ export default function InfoPopup({ object, onClose }) {
           </div>
         </div>
       </div>
-    </Html>
+    </>
   );
 }

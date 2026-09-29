@@ -5,7 +5,6 @@ import useSensorStore from '../../stores/useSensorStore';
 import Tank from './Tank';
 import Ship from './Ship';
 import Pipe from './Pipe';
-import InfoPopup from './InfoPopup';
 import {
   ONSAN_BERTHS_3D,
   ONSAN_SHORE_PATH,
@@ -790,13 +789,7 @@ export default function Port() {
         );
       })}
 
-      {/* ===== INFO POPUP (HTML Overlay) ===== */}
-      {selectedObject && (
-        <InfoPopup
-          object={selectedObject}
-          onClose={() => setSelectedObject(null)}
-        />
-      )}
+      {/* 정보창은 캔버스 밖(DigitalTwinPage)에서 띄운다 — 3D 안에 두면 카메라를 따라 밀렸다(2026-09-30) */}
     </group>
   );
 }

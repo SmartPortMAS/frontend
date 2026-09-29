@@ -11,6 +11,7 @@ import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import OutlookTimeline from '../components/three/hud/OutlookTimeline';
 import OmniversePreview from '../components/three/OmniversePreview';
+import InfoPopup from '../components/three/InfoPopup';
 import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
@@ -310,6 +311,9 @@ export default function DigitalTwinPage() {
           <CCTVPanel />
           {!outlookFocus && <VesselTrafficList />}
           <BerthStatusBar />
+          {selectedObject && !outlookFocus && (
+            <InfoPopup object={selectedObject} onClose={() => setSelectedObject(null)} />
+          )}
         </>
       )}
 
