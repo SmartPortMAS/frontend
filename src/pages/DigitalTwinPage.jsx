@@ -10,6 +10,7 @@ import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import OutlookTimeline from '../components/three/hud/OutlookTimeline';
+import OmniversePreview from '../components/three/OmniversePreview';
 import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
@@ -114,6 +115,8 @@ export default function DigitalTwinPage() {
     ? (selectedObject.type === 'Ship' ? selectedObject.id : ONSAN_BERTHS[selectedObject.id]?.name || selectedObject.id)
     : null;
   const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
+  const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
+  const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
 
   // ── 앞으로 72시간 — 이 화면 안의 판정 흐름 (2026-09-27) ────────────────────
   // 정보창·연결 바·?outlook= 에서 요청한다. 열리면 카메라가 그 선석으로 가고(BerthFocus, 링은 끔),
@@ -127,6 +130,8 @@ export default function DigitalTwinPage() {
     setShowOmniverseStream(false);
     setShowMap(false);
     setOutlookFocus(focus);
+    // 72시간 패널이 같은 선석 정보를 보여주므로 정보창은 닫는다 — 열어 두면 머리 단추를 덮었다
+    setSelectedObject(null);
     clearOutlookRequest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outlookRequest?.at]);
@@ -203,6 +208,7 @@ export default function DigitalTwinPage() {
   return (
     <div className="digital-twin-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       <Scene focusBerth={outlookFocus ? outlookFocus.berth : focusBerth} focusRings={!outlookFocus} />
+      <OmniversePreview />
 
       {/* 어느 선석을 보러 왔는지 알려준다.
           카메라만 옮기면 사용자는 '왜 여기가 비춰지는지' 모른다. */}
@@ -289,41 +295,34 @@ export default function DigitalTwinPage() {
         </>
       )}
 
+      {/* [2026-09-28] 머리 단추는 하나(현우 D4·D7). Omniverse 는 시연 PC 에서 켜지 않으므로 촬영한 정밀 검토 장면을 연다.
+          실시간 스트림은 촬영용 주소(?omniverse=1)로만 켠다. 2D 지도는 대시보드 지도와 같아 뺐다. */}
       <div style={{ position: 'absolute', top: 50, right: 20, zIndex: 1000, display: 'flex', gap: '10px' }}>
-        <button
-          className="action-btn"
-          onClick={() => {
-            const next = !showOmniverseStream;
-            if (next && selectionFocus?.omniOk) { requestOmniverse(selectionFocus); return; }
-            setShowOmniverseStream(next);
-            if (next) checkStream();
-          }}
-          style={{ 
-            padding: '10px 16px', background: showOmniverseStream ? 'rgba(16, 185, 129, 0.8)' : 'rgba(15, 23, 42, 0.8)', 
-            backdropFilter: 'blur(10px)', color: showOmniverseStream ? '#fff' : '#94a3b8', border: '1px solid rgba(148, 163, 184, 0.45)',
-            borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold'
-          }}
-        >
-          {/* 문구를 '실시간 스트리밍'에서 '정밀 검토'로 바꿨다.
-              바로 위 3D 화면도 실시간이라, 예전 문구로는 두 화면이 무엇이 다른지
-              알 수 없었다(2026-09-03 IA 정리). 목적(정밀 검토)과 대가(기동 시간)를
-              문구에 함께 담아 사용자가 누를지 말지 판단할 수 있게 한다. */}
-          {/* [2026-09-27] 보조 버튼으로 내렸다 — 72시간 판정 흐름은 이 화면 안(OutlookTimeline)이 기본이고,
-              Omniverse 는 장면이 달라 이어지지 않는 데다 시연 PC 를 발열로 끈다. 고사양 PC 에서만 켠다. */}
-          <FaPlay /> {showOmniverseStream ? 'Omniverse 닫기' : 'Omniverse (고사양 PC · 기동 1~2분)'}
-        </button>
-
-        <button 
-          className="action-btn"
-          onClick={() => setShowMap(!showMap)}
-          style={{ 
-            padding: '10px 16px', background: 'rgba(15, 23, 42, 0.8)', 
-            backdropFilter: 'blur(10px)', color: '#0ea5e9', border: '1px solid rgba(14, 165, 233, 0.5)',
-            borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold'
-          }}
-        >
-          <FaMap /> {showMap ? '3D View' : '2D Map'}
-        </button>
+        {showOmniverseStream ? (
+          <button
+            className="action-btn"
+            onClick={() => setShowOmniverseStream(false)}
+            style={{
+              padding: '10px 16px', background: 'rgba(16, 185, 129, 0.8)', backdropFilter: 'blur(10px)', color: '#fff',
+              border: '1px solid rgba(148, 163, 184, 0.45)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold',
+            }}
+          >
+            Omniverse 닫기
+          </button>
+        ) : (
+          <button
+            className="action-btn"
+            onClick={() => setOmniPreviewOpen(true)}
+            title="같은 72시간 판정을 Omniverse 로 고화질 렌더링한 장면 — 같은 배가 조위 변화로 어떻게 바뀌는지 봅니다"
+            style={{
+              padding: '10px 16px', background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(10px)', color: '#cbd5e1',
+              border: '1px solid rgba(148, 163, 184, 0.45)', borderRadius: '8px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold',
+            }}
+          >
+            <FaPlay /> 정밀 검토 영상 (Omniverse)
+          </button>
+        )}
       </div>
 
       {/* Omniverse WebRTC Streaming Player — 티커 아래에서 시작 */}
@@ -483,42 +482,8 @@ export default function DigitalTwinPage() {
           [2026-09-24] 예전 재생 슬라이더는 미래 이동을 지어내 재생해 껐다(실측이 아닌 것을 실측처럼 보이지 않게).
           [2026-09-27] 빈 슬라이더 대신 두 화면을 잇는 한 줄로. 밤에 다시: 앞으로 72시간도 이 화면 안에서(OutlookTimeline) — Omniverse 는 보조.
           위치 이력 되감기는 이력 연결 뒤 이 자리에 붙인다. */}
-      {!showOmniverseStream && !outlookFocus && (
-      <div className="time-slider-container" style={{
-        position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)',
-        width: '640px', maxWidth: 'calc(100% - 40px)', background: 'rgba(15, 23, 42, 0.82)', backdropFilter: 'blur(10px)',
-        padding: '12px 18px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)',
-        display: 'flex', alignItems: 'center', gap: '14px', zIndex: 1000,
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
-          <span style={{ color: '#10b981', fontSize: '13px', fontWeight: 800 }}>● 지금</span>
-          <span style={{ color: '#94a3b8', fontSize: '11px' }}>실측 · 이 화면</span>
-        </div>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-          <div style={{ flex: 1, height: '3px', background: 'linear-gradient(90deg, #10b981, #38bdf8)', borderRadius: '2px' }} />
-          <FaArrowRight color="#38bdf8" size={12} />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0, alignItems: 'flex-end' }}>
-          <button
-            type="button"
-            disabled={!selectionFocus}
-            onClick={() => { if (selectionFocus) setOutlookFocus(selectionFocus); }}
-            title={selectionFocus ? `${selectionLabel} 의 앞으로 72시간 판정을 이 화면에서 봅니다` : '배나 선석을 고른 뒤 누르면 그곳의 앞으로 72시간을 봅니다'}
-            style={{
-              background: 'rgba(56, 189, 248, 0.16)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.55)',
-              borderRadius: '6px', padding: '6px 12px', cursor: selectionFocus ? 'pointer' : 'not-allowed', opacity: selectionFocus ? 1 : 0.6,
-              fontWeight: 800, fontSize: '13px', whiteSpace: 'nowrap',
-            }}
-          >
-            앞으로 72시간 판정 흐름{selectionFocus ? ` (${selectionLabel})` : ''}
-          </button>
-          <span style={{ color: '#64748b', fontSize: '10.5px' }}>
-            {selectedObject && !selectionFocus ? '이 대상은 장면 밖 — 온산 부두의 배·선석을 고르세요'
-              : selectionFocus ? '이 화면 안에서 · 선석 색이 시각마다 바뀝니다' : '배나 선석을 먼저 고르세요 · 위치 이력 되감기는 예정'}
-          </span>
-        </div>
-      </div>
-      )}
+      {/* [2026-09-28] 아래 '지금 → 앞으로 72시간' 띠를 뺐다 — 정보창의 같은 단추와 겹쳤고 선박 목록을 가렸다(현우 D11).
+          72시간은 배·선석(또는 위 선석 현황 띠)을 눌러 정보창에서 연다. */}
     </div>
   );
 }

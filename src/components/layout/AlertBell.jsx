@@ -53,7 +53,11 @@ export default function AlertBell() {
 
   const alerts = data?.alerts ?? [];
   const vessels = data?.real_traffic ?? [];
-  const unacked = alerts.filter((a) => !alertAcks[alertId(a)]);
+  // [2026-09-29] 배지 숫자는 참고(INFO — 판정에 쓰지 않는 IMDG 부두 간 격리 등)를 뺀 실제 경고만 센다.
+  //   참고까지 세어 '경고 52'가 됐고, 같은 시각 위험 선석 패널은 50이라 숫자가 둘이었다.
+  //   참고 항목도 목록에는 그대로 남는다.
+  const warnings = alerts.filter((a) => a.level !== 'INFO');
+  const unacked = warnings.filter((a) => !alertAcks[alertId(a)]);
   // 규칙엔진 실판정인지, 백엔드가 죽어 폴백인지 화면에 드러낸다
   const fromRuleEngine = data?.data_source?.alerts === 'REAL_RULE_ENGINE';
 
@@ -100,12 +104,12 @@ export default function AlertBell() {
         type="button"
         className="header-badge alert-badge"
         onClick={() => setOpen((v) => !v)}
-        title={`관제 경고 ${alerts.length}건 · 미확인 ${unacked.length}건`}
+        title={`관제 경고 ${warnings.length}건 · 미확인 ${unacked.length}건`}
         aria-expanded={open}
       >
         <FaExclamationTriangle color={unacked.length > 0 ? COLORS.red : COLORS.textSecondary} />
         <span style={{ fontSize: '12px', color: unacked.length > 0 ? COLORS.red : COLORS.textSecondary }}>
-          경고 {alerts.length}
+          경고 {warnings.length}
         </span>
         {unacked.length > 0 && <span className="alert-count">{unacked.length}</span>}
       </button>
@@ -116,7 +120,8 @@ export default function AlertBell() {
             <div>
               <strong style={{ fontSize: '14px' }}>관제 경고</strong>
               <span style={{ marginLeft: '10px', fontSize: '12px', color: COLORS.textSecondary }}>
-                총 {alerts.length}건 · 미확인 {unacked.length}건
+                경고 {warnings.length}건 · 미확인 {unacked.length}건
+                {alerts.length > warnings.length && ` · 참고 ${alerts.length - warnings.length}건`}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -219,7 +224,7 @@ export default function AlertBell() {
                       type="button"
                       className="alert-row-btn"
                       onClick={() => reviewAlert(a)}
-                      title={`${a.berth_name} 안전 심사로 이동 — 재항 화물이 폼에 채워집니다`}
+                      title={`${a.berth_name} 혼재 심사로 이동 — 재항 화물이 폼에 채워집니다`}
                     >
                       <FaShieldAlt />
                     </button>

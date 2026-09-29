@@ -16,6 +16,8 @@ const RISK_COLORS = {
   '안전': COLORS.teal, '주의': COLORS.yellow, '위험': COLORS.red,
   '배정불가': COLORS.red, '판단불가': COLORS.textDim,
 };
+// 화물 칩 정렬 순서 — 심각한 것부터
+const RISK_RANK = { '배정불가': 4, '위험': 3, '주의': 2, '판단불가': 1, '안전': 0 };
 
 // AIS 로 실제 확인되는 항내 단계만 둔다.
 //
@@ -86,8 +88,6 @@ export default function VesselDetailPanel() {
   const [moorSim, setMoorSim] = useState(null);
   const [simLoading, setSimLoading] = useState(false);
   const [moorDwt, setMoorDwt] = useState(ASSUMED_DWT);
-  // LLM 판단 근거는 기본 2줄만 — 등급과 걸린 게이트가 먼저 보여야 한다
-  const [summaryOpen, setSummaryOpen] = useState(false);
   // 배정 가능 선석 (스케줄링 에이전트)
   const [cands, setCands] = useState(null);
   const [candLoading, setCandLoading] = useState(false);
@@ -231,7 +231,8 @@ export default function VesselDetailPanel() {
       <Row label={vessel.arrival_at_utc ? '입항시각 (KST)' : '위치 최근 수신 (KST)'}>
         {formatKST(vessel.arrival_at_utc || vessel.received_at_utc)}
       </Row>
-      <Row label="배정 선석">{vessel.berth || '미배정'}</Row>
+      {/* [2026-09-29] AIS 위치로 본 접안 선석이다 — 우리는 배정하지 않는다(검증만). '배정 선석/미배정'은 뜻이 틀렸다. */}
+      <Row label="접안 선석 (AIS)">{vessel.berth || '접안 안 함'}</Row>
       {/* 항해 중인 배에만 도착 추정을 붙인다.
           PORT-MIS 의 입항 예정 시각은 원천에서 전부 비어 와서(실측), 지금 데이터로
           낼 수 있는 건 AIS 속력 기반 직선 외삽뿐이다. 그래서 '예정'이 아니라
@@ -302,8 +303,8 @@ export default function VesselDetailPanel() {
         );
       })()}
 
-      {/* 안전 심사 — 백엔드 안전 에이전트 (MSDS 혼재금지 + IMDG 격리) */}
-      <SectionTitle icon={<FaShieldAlt />}>안전 심사<AgentChip agent="safety" /></SectionTitle>
+      {/* 안전 심사 — 백엔드 안전 에이전트 (MSDS 혼재금지 + 46 CFR 150 호환성 그룹) */}
+      <SectionTitle icon={<FaShieldAlt />}>혼재 심사<AgentChip agent="safety" /></SectionTitle>
       {!assessment ? (
         <div style={{ fontSize: '13px', color: COLORS.textDim, lineHeight: 1.7 }}>
           안전 에이전트 조회 중…
@@ -320,47 +321,44 @@ export default function VesselDetailPanel() {
             </div>
             {safetyLoading && <span style={{ fontSize: '11px', color: COLORS.textDim }}>갱신 중…</span>}
           </div>
-          {/* 화물이 여럿이면 화물마다 등급 — 대표 등급이 어느 화물 때문인지 보이게 */}
-          {assessment.cargo_verdicts?.length > 1 && (
-            <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginTop: '6px' }}>
-              {assessment.cargo_verdicts.map((v) => (
-                <span key={v.chem_id} style={{ display: 'inline-block', marginRight: '10px' }}>
-                  {v.target_cargo_name} <b>{v.risk_level}</b>{v.is_governing ? ' (대표)' : ''}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* LLM 근거 문장은 길다(보통 3~5줄). 그런데 관제사가 이 패널에서 먼저
-              봐야 할 것은 등급과 "무엇이 걸렸나"이지 서술이 아니다. 서술이 위에
-              길게 깔리면 정작 걸린 게이트가 스크롤 아래로 밀린다.
-              두 줄만 보여주고 나머지는 펼쳐 보게 한다 — 숨기는 게 아니라 순서를
-              바꾸는 것이다(근거는 계속 열람 가능). */}
-          {assessment.summary && (
-            <div style={{ marginBottom: '8px' }}>
-              <div style={{
-                fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.65,
-                ...(summaryOpen ? {} : {
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                }),
-              }}>
-                {assessment.summary}
-              </div>
-              <button
-                type="button"
-                onClick={() => setSummaryOpen((v) => !v)}
-                style={{
-                  background: 'none', border: 'none', padding: '2px 0', cursor: 'pointer',
-                  color: COLORS.info, fontSize: '11.5px', fontWeight: 700, fontFamily: 'inherit',
-                }}
-              >
-                {summaryOpen ? '▲ 판단 근거 접기' : '▼ 판단 근거 펼치기'}
-              </button>
-            </div>
-          )}
-
-          {assessment.gates_hit.length > 0 ? (
+          {/* [2026-09-29] ① 왜 이 등급인가 — 백엔드가 모든 화물에서 모은 근거(verdict_basis)를 그대로 싣는다.
+              예전엔 프론트가 대표 화물의 충돌만 게이트로 다시 조립했고, 충돌이 없으면 "인접 선석 화물과
+              혼재금지·격리 충돌 없음"을 고정으로 찍어 선석이 없는 배(비교 대상 없음)에도 떴다.
+              근거가 없는 응답(조회 실패·화물 미확인 등 fail-safe)만 게이트 목록을 쓴다. */}
+          {assessment.verdict_basis?.length > 0 ? (() => {
+            // [2026-09-29] '이웃 화물 충돌: 4부두 1·2선석 질산 — 기준A / 기준B' → 굵은 대상 + 기준별 하위 줄.
+            //   백엔드가 이웃 화물당 한 줄로 묶는다(safety.service._verdict_basis). 형식이 다르면 그대로 보인다.
+            //   충돌이 3건을 넘으면 나머지는 접는다 — 10건이 넘는 배(질산 적재선)는 배지 아래가 목록에 묻혔다.
+            const line = (b) => {
+              const m = b.match(/^이웃 화물 충돌: (.+?) — (.+)$/);
+              if (!m) return <li key={b}>{b}</li>;
+              return (
+                <li key={b}>
+                  <b style={{ color: riskColor }}>충돌</b> {m[1]}
+                  <ul style={{ margin: 0, paddingLeft: '14px', fontSize: '12px', color: COLORS.textSecondary, listStyle: 'circle' }}>
+                    {m[2].split(' / ').map((r) => <li key={r}>{r}</li>)}
+                  </ul>
+                </li>
+              );
+            };
+            const hits = assessment.verdict_basis.filter((b) => b.startsWith('이웃 화물 충돌: '));
+            const rest = hits.slice(3);
+            const shown = assessment.verdict_basis.filter((b) => !rest.includes(b));
+            const ulStyle = { margin: '4px 0', paddingLeft: '16px', fontSize: '12.5px', lineHeight: 1.7 };
+            return (
+              <>
+                <ul style={ulStyle}>{shown.map(line)}</ul>
+                {rest.length > 0 && (
+                  <details style={{ marginBottom: '4px' }}>
+                    <summary style={{ cursor: 'pointer', fontSize: '11.5px', color: COLORS.info, fontWeight: 600 }}>
+                      이웃 화물 충돌 {rest.length}건 더 보기
+                    </summary>
+                    <ul style={ulStyle}>{rest.map(line)}</ul>
+                  </details>
+                )}
+              </>
+            );
+          })() : assessment.gates_hit.length > 0 && (
             <ul style={{ margin: '4px 0', paddingLeft: '16px', fontSize: '12.5px', lineHeight: 1.7 }}>
               {assessment.gates_hit.map((g, i) => (
                 <li key={`${g.rule}-${i}`}>
@@ -370,40 +368,101 @@ export default function VesselDetailPanel() {
                 </li>
               ))}
             </ul>
-          ) : (
-            <div style={{ fontSize: '13px', color: COLORS.textSecondary }}>
-              인접 선석 화물과 혼재금지·격리 충돌 없음
+          )}
+
+          {/* ② 화물이 여럿이면 화물마다 등급 — 위험한 순으로, 안전한 화물은 접는다(6종이 한 줄에 늘어서면
+              문제 화물이 묻힌다). */}
+          {assessment.cargo_verdicts?.length > 1 && (() => {
+            const sorted = [...assessment.cargo_verdicts]
+              .sort((a, b) => (RISK_RANK[b.risk_level] ?? 0) - (RISK_RANK[a.risk_level] ?? 0));
+            const flagged = sorted.filter((v) => v.risk_level !== '안전');
+            const safe = sorted.filter((v) => v.risk_level === '안전');
+            const chip = (v) => (
+              <span key={v.chem_id} style={{ display: 'inline-block', marginRight: '10px' }}>
+                {v.target_cargo_name} <b style={{ color: RISK_COLORS[v.risk_level] }}>{v.risk_level}</b>{v.is_governing ? ' (대표)' : ''}
+              </span>
+            );
+            // [2026-09-29] 안전 아닌 화물이 전부 같은 등급이면 이름을 나열하지 않고 한 번만 말한다(이름은 접어 둔다)
+            const oneLevel = flagged.length > 1 && flagged.every((v) => v.risk_level === flagged[0].risk_level);
+            return (
+              <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginTop: '6px' }}>
+                <span style={{ fontWeight: 700, marginRight: '8px' }}>화물 {sorted.length}종</span>
+                {oneLevel ? (
+                  <details style={{ display: 'inline', marginRight: '10px' }}>
+                    <summary style={{ display: 'inline', cursor: 'pointer' }}>
+                      {safe.length ? `${flagged.length}종` : '모두'}{' '}
+                      <b style={{ color: RISK_COLORS[flagged[0].risk_level] }}>{flagged[0].risk_level}</b>
+                    </summary>
+                    <div style={{ marginTop: '2px' }}>{flagged.map((v) => v.target_cargo_name).join(' · ')}</div>
+                  </details>
+                ) : flagged.map(chip)}
+                {safe.length > 0 && (
+                  <details style={{ display: 'inline' }}>
+                    <summary style={{ display: 'inline', cursor: 'pointer', color: COLORS.info }}>
+                      {flagged.length ? `나머지 ${safe.length}종 안전` : '모두 안전'}
+                    </summary>
+                    <div style={{ marginTop: '2px' }}>{safe.map(chip)}</div>
+                  </details>
+                )}
+              </div>
+            );
+          })()}
+          {/* [2026-09-28] 같은 선박 화물끼리의 혼재 충돌 — 근거(①) 첫 줄이 이미 말하므로 근거가 없는
+              옛 응답에서만 따로 보인다. */}
+          {!assessment.verdict_basis?.length && assessment.onboard_conflicts?.length > 0 && (
+            <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginTop: '6px' }}>
+              <div style={{ fontWeight: 700 }}>같은 선박 화물 혼재 충돌 — 격리 적재 확인 필요</div>
+              {assessment.onboard_conflicts.map((c) => (
+                <div key={`${c.cargo_a_chem_id}-${c.cargo_b_chem_id}-${c.basis}-${c.detail}`}>
+                  {c.cargo_a_name} ↔ {c.cargo_b_name} <span style={{ color: COLORS.textDim }}>({c.basis} {c.detail})</span>
+                </div>
+              ))}
             </div>
           )}
 
-          {/* 유해성·체크리스트는 MSDS 에서 그대로 오는 목록이라 길다(합쳐 10여 줄).
-              하역 전에 실제로 훑는 문서라 지우면 안 되지만, 패널을 열자마자 화면을
-              채울 이유도 없다 — 접어 두고 필요할 때 편다. */}
-          {assessment.hazards?.length > 0 && (
+          {/* [2026-09-29] 판정에 쓰지 못한 근거 — 관제사가 챙길 일이라 접지 않는다. */}
+          {assessment.needs_check?.length > 0 && (
+            <div style={{ fontSize: '12px', color: COLORS.textSecondary, margin: '6px 0' }}>
+              <div style={{ fontWeight: 700, color: COLORS.yellow }}>확인 필요</div>
+              {assessment.needs_check.map((c) => <div key={c}>· {c}</div>)}
+            </div>
+          )}
+
+          {/* ④ 참고 정보 — 판단 사유·주요 유해성(MSDS GHS 분류, 항목마다 물질명)·체크리스트.
+              [2026-09-29] 주요 유해성이 화물별로 이름을 달고 오므로 제목에는 물질 이름을 넣지 않는다.
+              등급의 근거가 아니라 접어 둔다. 판단 사유는 머리 뒤 줄바꿈이 있어 pre-line 으로 그린다. */}
+          {(assessment.profile || assessment.summary || assessment.hazards?.length > 0
+            || assessment.checklist.length > 0) && (
             <details style={{ marginTop: '10px' }}>
               <summary style={{
                 fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary,
                 cursor: 'pointer', listStyle: 'revert',
               }}>
-                주요 유해성 (MSDS) · {assessment.hazards.length}건
+                {/* 제목에 물질 이름을 넣지 않는다 — 여러 종이면 이름 나열이 됐다(사용자 요청 9/29).
+                    화물 특성(LLM)은 꺼져 있어 대개 판단 사유가 들어간다. */}
+                참고 정보 — {assessment.profile ? '화물 특성' : '판단 사유'}
+                {assessment.hazards?.length > 0 && ` · 유해성 ${assessment.hazards.length}`}
+                {assessment.checklist.length > 0 && ` · 체크리스트 ${assessment.checklist.length}`}
               </summary>
-              <ul style={{ margin: '4px 0 0', paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
-                {assessment.hazards.map((h, i) => <li key={i}>{h}</li>)}
-              </ul>
-            </details>
-          )}
-
-          {assessment.checklist.length > 0 && (
-            <details style={{ marginTop: '8px' }}>
-              <summary style={{
-                fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary,
-                cursor: 'pointer', listStyle: 'revert',
-              }}>
-                하역 전 안전 체크리스트 · {assessment.checklist.length}항목
-              </summary>
-              <ul style={{ margin: '4px 0 0', paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
-                {assessment.checklist.map((c, i) => <li key={i}>{c}</li>)}
-              </ul>
+              <div style={{ fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.65, marginTop: '4px', whiteSpace: 'pre-line' }}>
+                {assessment.profile || assessment.summary}
+              </div>
+              {assessment.hazards?.length > 0 && (
+                <>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, marginTop: '6px' }}>주요 유해성 (MSDS)</div>
+                  <ul style={{ margin: '2px 0 0', paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
+                    {assessment.hazards.map((h, i) => <li key={i}>{h}</li>)}
+                  </ul>
+                </>
+              )}
+              {assessment.checklist.length > 0 && (
+                <>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textSecondary, marginTop: '6px' }}>하역 전 안전 체크리스트</div>
+                  <ul style={{ margin: '2px 0 0', paddingLeft: '16px', fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.7 }}>
+                    {assessment.checklist.map((c, i) => <li key={i}>{c}</li>)}
+                  </ul>
+                </>
+              )}
             </details>
           )}
 
@@ -412,7 +471,8 @@ export default function VesselDetailPanel() {
               ? '※ 판정 입력(화물)이 없어 안전 에이전트를 호출하지 않았습니다. 모르는 화물을 안전으로 보지 않습니다'
               : assessment.is_local_fallback
                 ? '※ 백엔드 안전 에이전트 미응답 — 판단 보류(fail-safe). 임의로 안전 판정하지 않습니다'
-                : '※ 백엔드 안전 에이전트 판정 — MSDS 반응성 + IMDG 7.2 격리표 기준'}
+                // IMDG 7.2 는 한 선박 안 적부 기준이라 부두 간 판정에 쓰지 않는다 — 실제 기준만 적는다.
+                : '※ 백엔드 안전 에이전트 판정 — MSDS 혼재금지 + 46 CFR 150 호환성 그룹 기준'}
             {assessment.msds_sections_used?.length > 0
               && ` · 근거 섹션 ${assessment.msds_sections_used.length}개`}
           </div>
@@ -422,7 +482,7 @@ export default function VesselDetailPanel() {
       {/* 선석 기상 판정 연동 */}
       {weatherGroup && (
         <>
-          <SectionTitle icon={<FaCloudSun />}>선석 기상 판정</SectionTitle>
+          <SectionTitle icon={<FaCloudSun />}>부두 기상 판정</SectionTitle>
           <Row label="기상 임계군">{weatherGroup}</Row>
           {groupVerdict && (
             <Row label="최근 판정">
@@ -437,7 +497,7 @@ export default function VesselDetailPanel() {
               color: '#FFFFFF', fontWeight: 700, cursor: 'pointer', fontSize: '13px',
             }}
           >
-            이 선석 기상 판정 실행 → 판정 패널로 이동
+            부두 기상 판정 패널에서 보기
           </button>
         </>
       )}
@@ -484,7 +544,7 @@ export default function VesselDetailPanel() {
               color: '#FFFFFF', fontWeight: 700, cursor: 'pointer', fontSize: '13px',
             }}
           >
-            {candLoading ? '스케줄링 에이전트 조회 중...' : '이 선박의 대체 선석 제안 보기'}
+            {candLoading ? '선석 검증 에이전트 조회 중...' : '이 선박의 대체 선석 제안 보기'}
           </button>
           <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginTop: '6px', lineHeight: 1.6 }}>
             흘수 {vessel.draught_m} m · {vessel.cargos?.length > 1
@@ -654,47 +714,7 @@ export default function VesselDetailPanel() {
           {moorSim?.error && (
             <div style={{ marginTop: '8px', fontSize: '12px', color: COLORS.yellow }}>{moorSim.error}</div>
           )}
-          {/* 정밀 검토(Omniverse)로 넘긴다 — 이 배가 붙은 선석의 앞으로 72시간(기상 예보 ·
-              조위 예측)을 3D 로 재생한다. 2026-09-22 전에는 스트림만 켜고 어느 배인지는
-              넘기지 않아 Omniverse 가 자기 순환을 계속했다. 문구의 "PhysX"도 뺐다 —
-              지금 보여주는 건 예보 재생이지 물리 계산이 아니다(심사 질문에 답할 수 없는
-              말을 화면에 두지 않는다). Omniverse 장면은 온산 액체화물 부두 11곳뿐이라
-              그 밖의 선석에 있는 배는 누를 수 없고 이유를 적는다. */}
-          {(() => {
-            const omniBerthName = vessel.presence_berth_name || vessel.berth || null;
-            const omniBerthId = omniBerthName ? berthIdByName(omniBerthName) : null;
-            const omniReady = Boolean(omniBerthId) && OMNIVERSE_BERTH_IDS.has(omniBerthId);
-            const note = omniReady
-              ? `${omniBerthName}의 앞으로 72시간을 기상 예보·조위 예측으로 재생합니다`
-              : omniBerthName
-                ? '이 선석은 3D 정밀 검토 장면에 없습니다 (온산 액체화물 부두 11곳만)'
-                : '선석에 붙은 배만 정밀 검토할 수 있습니다';
-            return (
-              <>
-                <button
-                  type="button"
-                  disabled={!omniReady}
-                  onClick={() => {
-                    requestOmniverse({
-                      berth: omniBerthName, call_sign: vessel.callsgn || null, vessel_name: vessel.vessel_name,
-                    });
-                    navigate('/twin');
-                  }}
-                  title={note}
-                  style={{
-                    marginTop: '10px', width: '100%',
-                    background: 'transparent', border: `1px solid ${omniReady ? COLORS.teal : COLORS.border}`,
-                    color: omniReady ? COLORS.teal : COLORS.textDim, borderRadius: '8px', padding: '7px 10px',
-                    fontSize: '11.5px', fontWeight: 700, cursor: omniReady ? 'pointer' : 'not-allowed',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  정밀 검토 (Omniverse · 앞으로 72시간 · 기동 1~2분)
-                </button>
-                <div style={{ fontSize: '10.5px', color: COLORS.textDim, marginTop: '4px' }}>{note}</div>
-              </>
-            );
-          })()}
+          {/* [2026-09-28] 정밀 검토(Omniverse) 버튼은 3D 관제 화면 머리의 [정밀 검토 영상] 하나로 합쳤다(현우 D4). */}
           </details>
         </>
       )}
@@ -726,15 +746,7 @@ export default function VesselDetailPanel() {
                 ✓ 확인 — {ack.by} · {formatKST(ack.at)}
               </div>
             ) : (
-              <button
-                onClick={() => ackAlert(id)}
-                style={{
-                  padding: '5px 12px', borderRadius: '6px', border: `1px solid ${COLORS.teal}`,
-                  background: 'transparent', color: COLORS.teal, cursor: 'pointer', fontSize: '12px', fontWeight: 700,
-                }}
-              >
-                확인 처리
-              </button>
+              <div style={{ color: COLORS.textDim, fontSize: '11.5px' }}>미확인 · 상단 경고 벨에서 확인합니다</div>
             )}
           </div>
         );

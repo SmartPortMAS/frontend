@@ -29,6 +29,30 @@ import { FaCheck, FaCheckCircle, FaExclamationTriangle, FaShieldAlt, FaShip, FaC
 //     실제 현장 제어(게이트 승인/차단)는 센서 데이터 탭 HardwarePanel 에 있다.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// 경고 문장 → 짧은 이유. "[입항전] 태정호 @ 판정불가 — 선석 '장생포호안'을(를) 찾을 수 없습니다(...)" → "판정불가 — 선석 '장생포호안'을(를) 찾을 수 없습니다"
+function shortReason(message, berth) {
+  let t = (message || '').replace(`${berth}: `, '');
+  t = t.replace(/^\[[^\]]+\]\s*[^@]{1,40}@\s*/, '');
+  const paren = t.search(/\s?\(/);
+  if (paren > 20) t = t.slice(0, paren);
+  const dash = t.indexOf(' — ', 40);
+  if (dash > 0 && t.length > 80) t = t.slice(0, dash);
+  return t.length > 90 ? `${t.slice(0, 88)}…` : t;
+}
+const LEVEL_RANK = { DANGER: 2, WARNING: 1 };
+function summarizeAlerts(items, berth) {
+  const map = new Map();
+  for (const a of items) {
+    const text = shortReason(a.message, berth);
+    const cur = map.get(text);
+    if (cur) {
+      cur.count += 1;
+      if ((LEVEL_RANK[a.level] || 0) > (LEVEL_RANK[cur.level] || 0)) cur.level = a.level;
+    } else map.set(text, { text, count: 1, level: a.level });
+  }
+  return [...map.values()].sort((x, y) => (LEVEL_RANK[y.level] || 0) - (LEVEL_RANK[x.level] || 0));
+}
+
 export default function ActiveRiskPanel() {
   const { data } = useDashboardData();
   const setSafetyPrefill = useSensorStore((s) => s.setSafetyPrefill);
@@ -46,7 +70,12 @@ export default function ActiveRiskPanel() {
   // 헤더 경고 벨에는 전량 그대로 남는다 — 화면에서 지우는 게 아니라 자리를 가린다.
   const allAlerts = data?.alerts ?? [];
   const navigate = useNavigate();
-  const alerts = useMemo(() => allAlerts.filter((a) => a.berth_name), [allAlerts]);
+  // [2026-09-29] 참고(INFO — 판정에 쓰지 않는 IMDG 부두 간 격리 등)는 선석 카드에서 뺀다. 3부두 카드가
+  //   참고 5줄과 그래프 경로로 채워져 '인접 선석 혼재' 위험처럼 보였다. 몇 건인지는 아래에 적는다.
+  const alerts = useMemo(() => allAlerts.filter((a) => a.berth_name && a.level !== 'INFO'), [allAlerts]);
+  const referenceCount = allAlerts.filter((a) => a.level === 'INFO').length;
+  // 이 화면에서는 헤더 벨이 숨으므로, 선석이 없는 경고가 있다는 사실만은 여기서 알린다.
+  const noBerthCount = allAlerts.filter((a) => !a.berth_name && a.level !== 'INFO').length;
   const vessels = data?.real_traffic ?? [];
   const berths = useMemo(() => groupAlertsByBerth(alerts), [alerts]);
 
@@ -70,8 +99,8 @@ export default function ActiveRiskPanel() {
           <FaShieldAlt style={{ marginRight: '8px', color: unackedTotal ? COLORS.red : COLORS.teal }} />
           현재 위험 선석 ({berths.length})
           <HelpTip title="현재 위험 선석" align="right">
-            혼재금지 · 화물 미확인 · 흘수 여유(UKC) 경고를 선석별로 묶었습니다. 선석의 [심사 →]를 누르면 왼쪽 심사 폼이
-            그 선석의 재항 화물로 채워지고, [위치 보기]는 3D 관제 화면에서 그 선석을 보여 줍니다. 경고는 선석마다 [확인]합니다.
+            혼재금지 · 화물 미확인 · 흘수 여유(UKC) 경고를 선석별로 묶었습니다. 같은 이유는 한 줄로 합쳐 건수를 붙입니다.
+            [심사 →]는 왼쪽 심사 폼을 그 선석의 재항 화물로 채우고, [위치 보기]는 3D 관제 화면에서 그 선석을 보여 줍니다. 경고 확인은 상단 벨에서 합니다.
           </HelpTip>
         </h3>
         {/* "모두 확인"은 뺐다(2026-09-26) — 안전 경고를 한 번에 확인 처리하는 동작은 실무에 없다.
@@ -80,6 +109,13 @@ export default function ActiveRiskPanel() {
 
       <div style={{ fontSize: '12.5px', color: COLORS.textSecondary, marginBottom: '10px' }}>
         경고 <strong>{alerts.length}</strong> · 미확인 <strong style={{ color: unackedTotal ? COLORS.red : COLORS.textSecondary }}>{unackedTotal}</strong>
+        {(noBerthCount > 0 || referenceCount > 0) && (
+          <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginTop: '3px' }}>
+            {noBerthCount > 0 && `계류시설 미상 ${noBerthCount}건은 대시보드 경고 벨에서 봅니다`}
+            {noBerthCount > 0 && referenceCount > 0 && ' · '}
+            {referenceCount > 0 && `판정에 쓰지 않는 참고 ${referenceCount}건(부두 간 IMDG 격리 등)은 뺐습니다`}
+          </div>
+        )}
       </div>
 
       {berths.length === 0 ? (
@@ -155,21 +191,7 @@ export default function ActiveRiskPanel() {
                     >
                       <FaCube size={9} /> 위치 보기
                     </button>
-                    {!allAcked && (
-                      <button
-                        type="button"
-                        onClick={() => unacked.forEach((a) => ackAlert(alertId(a)))}
-                        title={`${g.berth} 경고 ${unacked.length}건 확인 처리`}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: '4px',
-                          background: 'transparent', border: `1px solid ${COLORS.border}`,
-                          color: COLORS.teal, borderRadius: '6px', padding: '3px 8px',
-                          fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                        }}
-                      >
-                        <FaCheck size={9} /> 확인
-                      </button>
-                    )}
+                    {/* [2026-09-28] 경고 확인은 상단 벨 한 곳에서만 한다(현우 D2) — 여기는 보기만 */}
                     <button
                       type="button"
                       onClick={() => setSafetyPrefill({
@@ -188,6 +210,15 @@ export default function ActiveRiskPanel() {
                   </div>
                 </div>
                 <div style={{ fontSize: '11.5px', color: COLORS.textSecondary, marginTop: '5px', lineHeight: 1.5 }}>
+                  {/* [2026-09-28] 같은 이유는 한 줄로 묶는다(예: 판정불가 4건 · 선석 마스터 미등재). 경고 원문은 펼침 */}
+                  {summarizeAlerts(g.items, g.berth).map((x) => (
+                    <div key={x.text} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                      <FaExclamationTriangle size={10} color={levelStyle(x.level).color} style={{ marginTop: '3px', flexShrink: 0 }} />
+                      <span style={{ minWidth: 0 }}>{x.text}{x.count > 1 && <strong style={{ color: COLORS.textPrimary }}> · {x.count}건</strong>}</span>
+                    </div>
+                  ))}
+                  <details style={{ marginTop: '3px' }}>
+                    <summary style={{ cursor: 'pointer', color: COLORS.info, fontSize: '11px', fontWeight: 600 }}>경고 원문 {g.items.length}건</summary>
                   {g.items.map((a, i) => (
                     <div key={i} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
                       <FaExclamationTriangle size={10} color={levelStyle(a.level).color} style={{ marginTop: '3px', flexShrink: 0 }} />
@@ -231,6 +262,7 @@ export default function ActiveRiskPanel() {
                       })()}
                     </div>
                   ))}
+                  </details>
                 </div>
               </div>
             );

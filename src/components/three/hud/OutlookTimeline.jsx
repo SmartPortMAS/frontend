@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FaPlay, FaPause, FaTimes, FaFastForward, FaUndo } from 'react-icons/fa';
-import { fetchTwinOutlook } from '../../../api/backendAdapter';
+import { fetchTwinOutlook, fetchUpcomingArrivals, fetchBerthAssignments } from '../../../api/backendAdapter';
+import { ONSAN_BERTHS_3D } from '../../../utils/geoUtils';
 import useSensorStore from '../../../stores/useSensorStore';
 import HelpTip from '../../common/HelpTip';
 
@@ -15,7 +16,15 @@ import HelpTip from '../../common/HelpTip';
 // (9/27 현우). 같은 장면 안에서 시간축을 움직이면 그 선석의 색·라벨이 그 시각의 판정으로
 // 바뀌므로(Port.jsx outlookPreview) 변화가 눈에 보이고, Kit 없이 돈다.
 //
-// 재현하지 않는 것: 선박 이동·하역 진행 — 유량계·소요시간 모델이 없어 근거가 없다.
+// 재현하지 않는 것: 선박 이동 경로·하역 진행 — 유량계·소요시간 모델이 없어 근거가 없다.
+//
+// [2026-09-28] 입항·출항 예정을 시간축에 올렸다(현우: "72시간을 돌려도 바뀌는 게 없다").
+//   · PORT-MIS 입항 신고의 입항 예정 시각·사전배정 계류시설·흘수 → 그 시각에 선석에 반투명
+//     "입항 예정(신고)" 선체(ScheduledShips)가 서고, 출항 예정 시각에 사라진다.
+//   · 지금 접안한 선박은 선석 점유의 출항 예정 신고 시각이 지나면 3D 에서 뺀다.
+//   · 지목한 선석에 그 시각 머무는 예정 선박의 흘수 여유를 조석예보로 매시 계산한다 —
+//     필요 여유는 판정 잡과 같은 max(1.0 m, 흘수×10%). 흘수 신고가 없으면 판정불가.
+//   경로는 그리지 않는다(나타남·사라짐만). 모두 신고 기준이라 화면에 "신고"를 적는다.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // 판정 등급 색 — 어두운 3D 바탕용. 관제 화면 LEVEL_STYLE 과 뜻은 같고 밝기만 다르다.
@@ -46,6 +55,18 @@ const signed = (v, digits = 2) => `${Number(v) >= 0 ? '+' : ''}${Number(v).toFix
 const num = (v, unit) => (v == null ? '-' : `${Number(v).toFixed(1)} ${unit}`);
 
 const dim = { color: '#94a3b8', fontSize: 11, marginRight: 6 };
+
+// 판정 순위 · 게이트 — 백엔드 twin.py 와 같은 표
+const RANK = { 적합: 0, 주의: 1, 확인요청: 2, 판정불가: 2, 부적합: 3 };
+const GATE_OF = { 적합: 'OPEN', 주의: 'CAUTION', 확인요청: 'CAUTION', 판정불가: 'CAUTION', 부적합: 'LOCKED' };
+const worse = (a, b) => ((RANK[b] ?? -1) > (RANK[a] ?? -1) ? b : a);
+// 필요 여유 — 판정 잡·대시보드와 같은 규칙(docs/28): max(1.0 m, 흘수×10%)
+const ukcRequired = (dr) => Math.max(1.0, dr * 0.1);
+const draughtLevel = (ukc, dr) => (ukc == null ? null : ukc <= 0 ? '부적합' : ukc < ukcRequired(dr) ? '주의' : '적합');
+// PORT-MIS 표기(OTK1부두 · S-OIL2부두)를 3D 선석 키로 — 공백·대소문자만 무시한다
+const norm = (s) => (s || '').replace(/\s+/g, '').toUpperCase();
+const berthIdOf = (name) => Object.keys(ONSAN_BERTHS_3D).find((k) => norm(ONSAN_BERTHS_3D[k].name) === norm(name)) || null;
+const ms = (iso) => (iso ? new Date(iso).getTime() : null);
 const iconBtn = {
   background: 'rgba(232,240,242,0.08)', color: '#e8f0f2', border: '1px solid rgba(232,240,242,0.25)',
   borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
@@ -53,9 +74,12 @@ const iconBtn = {
 };
 
 export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
+  const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
   const setOutlookPreview = useSensorStore((s) => s.setOutlookPreview);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [sched, setSched] = useState([]);     // 입항 예정(PORT-MIS 신고) — 온산 3D 선석
+  const [leaving, setLeaving] = useState([]); // 지금 접안 선박의 출항 예정(신고)
   const [cursor, setCursor] = useState(-1);     // -1 = 지금(실측) · 0.. = 예보 시각
   const [playing, setPlaying] = useState(false);
   const stripRef = useRef(null);
@@ -71,14 +95,84 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
     return () => { alive = false; };
   }, [focus.berth, focus.call_sign]);
 
-  const pts = useMemo(() => data?.forecast ?? [], [data]);
+  // 입항·출항 예정 — 판정 흐름과 따로 읽는다(실패해도 기상 흐름은 그대로 보인다)
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      fetchUpcomingArrivals({ aheadHours: 72, pastHours: 0 }).catch(() => null),
+      fetchBerthAssignments().catch(() => null),
+    ]).then(([arr, berths]) => {
+      if (!alive) return;
+      const now = Date.now();
+      setSched((arr?.items || []).map((r) => {
+        const berthId = berthIdOf(r.wharf_name || r.facility_name);
+        if (!berthId || r.facility_type !== 'BERTH' || !(ms(r.arrival_at_utc) > now)) return null;
+        return {
+          berthId, call_sign: r.call_sign, vessel_name: r.vessel_name, eta: r.arrival_at_utc,
+          etd: r.departure_sched_utc || null, draught: Number(r.draught_m) > 0 ? Number(r.draught_m) : null,
+          draught_basis: r.draught_basis || null,
+          depth: Number(r.depth_m) > 0 ? Number(r.depth_m) : (ONSAN_BERTHS_3D[berthId] ? null : null),
+          report_type: r.report_type || null,
+        };
+      }).filter(Boolean));
+      setLeaving((berths || []).flatMap((b) => (b.slots || [])
+        .filter((x) => x.call_sign && x.departure_scheduled_utc && ms(x.departure_scheduled_utc) > now)
+        .map((x) => ({ berthId: berthIdOf(b.wharf_name), call_sign: x.call_sign, vessel_name: x.vessel_name, etd: x.departure_scheduled_utc })))
+        .filter((x) => x.berthId));
+    });
+    return () => { alive = false; };
+  }, [focus.berth]);
+
+  const rawPts = useMemo(() => data?.forecast ?? [], [data]);
+  const focusDraught = Number(data?.draught?.vessel_draught_m);
+  const focusLeave = leaving.find((l) => focus.call_sign && norm(l.call_sign) === norm(focus.call_sign));
+  // 시각마다: 백엔드 기상 판정 + (지목 선박이 아직 있으면) 흘수 여유 + 그 시각 이 선석의 입항 예정 선박 흘수 여유
+  const pts = useMemo(() => rawPts.map((p) => {
+    const t = ms(p.at_utc);
+    let level = p.weather_level || p.level || '적합';
+    const notes = [];
+    const stillHere = !(focusLeave && ms(focusLeave.etd) <= t);
+    if (stillHere && p.ukc_m != null && focusDraught > 0) level = worse(level, draughtLevel(p.ukc_m, focusDraught));
+    const ghosts = sched
+      .filter((g) => ms(g.eta) <= t && (!g.etd || t < ms(g.etd)))
+      .map((g) => {
+        let gl = null; let ukc = null;
+        if (g.berthId === focus.berthId) {
+          if (!g.draught) gl = '판정불가';
+          else if (g.depth && p.tide_m != null) { ukc = g.depth + p.tide_m - g.draught; gl = draughtLevel(ukc, g.draught); }
+        }
+        return { ...g, level: gl, ukc };
+      });
+    ghosts.filter((g) => g.berthId === focus.berthId && g.level).forEach((g) => {
+      level = worse(level, g.level);
+      notes.push(g.level === '판정불가'
+        ? `입항 예정 ${g.vessel_name || g.call_sign} 흘수 미신고`
+        : g.level !== '적합' ? `입항 예정 ${g.vessel_name || g.call_sign} 흘수 여유 ${signed(g.ukc)} m` : null);
+    });
+    const departed = leaving.filter((l) => ms(l.etd) <= t).map((l) => l.call_sign);
+    const wx = p.weather_level && p.weather_level !== '적합' ? p.status : null;
+    const headline = [wx, ...notes.filter(Boolean)].filter(Boolean).join(' · ') || (level === '적합' ? '정상' : p.headline || p.status);
+    return { ...p, level, gate: GATE_OF[level] || p.gate, headline, ghosts, departed };
+  }), [rawPts, sched, leaving, focus.berthId, focusDraught, focusLeave]);
   const n = pts.length;
   const firstIdx = useMemo(() => {
-    const f = data?.first_change;
-    if (!f) return null;
-    const i = pts.findIndex((p) => p.at_utc === f.at_utc);
+    const i = pts.findIndex((p) => p.level && p.level !== '적합');
     return i >= 0 ? i : null;
-  }, [data, pts]);
+  }, [pts]);
+  // 지목 선석의 72시간 안 입항·출항 예정 — 시간축 표지와 목록
+  const hereEvents = useMemo(() => {
+    const evs = [];
+    sched.filter((g) => g.berthId === focus.berthId).forEach((g) => evs.push({ kind: 'in', at: g.eta, g }));
+    leaving.filter((l) => l.berthId === focus.berthId).forEach((l) => evs.push({ kind: 'out', at: l.etd, g: l }));
+    sched.filter((g) => g.berthId === focus.berthId && g.etd).forEach((g) => evs.push({ kind: 'out', at: g.etd, g }));
+    return evs.sort((a, b) => ms(a.at) - ms(b.at));
+  }, [sched, leaving, focus.berthId]);
+  const idxOf = (iso) => {
+    if (!n) return null;
+    const t = ms(iso);
+    const i = pts.findIndex((p) => ms(p.at_utc) >= t);
+    return i >= 0 ? i : null;
+  };
 
   // 자동 재생 — 지금 → 한 시각씩. 첫 변화에서 멈춘다(없으면 끝까지 가서 멈춘다).
   useEffect(() => {
@@ -104,6 +198,8 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
       berthId: focus.berthId, level: src.level || null, status: src.status || null,
       headline: src.headline || src.status || null, gate: src.gate || null,
       at_utc: point ? point.at_utc : null, offsetH: point ? offsetHours(point.at_utc) : 0,
+      ghosts: point ? point.ghosts : [], departed: point ? point.departed : [],
+      wave_m: point ? point.wave_m : null,
     });
   }, [data, point, cur, focus.berthId, setOutlookPreview]);
   useEffect(() => () => setOutlookPreview(null), [setOutlookPreview]);
@@ -130,13 +226,18 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
     if (tideM == null) return '조위 예측 없음 — 흘수 여유는 지금 실측만';
     const src = isNow ? '실측' : `조석예보 + 보정 ${bias >= 0 ? '+' : ''}${Math.round(bias)} cm`;
     if (!draughtOn) return `조위 ${signed(tideM)} m (${src}) · 흘수 — ${noDraught}`;
-    return `조위 ${signed(tideM)} m (${src}) · 흘수 여유 ${ukc == null ? '-' : signed(ukc)} m (필요 ${(draught * 0.10).toFixed(2)})`;
+    return `조위 ${signed(tideM)} m (${src}) · 흘수 여유 ${ukc == null ? '-' : signed(ukc)} m (필요 ${ukcRequired(draught).toFixed(2)})`;
   };
   const actionFor = (p) => {
     if (p.level === '적합') return '없음 — 이 시각 하역 가능';
     const steps = [];
     if (p.weather_level && p.weather_level !== '적합') steps.push(`${whenLabel(p.at_utc)}부터 ${p.status} 예보 — 그 전에 하역 종료 또는 개시 연기`);
     if (p.draught_verdict && p.draught_verdict !== 'OK') steps.push('조위 오르는 시각으로 이동 또는 수심 깊은 선석');
+    (p.ghosts || []).filter((g) => g.berthId === focus.berthId && g.level && g.level !== '적합').forEach((g) => {
+      steps.push(g.level === '판정불가'
+        ? `${g.vessel_name || g.call_sign} 흘수 신고 확인 후 입항 전 재판정`
+        : `${g.vessel_name || g.call_sign} 입항 시각을 조위 오르는 때로 조정 또는 대체 선석 검토`);
+    });
     return steps.join(' · ') || '하역 개시 전 재확인';
   };
 
@@ -155,11 +256,11 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
     : null;
 
   // 요약 — 지금 실측으로 이미 막혀 있으면 그것부터 말한다(안 그러면 "지금 중단"과 "막히는 예보 없음"이 모순처럼 보인다)
-  const first = data?.first_change || null;
+  const first = firstIdx != null ? pts[firstIdx] : null;
   const nowBlocked = Boolean(cur?.level) && cur.level !== '적합';
   let summary = first
     ? `첫 변화 ${whenLabel(first.at_utc)} — ${first.headline || first.status}`
-    : `예보로는 앞으로 ${n}시간 하역이 막히지 않음`;
+    : `예보로는 앞으로 ${n}시간 하역이 막히지 않음${hereEvents.some((e) => e.kind === 'in') ? ` · 이 선석 입항 예정 ${hereEvents.filter((e) => e.kind === 'in').length}척(신고)` : ''}`;
   if (nowBlocked) summary = `지금은 실측으로 ${cur.headline || cur.status} · ${summary}`;
   const waveNow = nowBlocked && (cur.reasons || []).some((r) => /파고/.test(r) && />=/.test(r));
   const sources = data
@@ -173,6 +274,15 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
       level: point.level, headline: point.headline || point.status, gate: point.gate,
       line1: `예보 풍속 ${num(point.wind_ms, 'm/s')} · 파고 ${num(point.wave_m, 'm')}${Number(point.precip_mm) > 0 ? ` · 강수 ${num(point.precip_mm, 'mm')}` : ''}`,
       line2: tideLine(point.tide_m, point.ukc_m, false),
+      line3: (() => {
+        const here = (point.ghosts || []).filter((g) => g.berthId === focus.berthId);
+        if (!here.length) return null;
+        return here.map((g) => `입항 예정(신고 ${hm(g.eta)}) ${g.vessel_name || g.call_sign} · `
+          + (g.draught ? `흘수 ${g.draught.toFixed(1)} m${g.draught_basis ? `(${g.draught_basis})` : ''}`
+            + (g.ukc != null ? ` · 여유 ${signed(g.ukc)} m (필요 ${ukcRequired(g.draught).toFixed(2)})` : '') : '흘수 미신고 → 판정불가')).join(' / ');
+      })(),
+      recipient: (point.ghosts || []).some((g) => g.berthId === focus.berthId && g.level && g.level !== '적합')
+        ? '선석 운영 주체 · VTS (입항 전)' : '터미널 안전관리자 → 하역 개시 게이트',
       action: actionFor(point),
     }
     : cur
@@ -214,15 +324,11 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
         <HelpTip title="앞으로 72시간">
           <div>이 선석의 <strong>앞으로 72시간</strong>을 기상청 단기예보 · 국립해양조사원 조석예보로 한 시각씩 판정합니다. 판정 규칙은 관제 화면과 같습니다.</div>
           <div style={{ marginTop: 4 }}>시간축을 누르거나 재생하면 3D 화면의 선석 색과 라벨이 그 시각의 판정으로 바뀝니다. 빨간 선이 첫 변화입니다.</div>
-          <div style={{ marginTop: 4 }}>선박 이동·하역 진행은 예측 근거(유량계·소요시간 모델)가 없어 재현하지 않습니다.</div>
+          <div style={{ marginTop: 4 }}>입항·출항 예정(PORT-MIS 신고)도 시간축에 올립니다 — 입항 예정 시각에 선석에 반투명 선체가 서고(▼ 파랑), 출항 예정 시각에 사라집니다(▲ 회색). 그 시각의 조석예보로 흘수 여유를 계산해 필요 여유 max(1.0 m, 흘수×10%)보다 작으면 주의, 흘수 신고가 없으면 판정불가입니다.</div>
+          <div style={{ marginTop: 4 }}>선박 이동 경로·하역 진행은 예측 근거(유량계·소요시간 모델)가 없어 재현하지 않습니다.</div>
         </HelpTip>
         {data && <span style={{ color: '#94a3b8', fontSize: 11.5 }}>{data.berth_group || '부두군 미상'} 기준 · {rule}</span>}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {onOmniverse && (
-            <button type="button" onClick={onOmniverse} style={{ ...iconBtn, color: '#94a3b8' }} title="같은 72시간을 Omniverse 로 봅니다 — 고사양 PC 전용, 기동 1~2분">
-              Omniverse 로 보기
-            </button>
-          )}
           <button type="button" onClick={onClose} style={iconBtn} title="닫기 — 선석 색이 실측으로 돌아갑니다"><FaTimes /></button>
         </span>
       </div>
@@ -265,6 +371,21 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
                 {firstIdx != null && (
                   <div style={{ position: 'absolute', top: -6, bottom: -4, left: `${(firstIdx / n) * 100}%`, width: 2, background: '#ff5a50' }} />
                 )}
+                {hereEvents.map((e) => {
+                  const i = idxOf(e.at);
+                  if (i == null) return null;
+                  return (
+                    <div
+                      key={`${e.kind}-${e.g.call_sign}-${e.at}`}
+                      title={`${e.kind === 'in' ? '입항 예정' : '출항 예정'}(신고) ${hm(e.at)} · ${e.g.vessel_name || e.g.call_sign}`}
+                      style={{
+                        position: 'absolute', left: `calc(${((i + 0.5) / n) * 100}% - 5px)`, bottom: -11, width: 0, height: 0,
+                        borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
+                        ...(e.kind === 'in' ? { borderBottom: '7px solid #60a5fa' } : { borderBottom: '7px solid #94a3b8' }),
+                      }}
+                    />
+                  );
+                })}
                 {cursor >= 0 && (
                   <div style={{
                     position: 'absolute', top: -9, left: `calc(${((cursor + 0.5) / n) * 100}% - 6px)`, width: 0, height: 0,
@@ -307,10 +428,11 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
                 </div>
                 <div>{view.line1}</div>
                 <div style={{ color: '#c3cede' }}>{view.line2}</div>
+                {view.line3 && <div style={{ color: '#93c5fd' }}>{view.line3}</div>}
               </div>
               <div style={{ display: 'grid', gap: 3, alignContent: 'start', paddingTop: 14 }}>
                 <div><span style={dim}>조치안</span>{view.action}</div>
-                <div><span style={dim}>받는 곳</span>터미널 안전관리자 → 하역 개시 게이트</div>
+                <div><span style={dim}>받는 곳</span>{view.recipient || '터미널 안전관리자 → 하역 개시 게이트'}</div>
                 <div><span style={dim}>판정 이력</span><span style={{ color: a?.level ? LEVEL_COLOR[a.level] : '#c3cede' }}>{verdictLine}</span></div>
                 {gateLine && <div><span style={dim}>게이트</span>{gateLine}</div>}
               </div>

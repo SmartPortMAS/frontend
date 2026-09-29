@@ -1,9 +1,37 @@
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Sky } from '@react-three/drei';
 import BerthFocus from './BerthFocus';
-import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing';
-import { BlendFunction } from 'postprocessing';
-import { Suspense } from 'react';
+import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
+import { Suspense, useRef } from 'react';
+
+// [2026-09-29] 가벼운 모드 — 느린 PC 에서 3D 가 버벅인다(동안·현우). 처음 3초의 프레임을 재서 30 아래면
+// 그림자(장면에서 가장 비싼 패스)를 끄고 해상도를 1배로 내린다. 결과·자료는 그대로고 그림만 단순해진다.
+// ?lite=1 로 강제, ?lite=0 으로 끔. 켜지면 화면 왼쪽 아래에 "가벼운 모드" 칩이 뜬다.
+function PerfProbe() {
+  const setTwinLite = useSensorStore((s) => s.setTwinLite);
+  const lite = useSensorStore((s) => s.twinLite);
+  const setDpr = useThree((s) => s.setDpr);
+  const frames = useRef(0);
+  const start = useRef(null);
+  const done = useRef(false);
+  // 처음 5초는 재지 않는다 — 셰이더 컴파일·자료 적재로 좋은 PC 도 느리다(실측: GPU PC 가 가벼운 모드로 빠졌다).
+  const WARMUP = 5;
+  const WINDOW = 3;
+  useFrame((state) => {
+    if (done.current) return;
+    if (start.current === null) { start.current = state.clock.elapsedTime; return; }
+    const dt = state.clock.elapsedTime - start.current;
+    if (dt < WARMUP) return;
+    frames.current += 1;
+    if (dt >= WARMUP + WINDOW) {
+      done.current = true;
+      const fps = frames.current / (dt - WARMUP);
+      if (fps < 30 && !lite) { setTwinLite(true); setDpr(1); }
+    }
+  });
+  return null;
+}
+const LITE_PARAM = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('lite') : null;
 import Port from './Port';
 import Water from './Water';
 import useSensorStore from '../../stores/useSensorStore';
@@ -15,6 +43,7 @@ import useSensorStore from '../../stores/useSensorStore';
 
 function SimulationEnvironment({ focusBerth, focusRings = true }) {
   const predictionOffset = useSensorStore((s) => s.predictionOffset);
+  const lite = useSensorStore((s) => s.twinLite);
 
   // 기준 시각은 현재 시각이다.
   //
@@ -31,7 +60,9 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
   const sunY = Math.sin(sunAngle) * 1000;
 
   const isNight = hour < 6 || hour > 18;
-  const ambientIntensity = isNight ? 0.15 : 0.5;
+  // [2026-09-28] 밤 최저 밝기를 올렸다 — 18시 뒤 장면이 거의 검어 고장처럼 보였다(현우 D13)
+  // 가벼운 모드는 그림자가 없어 어두운 면이 안 생기므로 환경광을 조금 올린다
+  const ambientIntensity = (isNight ? 0.42 : 0.5) + (lite ? 0.15 : 0);
   const sunIntensity = isNight ? 0 : Math.max(Math.sin(sunAngle), 0) * 1.8;
 
   return (
@@ -43,7 +74,7 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
       <hemisphereLight
         skyColor="#4a7aad"
         groundColor="#1a2a3a"
-        intensity={isNight ? 0.1 : 0.35}
+        intensity={isNight ? 0.3 : 0.35}
       />
 
       {!isNight && (
@@ -51,15 +82,15 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
           position={[sunX, sunY, -500]}
           intensity={sunIntensity}
           color="#fff5e6"
-          castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
+          castShadow={!lite}
+          shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024}
         />
       )}
       {isNight && (
         <directionalLight
           position={[-500, 400, 500]}
-          intensity={0.35}
+          intensity={0.7}
           color="#38bdf8"
         />
       )}
@@ -82,11 +113,15 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
       <Port />
       <BerthFocus berthName={focusBerth} showRings={focusRings} />
 
-      <EffectComposer disableNormalPass>
-        <Bloom luminanceThreshold={0.55} mipmapBlur intensity={0.8} />
-        <Noise opacity={0.04} blendFunction={BlendFunction.OVERLAY} />
-        <Vignette eskil={false} offset={0.15} darkness={0.9} />
-      </EffectComposer>
+      {/* [2026-09-29] 후처리는 매 프레임 화면 전체를 다시 그려 느린 PC 에서 가장 큰 비용이었다(동안·현우 체감).
+          장식이라 기본은 끄고, 촬영 때만 ?fx=1 로 켠다. */}
+      {LITE_PARAM !== '0' && <PerfProbe />}
+      {FX_ON && !lite && (
+        <EffectComposer disableNormalPass>
+          <Bloom luminanceThreshold={0.55} mipmapBlur intensity={0.8} />
+          <Vignette eskil={false} offset={0.15} darkness={0.9} />
+        </EffectComposer>
+      )}
 
       <OrbitControls
         makeDefault
@@ -102,18 +137,22 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
   );
 }
 
+const FX_ON = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fx') === '1';
+
 export default function Scene({ focusBerth, focusRings = true }) {
+  const lite = useSensorStore((s) => s.twinLite);
   return (
     <Canvas
+      key={lite ? 'lite' : 'full'}
       camera={{ position: [330, 230, -250], fov: 50 }}
       style={{ background: '#0a1628' }}
-      shadows
+      shadows={!lite}
       gl={{
         powerPreference: 'high-performance',
-        antialias: true,
+        antialias: !lite,
         alpha: false,
       }}
-      dpr={[1, 1.5]}
+      dpr={lite ? 1 : [1, 1.25]}
       onCreated={(state) => {
         state.gl.setClearColor('#0a1628');
       }}

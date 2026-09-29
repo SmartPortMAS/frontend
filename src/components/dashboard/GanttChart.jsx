@@ -108,15 +108,16 @@ export default function GanttChart() {
       <div className="glass-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
         <h3 className="glass-card-title">
           부두별 접안 이력
-          <span style={{ fontWeight: 400, fontSize: '12px', color: isRealHistory ? COLORS.teal : COLORS.textDim, marginLeft: '8px' }}>
-            실수집 {isRealHistory && '●'}
+          <span style={{ fontWeight: 400, fontSize: '12px', color: COLORS.textDim, marginLeft: '8px' }}>
+            참고 · 판정에는 쓰지 않음{isRealHistory ? ' · 실수집' : ''}
           </span>
         </h3>
         {stats?.total_port_calls != null && (
-          <span style={{ fontSize: '12px', color: COLORS.textSecondary }}>
-            입출항 <strong style={{ color: COLORS.teal }}>{stats.total_port_calls.toLocaleString()}</strong>건
+          <span style={{ fontSize: '12px', color: COLORS.textSecondary, display: 'inline-flex', alignItems: 'center' }}
+            title="입출항 신고 기록 전체 중, 신고된 계류시설이 선석 기준자료와 맞아 어느 선석인지 확인된 기록만 막대로 그립니다. 나머지는 정박지·시설명 미확인 기록입니다.">
+            입출항 신고 <strong style={{ color: COLORS.teal, margin: '0 3px' }}>{stats.total_port_calls.toLocaleString()}</strong>건
             {stats.port_calls_by_facility_type?.BERTH != null && (
-              <> · 선석 확정 <strong style={{ color: COLORS.teal }}>{stats.port_calls_by_facility_type.BERTH.toLocaleString()}</strong>건</>
+              <> 중 선석 확인 <strong style={{ color: COLORS.teal, margin: '0 3px' }}>{stats.port_calls_by_facility_type.BERTH.toLocaleString()}</strong>건 표시</>
             )}
           </span>
         )}

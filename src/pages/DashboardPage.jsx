@@ -4,6 +4,7 @@ import WeatherPanel from '../components/dashboard/WeatherPanel';
 import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
 import PortMap from '../components/dashboard/PortMap';
 import PortCallTable from '../components/dashboard/PortCallTable';
+import GanttChart from '../components/dashboard/GanttChart';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import useDashboardData from '../hooks/useDashboardData';
 import { fetchPendingApprovals, fetchBerthAssignments } from '../api/backendAdapter';
@@ -22,10 +23,32 @@ export default function DashboardPage() {
     const t = setInterval(load, 60000);
     return () => { alive = false; clearInterval(t); };
   }, []);
-  const countLevel = (lv) => (pending ?? []).filter((r) => r.level === lv).length;
+  // [2026-09-28] 기록 건수가 아니라 선박 수로 센다. 판정 이력은 시점(입항 전·접안 직전·하역 중)마다
+  // 한 줄씩 쌓이므로, 같은 선박이 3건으로 세어지고 확인하지 않은 며칠 전 기록도 남는다
+  // (9/28 실측: 44건 = 선박 기준으로는 훨씬 적음). 선박마다 가장 최근 판정 하나만 센다.
+  const latestByVessel = (() => {
+    const m = new Map();
+    for (const r of pending ?? []) {
+      const key = (r.call_sign || r.vessel_name || String(r.id)).trim().toUpperCase();
+      const cur = m.get(key);
+      if (!cur || String(r.assessed_at_utc) > String(cur.assessed_at_utc)) m.set(key, r);
+    }
+    return [...m.values()];
+  })();
+  const countLevel = (lv) => latestByVessel.filter((r) => r.level === lv).length;
   const unfitCount = countLevel('부적합');
   const unknownCount2 = countLevel('판정불가');
   const cautionCount = countLevel('주의');
+  // 판정불가는 "모르면 통과시키지 않는다"의 결과다 — 왜 모르는지를 나눠 보인다.
+  const unknownWhy = latestByVessel.filter((r) => r.level === '판정불가').reduce((acc, r) => {
+    const t = (r.reasons || []).join(' ');
+    const k = /마스터 미등록|찾을 수 없습니다/.test(t) ? '선석자료 없음'
+      : /화물을 식별할 수 없습니다/.test(t) ? '화물 미식별'
+        : /항해상태/.test(t) ? '항해상태'
+          : /관측|기상/.test(t) ? '기상 관측 없음' : '기타';
+    acc[k] = (acc[k] || 0) + 1; return acc;
+  }, {});
+  const unknownWhyText = Object.entries(unknownWhy).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(' · ');
 
   // KPI는 실AIS(+실화물 조인) 기준으로 센다 — data.vessels는 데모 시나리오 선박이라
   // 실제 재항 척수와 무관하다.
@@ -80,10 +103,12 @@ export default function DashboardPage() {
         />
         <KPICard
           title="확인 대기 판정"
-          value={pending ? pending.length : '—'}
-          unit={pending ? '건' : ''}
+          value={pending ? latestByVessel.length : '—'}
+          unit={pending ? '척' : ''}
           icon={<FaShieldAlt />}
-          change={pending ? `부적합 ${unfitCount} · 판정불가 ${unknownCount2} · 주의 ${cautionCount}` : '판정 이력을 불러오지 못했습니다'}
+          change={pending
+            ? `부적합 ${unfitCount}${cautionCount ? ` · 주의 ${cautionCount}` : ''} · 판정불가 ${unknownCount2}${unknownWhyText ? ` — ${unknownWhyText}` : ''}`
+            : '판정 이력을 불러오지 못했습니다'}
           trend={!pending ? 'neutral' : unfitCount > 0 ? 'negative' : 'positive'}
           to="/arrivals"
         />
@@ -124,6 +149,11 @@ export default function DashboardPage() {
       {/* 입항 선박 목록 (Full Width) */}
       <div className="dash-section">
         <PortCallTable />
+      </div>
+
+      {/* [2026-09-28] 부두별 접안 이력 — 판정에 쓰지 않는 참고 정보라 판정 화면이 아니라 대시보드 맨 아래에 둔다(현우) */}
+      <div className="dash-section">
+        <GanttChart />
       </div>
 
       {/* 화면에서 내린 것들 —

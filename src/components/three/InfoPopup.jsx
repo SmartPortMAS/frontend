@@ -39,6 +39,7 @@ function MockNotice() {
 
 export default function InfoPopup({ object, onClose }) {
   const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
+  const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
   const requestOutlook = useSensorStore((s) => s.requestOutlook);
   if (!object) return null;
 
@@ -100,7 +101,8 @@ export default function InfoPopup({ object, onClose }) {
 
             {type === 'Ship' && (
               <div className="hud-details">
-                <Row label="배정 선석" value={ONSAN_BERTHS[object.berth]?.name || object.berth || '미배정'} />
+                {/* AIS 위치로 본 접안 선석 — 배정이 아니다(2026-09-29 라벨 수정) */}
+                <Row label="접안 선석" value={ONSAN_BERTHS[object.berth]?.name || object.berth || '접안 안 함'} />
                 <Row label="화물" value={object.cargoType || '미확인'} />
                 {/* 적재량은 수집 소스가 없다(useLiveTwinShips: cargoAmount=null).
                     예전엔 "0 / 50,000 t" + 0% 진행바를 그렸는데, 50,000 은 근거 없는
@@ -199,26 +201,12 @@ export default function InfoPopup({ object, onClose }) {
                   <FaPlay /> 앞으로 72시간 판정 흐름
                 </button>
                 <div style={{ marginTop: '6px', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.5 }}>{outlookNote}</div>
-                {omniReady && (
-                  <button
-                    type="button"
-                    onClick={() => requestOmniverse(focusPayload)}
-                    title="같은 72시간을 Omniverse 로 봅니다 — 고사양 PC 전용, 기동 1~2분"
-                    style={{
-                      marginTop: '6px', background: 'none', border: 'none', padding: 0, color: '#64748b',
-                      fontSize: '11px', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
-                    }}
-                  >
-                    Omniverse 로 보기 (고사양 PC)
-                  </button>
-                )}
               </div>
             )}
 
             {type === 'Ship' && object.is_real && (
               <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.6 }}>
-                인접 선석 화물 판정(혼재 · 산적 호환성)은 <strong style={{ color: '#e8f0f2' }}>대시보드 → 선박 상세</strong> 또는
-                우하단 <strong style={{ color: '#e8f0f2' }}>에이전트 판단 과정</strong>의 종합 판정에서 봅니다.
+                이 배의 판정과 근거(선석 · 기상 · 혼재)는 <strong style={{ color: '#e8f0f2' }}>선박 판정</strong> 화면의 [근거]에서 봅니다.
               </div>
             )}
           </div>

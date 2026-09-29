@@ -31,7 +31,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
 
         <NavLink to="/safety" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
           <div className="nav-icon"><FaShieldAlt /></div>
-          <div className="nav-label">안전/환경 관제</div>
+          <div className="nav-label">화물 혼재 심사</div>
         </NavLink>
 
         <NavLink to="/twin" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>

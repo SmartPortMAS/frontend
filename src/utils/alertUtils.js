@@ -32,6 +32,8 @@ export const TYPE_LABEL = {
   // [2026-09-22] D3 — 같은 선석이 아니라 **옆 부두** 재항 화물과의 충돌.
   // 같은 '혼재금지'로 적으면 관제사가 어디를 봐야 하는지 알 수 없다.
   ADJACENT_SEGREGATION: '인접 선석 혼재',
+  // [2026-09-27] 같은 배에 함께 실린 화물쌍 — 선석 판정이 아니라 탱크 배치 확인 대상
+  ONBOARD_SEGREGATION: '선내 적부 확인',
   DRAUGHT: '흘수/UKC',
   UNIDENTIFIED_CARGO: '화물 미확인',
   // arrival_watcher 자동배정 결과 — 표기가 없으면 화면에 영문 코드가 그대로 나온다

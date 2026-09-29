@@ -1,5 +1,7 @@
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
+import useDashboardData from '../../hooks/useDashboardData';
+import useSensorStore from '../../stores/useSensorStore';
 import * as THREE from 'three';
 
 // ---------------------------------------------------------------------------
@@ -163,10 +165,20 @@ export default function Water() {
     uSunIntensity: { value: 1.0 },
   }), []);
 
+  // [2026-09-28] 물결 크기를 실측 유의파고에 잇는다(예전엔 늘 1.0 고정). 72시간 흐름을 재생 중이면
+  // 그 시각의 예보 파고. 파고 H 의 진폭은 H/2 — 셰이더 기본 진폭(약 1.2 유닛)에 맞춰 H×0.45 로 두고,
+  // 너무 잔잔해 보이지 않게 아래·위를 막는다. 자료가 없으면 예전 값(1.0)을 쓴다.
+  const { data } = useDashboardData();
+  const outlookWave = useSensorStore((s) => s.outlookPreview?.wave_m);
+  const obsWave = Number(data?.weather?.wave_height_sig_m);
+  const H = outlookWave != null ? Number(outlookWave) : obsWave;
+  const target = Number.isFinite(H) && H > 0 ? THREE.MathUtils.clamp(H * 0.45, 0.12, 3.0) : 1.0;
+
   useFrame((state) => {
     if (!meshRef.current) return;
     const mat = meshRef.current.material;
     mat.uniforms.uTime.value = state.clock.elapsedTime * 0.7;
+    mat.uniforms.uWaveHeight.value += (target - mat.uniforms.uWaveHeight.value) * 0.05;
   });
 
   return (

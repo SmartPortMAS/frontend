@@ -437,7 +437,7 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
     const parts = [];
     if (p.msds?.hit) parts.push(`MSDS ${p.msds.category} 충돌`);
     else if (p.msds) parts.push('MSDS 상극 관계 없음');
-    if (p.bulk?.hit) parts.push(`벌크호환성그룹(참고축) ${p.bulk.reason}`);
+    if (p.bulk?.hit) parts.push(`46 CFR 150 호환성 그룹 ${p.bulk.reason}`);
     if (p.unassessed) parts.push(`판정 근거 부족 — ${p.unassessed.reason}`);
     const ref = p.imdg?.hit
       ? `IMDG Class ${p.imdg.targetClass}↔${p.imdg.adjacentClass} 격리코드 ${p.imdg.segregationCode} (선내 적부 기준 — 부두 간 판정에는 미적용)`
@@ -490,12 +490,20 @@ function mapSafety(r, requestedAdjacent = [], targetChemId = null) {
     },
     gates,
     explanation: {
+      // summary 는 옛 서술(등급 이유 + 화물 특성)이다 — 스냅샷처럼 새 필드가 없는 응답의 대체용.
       summary: r.reasoning,
       reasoning: r.key_hazards || [],
       checklist: r.checklist || [],
+      // [2026-09-29] 등급의 근거(코드) · 확인 필요 · 화물 특성(LLM)을 따로 받는다. 예전엔 한 덩어리
+      // reasoning 을 두 줄만 보여줘, 정작 등급의 원인(같은 선박 충돌 등)이 잘려 안 보였다.
+      basis: r.verdict_basis || [],
+      needs_check: r.needs_check || [],
+      profile: r.cargo_profile || '',
     },
     target_cargo_name: r.target_cargo_name,
     cargo_verdicts: r.cargo_verdicts || [],
+    // [2026-09-28] 같은 선박 화물끼리의 혼재 충돌 — 있으면 등급이 최소 '주의'.
+    onboard_conflicts: r.onboard_conflicts || [],
     msds_sections_used: r.msds_sections_used || [],
     is_local_fallback: false,
     source: 'BACKEND_LLM',
@@ -515,15 +523,29 @@ const DECISION_TO_STATUS = {
   '전 후보 부적합': 'REJECTED',
 };
 
+// [2026-09-29] 화면 등급은 백엔드 level(판정 기록과 같은 함수)로 정한다. overall_decision 으로
+// 정하면 혼재 '주의'가 초록 '적합'으로, 근거 부족(판정불가)이 빨간 '적합선석없음'으로 보였다.
+const LEVEL_TO_STATUS = {
+  '적합': 'APPROVED',
+  '주의': 'CAUTION',
+  '부적합': 'REJECTED',
+  '판정불가': 'UNKNOWN',
+};
+
 function mapOrchestration(r) {
   const d = r.overall_decision || '';
-  // 모르는 값은 REJECTED 로 떨어뜨린다 — 새 값이 생겼을 때 조용히 '적합'으로
-  // 보이는 것보다, 보수적으로 막히고 눈에 띄는 편이 낫다.
-  const status = DECISION_TO_STATUS[d] ?? 'REJECTED';
+  // level 이 없는 응답(옛 스냅샷)은 귀결 어휘로 대신한다. 모르는 값은 REJECTED 로 떨어뜨린다 —
+  // 새 값이 생겼을 때 조용히 '적합'으로 보이는 것보다, 보수적으로 막히고 눈에 띄는 편이 낫다.
+  const status = LEVEL_TO_STATUS[r.level] ?? DECISION_TO_STATUS[d] ?? 'REJECTED';
   const trace = r.assignment_trace || [];
   return {
     status,
-    decision_label: d,
+    decision_label: r.level || d,
+    // 등급의 이유 한 줄 · 도구별 의견(등급·근거·못 본 것) · 확인 필요 · 교차 확인 조건
+    headline: r.headline || '',
+    opinions: r.opinions || [],
+    needs_check: r.needs_check || [],
+    conditions: r.conditions || [],
     // [2026-09-27] 검증모드 전용 — 배정한 선석이 아니라 **판정한 선석**이다.
     // 정박지 배정(anchorage_assignment)·대체 배정(assignment_changed)은 백엔드에서 없어졌다.
     berth_assigned: r.selected_berth?.wharf_name || null,
@@ -536,7 +558,11 @@ function mapOrchestration(r) {
     // "안전 판정: 위험" 한 줄로 끝났다(기상·스케줄링은 근거를 보여주는데 안전만
     // 비어 있었다). "왜 위험인지"가 이 시스템의 핵심인데 그게 안 보였다.
     safety_reasoning: r.safety_assessment?.reasoning || null,
+    // [2026-09-29] 전문·화물 특성·유해성은 대표 화물 하나로 만든다 — 화면이 "○○ 기준"을 적는 데 쓴다.
+    safety_target_name: r.safety_assessment?.target_cargo_name || '',
     safety_hazards: r.safety_assessment?.key_hazards || [],
+    // [2026-09-29] 화물 특성(LLM, 참고) — 등급의 이유가 아니다. 이유는 opinions 의 혼재 근거에 있다.
+    safety_profile: r.safety_assessment?.cargo_profile || '',
     // [2026-08-23] IMDG는 **참고 정보**로 내렸다 — 판정 근거 목록과 분리한다.
     //
     // 예전 문구: "S-Oil 4부두 부탄 (3 ↔ 2.1) 격리코드 2"
@@ -563,6 +589,10 @@ function mapOrchestration(r) {
     safety_checklist: r.safety_assessment?.checklist || [],
     // [2026-09-25] 화물별 혼재 판정. 대표 등급(risk_level)은 is_governing 인 화물의 것.
     safety_cargo_verdicts: r.safety_assessment?.cargo_verdicts || [],
+    // [2026-09-28] 같은 선박 화물끼리의 혼재 충돌(격리 적재 확인 필요).
+    safety_onboard: (r.safety_assessment?.onboard_conflicts || []).map(
+      (c) => `${c.cargo_a_name} ↔ ${c.cargo_b_name} — ${c.basis} ${c.detail}`
+    ),
     weather_grade: r.weather_assessment?.status || null,
     weather_reasons: r.weather_assessment?.reasons || [],
     summary: r.summary,
@@ -571,6 +601,22 @@ function mapOrchestration(r) {
     vessel_name: r._vessel_name || null,
     cargo_name: r._cargo_name || null,
     rejected_candidates: r.rejected_candidates || [],
+    // [2026-09-28] 에이전트별 의견 — 무엇을 확인했고(checked) 무엇을 근거로(evidence) 무엇을 못 봤는지(missing).
+    // 백엔드가 늘 돌려주던 값인데 화면이 버리고 있었다.
+    opinions: r.opinions || [],
+    evidence_missing: Boolean(r.evidence_missing),
+    weather_source: r.weather_assessment ? {
+      station: r.weather_assessment.wind?.station_name || null,
+      berth_group: r.weather_assessment.thresholds_used?.berth_group || null,
+      stop_wind: r.weather_assessment.thresholds_used?.stop?.wind_ms ?? null,
+      forecast_points: r.weather_assessment.forecast_warning?.forecast_points_checked ?? null,
+    } : null,
+    msds_sections_used: r.safety_assessment?.msds_sections_used || [],
+    berth_facts: r.selected_berth ? {
+      depth_m: r.selected_berth.depth_m ?? null,
+      margin_m: r.selected_berth.draught_margin_m ?? null,
+      adjacent: (r.selected_berth.adjacent_cargos || []).length,
+    } : null,
     is_local_fallback: false,
     source: 'BACKEND_ORCHESTRATOR',
   };
@@ -678,6 +724,8 @@ export default function useOnsanApi() {
 
       const data = await postJson('/safety/verdict', {
         target_cargo: target, target_cargos: extraCargoRefs(req.extra_cargos, target), adjacent_cargos: adj,
+        // 불러온 배면 호출부호 — 백엔드가 그 입항 건 신고의 하역방식을 채운다(2026-09-29)
+        call_sign: req.call_sign || null,
       });
       if (!data) return null;
       // mapSafety는 checklist/reasoning이 없어도 동작한다(옵셔널 체이닝).
@@ -699,6 +747,8 @@ export default function useOnsanApi() {
       const data = target
         ? await postJson('/safety/assess', {
           target_cargo: target, target_cargos: extraCargoRefs(req.extra_cargos, target), adjacent_cargos: adj,
+          // 불러온 배면 호출부호 — 백엔드가 그 입항 건 신고의 하역방식을 채운다(2026-09-29)
+          call_sign: req.call_sign || null,
         })
         : null;
 
@@ -726,13 +776,19 @@ export default function useOnsanApi() {
   // [2026-09-27] 검증모드 전용 — assignedWharfName(배가 실제로 붙은 부두)이 필수다.
   // 선석을 새로 고르는 탐색모드는 백엔드에서 없어졌다(27번 설계안 D단계).
   const orchestrate = useCallback(
-    async ({ cargoName, casNo, dwt, draught, vesselName = '신규 입항선', assignedWharfName = null, callSign = null, extraCargos = [] }) => {
-      const cargo = resolveCargoRef({ cas_no: casNo, cargo_name: cargoName });
+    async ({ cargoName, casNo, chemId = null, dwt, draught, vesselName = '신규 입항선', assignedWharfName = null, targetSource = 'AIS', callSign = null, extraCargos = [] }) => {
+      // [2026-09-29] chem_id 도 받는다(판정 기록 경로 recordAssessment 와 같게). 선박 판정 표에서 연 배는
+      //   cas_no 없이 chem_id·이름만 와서, 이름 사전에 없는 화물(케로젠)이 "CAS 매핑 없음 → 판단 보류"가 됐다.
+      const cargo = resolveCargoRef({ chem_id: chemId, cas_no: casNo, cargo_name: cargoName });
+      // [2026-09-29] 흘수를 모르면 판정하지 않는다. 예전엔 7.5m 를 지어 보내, AIS 목록에서 빠진 우선호(실측
+      //   흘수 4.5m)를 수심 7.0m 달포부두에서 "흘수 여유 -0.17m → 부적합"으로 판정했다(모르면 가능하다고도,
+      //   불가하다고도 하지 않는다).
+      const draughtM = Number(draught) > 0 ? Number(draught) : null;
       const now = Date.now();
-      const data = cargo && assignedWharfName
+      const data = cargo && assignedWharfName && draughtM
         ? await postJson('/orchestrator/assess', {
           vessel: {
-            draught_m: Number(draught) || 7.5,
+            draught_m: draughtM,
             dwt_t: dwt ? Number(dwt) : null,
             name_hint: vesselName,
             // 이 배가 이미 받아 둔 추천을 "점유"로 세지 않게 한다 — 없으면
@@ -744,6 +800,10 @@ export default function useOnsanApi() {
           window_start: new Date(now).toISOString(),
           window_end: new Date(now + 8 * 3600 * 1000).toISOString(),
           assigned_wharf_name: assignedWharfName,
+          // 위치 판정의 실제 접안 부두면 'AIS'("지금 접안한 선석"), 입항 판정 표에서 연
+          // 사전배정 계류시설이면 'PORT-MIS'("배정된 선석")다(2026-09-29). 예전엔 늘 'AIS'라
+          // 입항 전 배도 "지금 접안한"으로 나왔다.
+          target_source: targetSource,
         })
         : null;
 
@@ -759,7 +819,9 @@ export default function useOnsanApi() {
         summary: !assignedWharfName
           ? '이 배가 지금 접안한 부두가 확인되지 않아 콘솔에서 판정할 수 없습니다. '
             + '접안 전 사전 검토는 판정 잡이 PORT-MIS 신고 선석으로 10분마다 합니다(확인 대기 목록).'
-          : cargo ? '백엔드 응답이 없어 판단을 보류합니다.' : `화물 '${cargoName}' CAS 매핑이 없어 조회할 수 없습니다.`,
+          : !cargo ? `화물 '${cargoName}' 식별 정보(chem_id·CAS)가 없어 조회할 수 없습니다.`
+            : !draughtM ? '이 배의 흘수가 지금 수신되지 않아(AIS 위치 목록 밖) 다시 판정하지 않았습니다. 위의 기록된 판정을 보세요.'
+              : '백엔드 응답이 없어 판단을 보류합니다.',
         is_local_fallback: true, source: 'LOCAL_FALLBACK',
       };
       setOrchestration(result);
@@ -794,10 +856,14 @@ export default function useOnsanApi() {
       if (!assignedWharfName) {
         throw new Error('이 배가 지금 어느 선석에 있는지 확인되지 않아 판정을 기록할 수 없습니다.');
       }
+      // 흘수를 지어내지 않는다 — orchestrate() 와 같은 이유(2026-09-29).
+      if (!(Number(draught) > 0)) {
+        throw new Error('이 배의 흘수가 수신되지 않아 판정을 기록할 수 없습니다.');
+      }
       const now = Date.now();
       const data = await postJsonStrict('/orchestrator/assess-and-record', {
         vessel: {
-          draught_m: Number(draught) || 7.5,
+          draught_m: Number(draught),
           dwt_t: dwt ? Number(dwt) : null,
           name_hint: vesselName,
           call_sign: callSign ?? null,
@@ -807,6 +873,7 @@ export default function useOnsanApi() {
         window_start: new Date(now).toISOString(),
         window_end: new Date(now + 8 * 3600 * 1000).toISOString(),
         assigned_wharf_name: assignedWharfName,
+        target_source: 'AIS',
         call_sign: callSign,
         vessel_name: vesselName,
         imo_no: imoNo ?? null,

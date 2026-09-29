@@ -674,9 +674,14 @@ html, body, #root {
 /* ── KPI Cards ── */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
+  /* [2026-09-28] 네 장 한 줄 고정 — auto-fit(280px) 은 1440 화면에서 3+1 로 줄이 바뀌었다 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
   margin-bottom: 28px;
+}
+.kpi-grid .kpi-card { padding: 22px 20px; gap: 14px; }
+@media (max-width: 1000px) {
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .kpi-card {
@@ -1400,3 +1405,28 @@ html, body, #root {
 }
 
 .alert-toast-close:hover { color: var(--red); }
+
+
+/* [2026-09-28] 진행 표시 — 판정 요청·근거를 누른 행과 사용 순서·시점 카드가 켜진다 */
+tr.row-focus > td { background: rgba(14, 124, 107, 0.07); }
+tr.row-focus > td:first-child { box-shadow: inset 3px 0 0 #0E7C6B; }
+tr.row-busy > td { animation: sbRowPulse 1.1s ease-in-out infinite; }
+@keyframes sbRowPulse { 0%, 100% { background: rgba(14, 124, 107, 0.04); } 50% { background: rgba(14, 124, 107, 0.18); } }
+.step-live { border-color: #0E7C6B !important; background: #E3F2EF !important; box-shadow: 0 0 0 3px rgba(14, 124, 107, 0.16), 0 0 14px rgba(14, 124, 107, 0.35); animation: sbGlow 1.4s ease-in-out infinite; }
+.stage-live { box-shadow: 0 0 0 2px #0E7C6B, 0 0 16px rgba(14, 124, 107, 0.35) !important; }
+@keyframes sbGlow { 0%, 100% { box-shadow: 0 0 0 2px rgba(14, 124, 107, 0.12), 0 0 8px rgba(14, 124, 107, 0.2); } 50% { box-shadow: 0 0 0 4px rgba(14, 124, 107, 0.22), 0 0 18px rgba(14, 124, 107, 0.45); } }
+.stage-chip-busy { animation: sbChip 1s ease-in-out infinite; }
+@keyframes sbChip { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  tr.row-busy > td, .step-live, .stage-chip-busy { animation: none; }
+}
+
+/* [2026-09-28] 가상 설비 — 실물 게이트와 구분한다(점선 · 빗금 · '예시값' 표식, 상태 램프 없음) */
+.virtual-zone { border: 1.5px dashed #9AA8B0; border-radius: 12px; padding: 16px; background: repeating-linear-gradient(135deg, transparent 0 12px, rgba(122, 138, 146, 0.05) 12px 24px); }
+.virtual-zone .sensor-card { border-style: dashed !important; border-left: 1px dashed #9AA8B0 !important; box-shadow: none; opacity: 0.92; }
+.virtual-zone .sensor-status { display: none; }
+.virtual-zone .sensor-card-header::after { content: '예시값'; font-size: 11px; font-weight: 800; color: #5F6F78; border: 1px dashed #9AA8B0; border-radius: 999px; padding: 1px 8px; }
+
+/* [2026-09-29] 사용 순서 띠가 가리킨 행 — 잠깐 켜졌다 꺼진다 */
+tr.step-target > td { animation: sbStepTarget 2.6s ease-out; }
+@keyframes sbStepTarget { 0% { background: rgba(14, 124, 107, 0.28); } 100% { background: transparent; } }

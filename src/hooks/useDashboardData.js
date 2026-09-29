@@ -17,7 +17,14 @@ const POLL_INTERVAL_MS = 3 * 60_000;
 // (실측: 대시보드 화면 하나에서 컴포넌트당 1회씩, 총 8~9배 중복 호출).
 // 모듈 스코프에 상태를 한 벌만 두고 구독자에게 브로드캐스트하는 방식으로
 // 바꿔 폴링/새로고침이 앱 전체에서 정확히 1번만 실행되게 한다.
-let sharedData = mockDashboard;
+// [2026-09-28] 서버 응답 전에는 **빈 화면**으로 시작한다. 예전엔 내장 mock 을 그대로 띄워서,
+// 첫 응답이 늦는 동안(배포 서버 20초대) '경고 2 · 3번 선석 메탄올-황산 혼재금지'와 '풍속 6.2 m/s
+// 11:00 관측' 같은 예시값이 실데이터처럼 보였다. 서버가 끝내 응답하지 않아도 예시값은 나오지 않는다.
+const LOADING_DATA = {
+  ...mockDashboard, vessels: [], weather: null, alerts: [], real_traffic: [],
+  data_source: { backend: 'LOADING', weather: 'NONE', history: 'NONE', stats: 'NONE' },
+};
+let sharedData = USE_MOCK ? mockDashboard : LOADING_DATA;
 let sharedLoading = !USE_MOCK;
 let sharedError = null;
 let dataRef = mockDashboard; // mock 모드에서 "이전 상태 기준 이동" 계산용

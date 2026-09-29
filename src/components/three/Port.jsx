@@ -37,7 +37,8 @@ function MooringLine({ from, to }) {
   );
 }
 
-import { TankTruck, PatrolBoat, SPMTanker, makePath } from './Vehicles';
+import { makePath } from './Vehicles';
+import ScheduledShips from './ScheduledShips';
 import { VTSTower, DistillationPlant, Lighthouse, Windsock, RailSiding, FireBoat } from './Facilities';
 import { MOOR_HEADING, ONSAN_WEATHER_GROUP } from '../../utils/geoUtils';
 import { WEATHER_STATUS_COLORS } from '../../utils/constants';
@@ -395,7 +396,7 @@ export default function Port() {
                 id,
                 name: berth.name,
                 status: mooredShip ? 'active' : 'idle',
-                mooredShip: mooredShip ? `${mooredShip.id} (${mooredShip.cargoType})` : null,
+                mooredShip: mooredShip ? `${mooredShip.id}${mooredShip.cargoType ? ` (${mooredShip.cargoType})` : ''}` : null,
               });
             }}
           >
@@ -759,20 +760,19 @@ export default function Port() {
       </group>
 
       {/* ===== SHIPS ===== */}
-      {ships.map((ship) => (
+      {/* 72시간 흐름에서 출항 예정(신고) 시각이 지난 선박은 뺀다 */}
+      {ships.filter((ship) => !(outlookPreview?.departed || []).includes(ship.callsgn)).map((ship) => (
         <Ship
           key={ship.id}
           ship={ship}
           onClick={() => setSelectedObject(ship)}
         />
       ))}
+      {/* 72시간 흐름의 입항 예정(신고) 선박 — 반투명 */}
+      <ScheduledShips />
 
-      {/* ===== 움직이는 작업 요소: 탱크로리 왕복 · 순찰정 · SPM 원유선 ===== */}
-      <TankTruck path={roadPath} offset={0} speed={9} />
-      <TankTruck path={roadPath} offset={180} speed={7.5} tankColor="#a5b4bc" />
-      <TankTruck path={roadPath} offset={420} speed={10.5} tankColor="#e8d9a0" />
-      <PatrolBoat center={bayShift(shoreShift([0, 0], 30), 160)} />
-      <SPMTanker buoy={ONSAN_KNOC_3D} />
+      {/* [2026-09-28] 움직이는 장식(탱크로리 왕복 · 순찰정 · SPM 원유선)을 뺐다 — 데이터와 무관하게
+          돌아다녀 실제 작업처럼 보였다("가상을 실제처럼 꾸미지 않기"). 정적인 건물·시설만 배경으로 남긴다. */}
 
       {/* ===== PIPES: 탱크팜 → 하역 선석 이송 배관 (flowRate 에 따라 발광 흐름) ===== */}
       {pipes && pipes.map((pipe, i) => {
