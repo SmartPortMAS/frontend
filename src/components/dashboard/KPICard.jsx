@@ -29,12 +29,13 @@ export default function KPICard({ title, value, unit, icon, change, trend = 'pos
           <span className="kpi-value">{value}</span>
           <span className="kpi-unit">{unit}</span>
         </div>
-        {change && (
-          <div className={`kpi-change ${trend}`}>
-            {change}
-          </div>
-        )}
       </div>
+      {/* [2026-09-30] 아래 줄은 타일 전체 폭을 쓴다 — 아이콘 옆 좁은 칸에서는 '선종 미확인 293'이 잘렸다 */}
+      {change && (
+        <div className={`kpi-change ${trend}`}>
+          {change}
+        </div>
+      )}
     </div>
   );
 }

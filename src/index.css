@@ -1873,3 +1873,7 @@ button.bb-ship:hover { filter: brightness(0.94); }
   .header-clock { display: none; }
   .header-title { font-size: 15px; }
 }
+
+/* [2026-09-30] 타일 — 아이콘 · 값 한 줄, 그 아래 설명 줄은 타일 전체 폭 */
+.kpi-grid .kpi-card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 14px; row-gap: 8px; }
+.kpi-grid .kpi-change { grid-column: 1 / -1; margin-top: 0; }
