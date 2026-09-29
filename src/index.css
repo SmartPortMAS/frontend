@@ -1877,3 +1877,34 @@ button.bb-ship:hover { filter: brightness(0.94); }
 /* [2026-09-30] 타일 — 아이콘 · 값 한 줄, 그 아래 설명 줄은 타일 전체 폭 */
 .kpi-grid .kpi-card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 14px; row-gap: 8px; }
 .kpi-grid .kpi-change { grid-column: 1 / -1; margin-top: 0; }
+
+/* [2026-09-30] 사이드바 — 항만 안전 지수 요약(메뉴 아래 빈 자리) */
+.sidebar-nav { flex: 0 0 auto; }
+.sidebar-fill { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 12px 12px; }
+.si-mini {
+  display: grid; gap: 8px; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  border: 1px solid var(--border); border-top: 3px solid var(--si-tone, var(--border)); border-radius: 8px;
+  background: #F7F9FB; padding: 10px 12px 11px;
+}
+.si-mini:hover { border-color: var(--border-hover); background: #fff; }
+.si-mini.tone-ok { --si-tone: #0E7C6B; } .si-mini.tone-warn { --si-tone: #B26A00; } .si-mini.tone-bad { --si-tone: #C4322E; }
+.si-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; white-space: nowrap; }
+.si-head em { font-style: normal; font-size: 12.5px; font-weight: 700; color: var(--text-secondary); }
+.si-score { font-family: ui-monospace, Consolas, monospace; font-size: 22px; font-weight: 800; color: var(--si-tone, var(--text-dim)); line-height: 1; }
+.si-axes { display: grid; gap: 5px; }
+.si-axis { display: grid; grid-template-columns: 58px minmax(0, 1fr) 26px; align-items: center; gap: 7px; font-size: 11.5px; white-space: nowrap; }
+.si-axis i { font-style: normal; color: var(--text-secondary); }
+.si-axis u { text-decoration: none; text-align: right; font-family: ui-monospace, Consolas, monospace; color: var(--text-primary); font-weight: 700; }
+.si-bar { height: 6px; border-radius: 3px; background: #E3EAF0; overflow: hidden; }
+.si-bar b { display: block; height: 100%; border-radius: 3px; background: #0E7C6B; }
+.si-axis.tone-warn .si-bar b { background: #B26A00; } .si-axis.tone-warn u { color: #B26A00; }
+.si-axis.tone-bad .si-bar b { background: #C4322E; } .si-axis.tone-bad u { color: #C4322E; }
+.si-axis.tone-none .si-bar b { background: transparent; }
+.si-wait { font-size: 12px; color: var(--text-dim); }
+.si-mini.collapsed { padding: 8px 0; justify-items: center; }
+.si-mini.collapsed .si-score { font-size: 15px; }
+.sidebar.collapsed .sidebar-fill { padding: 0 10px 12px; }
+.si-modal { position: fixed; inset: 0; z-index: 5000; background: rgba(18, 35, 50, 0.45); display: grid; place-items: center; padding: 24px; }
+.si-modal-body { position: relative; width: min(820px, 96vw); max-height: 92vh; overflow-y: auto; border-radius: 16px; }
+.si-close { position: absolute; top: 14px; right: 14px; z-index: 1; border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 5px 8px; cursor: pointer; color: var(--text-secondary); }
+@media (max-height: 640px) { .si-axes { display: none; } }

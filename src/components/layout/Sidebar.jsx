@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { FaCube, FaChartPie, FaWaveSquare, FaChevronLeft, FaChevronRight, FaClipboardCheck } from 'react-icons/fa';
 import useVesselThread from '../../hooks/useVesselThread';
+import SafetyIndexMini from './SafetyIndexMini';
 
 // 지금 전체(대시보드) → 배 한 척의 판정(선박 판정, 화물 혼재 포함) → 현장 배치(3D) → 설비 순.
 // [2026-09-30] 화물 혼재 심사는 선박 판정 안으로 합쳐 메뉴가 넷이다 — 혼재는 판정의 세 축(선석 · 기상 · 혼재) 중 하나다.
@@ -44,6 +45,11 @@ export default function Sidebar({ collapsed, setCollapsed }) {
           );
         })}
       </nav>
+
+      {/* 메뉴 아래 빈 자리 — 항만 안전 지수(어느 화면에서나 보인다) */}
+      <div className="sidebar-fill">
+        <SafetyIndexMini collapsed={collapsed} />
+      </div>
 
       <div className="sidebar-footer">
         <button className="sidebar-toggle" onClick={() => setCollapsed(!collapsed)}>

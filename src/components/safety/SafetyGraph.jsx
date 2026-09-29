@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
 import { ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Tooltip } from 'recharts';
-import { BACKEND_BASE } from '../../api/backendAdapter';
+import useSafetyIndex from '../../hooks/useSafetyIndex';
 import HelpTip from '../common/HelpTip';
 
 // 이 6축은 원래 탱크 압력·배관 유속·가스 농도·온도 제어·작업자 안전이었고 값이
@@ -8,38 +7,9 @@ import HelpTip from '../common/HelpTip';
 // 수집하지 않는다. 지금은 백엔드가 실제 데이터로 계산한 축을 그대로 받아 그린다
 // (backend app/agents/safety/safety_index.py — 축을 고른 이유가 거기 적혀 있다).
 
-const POLL_MS = 60_000;
-
 export default function SafetyGraph() {
-  const [index, setIndex] = useState(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await fetch(`${BACKEND_BASE}/dashboard/safety-index`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        if (alive) { setIndex(json); setError(null); }
-      } catch (e) {
-        if (alive) setError(e.message);
-      }
-    };
-    load();
-    const timer = setInterval(load, POLL_MS);
-    return () => { alive = false; clearInterval(timer); };
-  }, []);
-
-  // '데이터 신선도' 축은 지수에서 뺀다(2026-08-21 피드백).
-  // 신선도는 "이 항만이 지금 안전한가"가 아니라 "우리 시스템이 지금 건강한가"라서,
-  // 하역 안전 지수에 섞이면 수집기 지연이 항만 위험처럼 읽힌다. 시스템 상태는
-  // 헤더의 수집 배지가 이미 전담한다. 축이 빠지므로 종합도 남은 축으로 다시 낸다.
-  const axes = (index?.axes ?? []).filter((a) => a.subject !== '데이터 신선도');
-  const scoredAxes = axes.filter((a) => a.score !== null);
-  const overall = scoredAxes.length
-    ? Math.round((scoredAxes.reduce((t, a) => t + a.score, 0) / scoredAxes.length) * 10) / 10
-    : null;
+  // 값은 사이드바 요약과 같이 쓴다(hooks/useSafetyIndex) — 한 번 받아 나눠 쓴다
+  const { index, axes, overall, error } = useSafetyIndex();
   // 판정 불가 축(재료 없음)은 0으로 그리면 "최악"으로 보인다 — 차트에서 빼고
   // 아래에 이름을 따로 밝힌다.
   const chartData = axes

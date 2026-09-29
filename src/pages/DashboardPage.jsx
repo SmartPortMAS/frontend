@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import SafetyGraph from '../components/safety/SafetyGraph';
+import { useEffect, useState } from 'react';
 import KPICard from '../components/dashboard/KPICard';
 import WeatherPanel from '../components/dashboard/WeatherPanel';
 import PortMap from '../components/dashboard/PortMap';
@@ -10,19 +9,6 @@ import useDashboardData from '../hooks/useDashboardData';
 import useSensorStore from '../stores/useSensorStore';
 import { fetchPendingApprovals, fetchBerthAssignments } from '../api/backendAdapter';
 import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt } from 'react-icons/fa';
-
-// 화면에 들어올 때 불러온다 — 안전 평가 지수는 첫 계산이 40~60초라 첫 화면 자료와 같이 부르지 않는다
-function WhenVisible({ children, minHeight = 120 }) {
-  const ref = useRef(null);
-  const [seen, setSeen] = useState(false);
-  useEffect(() => {
-    if (seen || !ref.current) return undefined;
-    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setSeen(true); }, { rootMargin: '200px' });
-    io.observe(ref.current);
-    return () => io.disconnect();
-  }, [seen]);
-  return <div ref={ref} style={seen ? undefined : { minHeight }}>{seen ? children : null}</div>;
-}
 
 export default function DashboardPage() {
   const { data } = useDashboardData();
@@ -160,10 +146,7 @@ export default function DashboardPage() {
         <PortCallTable />
       </div>
 
-      {/* [2026-09-30] 다차원 안전 평가 지수 — 항만 전체 요약이라 대시보드 몫이다(화물 혼재 심사 화면에서 옮김) */}
-      <div className="dash-section">
-        <WhenVisible><SafetyGraph /></WhenVisible>
-      </div>
+      {/* 다차원 안전 평가 지수는 사이드바로 옮겼다(2026-09-30) — 맨 아래 두면 찾기 어려웠다. 누르면 차트와 축별 근거 */}
 
       {/* 화면에서 내린 것들 —
           · 탱크 저장 현황: 센서 데이터 탭의 탱크 센서와 같은 값을 두 번 그리고 있었다.
