@@ -100,7 +100,7 @@ export default function ReasoningGraph({ targetBerth, targetCargo, gate }) {
     tiers.push({
       kind: 'bulk', status, label: '호환성그룹', classifyEdgeLabel: '벌크그룹 매핑',
       layout: status === 'hit' ? 'two' : 'one',
-      crossLabel: status === 'hit' ? '불호환 그룹(참고축)' : '호환성그룹 충돌 없음',
+      crossLabel: status === 'hit' ? '46 CFR 150 불호환 그룹' : '호환성그룹 충돌 없음',
       target: status === 'hit' ? `${d.bulk.targetGroupName}(그룹${d.bulk.targetGroup})` : null,
       adjacent: status === 'hit' ? `${d.bulk.adjacentGroupName}(그룹${d.bulk.adjacentGroup})` : null,
       centerValue: '호환성그룹 충돌 없음(참고용)',

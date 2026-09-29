@@ -31,13 +31,18 @@ const VERDICT_COLOR = {
 // 없음). 없는 필드를 보는 분기라 한 번도 탄 적이 없다. 입항 실측이 아직
 // 안 잡힌 배는 '-'가 아니라 접안 판정 근거를 대신 적는다 — 그 배가 왜
 // 여기 있다고 보는지는 말할 수 있어야 한다.
+// [2026-09-29] PORT-MIS 출항 시각은 미리 신고되는 값이라 actual_departure_utc 에도 미래 시각이 온다
+//   (실측: 창용1호 9/30 23시가 '출항'으로 표시). 지났는지로 '출항'과 '출항예정'을 가른다.
+const departureOf = (row) => row.actual_departure_utc || row.departure_scheduled_utc || null;
+
 function periodLabel(row) {
   if (row.actual_arrival_utc) {
-    const departurePart = row.actual_departure_utc
-      ? `출항 ${formatKST(row.actual_departure_utc)}`
-      : row.departure_scheduled_utc
-        ? `출항예정 ${formatKST(row.departure_scheduled_utc)}`
-        : '(재항 중)';
+    const dep = departureOf(row);
+    const departurePart = !dep
+      ? '(재항 중)'
+      : new Date(dep).getTime() <= Date.now()
+        ? `출항 ${formatKST(dep)}`
+        : `출항예정 ${formatKST(dep)}`;
     return `입항 ${formatKST(row.actual_arrival_utc)} ~ ${departurePart}`;
   }
   // PORT-MIS 입출항 신고가 아직 안 잡힌 배 — 위치 판정으로만 접안을 안다.
@@ -59,12 +64,16 @@ function periodLabel(row) {
 // 표시")부터 지금까지 **항상 0** 이었다 — 뱃지가 한 번도 뜬 적이 없다.
 // departure_scheduled_utc 는 PORT-MIS 출항 신고 시각이고 실제로 내려온다
 // (실측 3건 모두 값 있음). "언제 나가기로 했나"가 곧 "언제 비었어야 하나"다.
-function overdueDays(row) {
-  if (row.actual_departure_utc) return 0;   // 실제로 나갔으면 경과가 아니다
-  const end = row.departure_scheduled_utc;
-  if (!end) return 0;
-  const days = Math.floor((Date.now() - new Date(end).getTime()) / 86400000);
-  return days > 0 ? days : 0;
+//
+// [2026-09-29] actual_departure_utc 가 있어도 본다. 이 목록은 AIS 로 **지금 붙어 있는** 배라, 출항 시각이
+//   지났다는 것 자체가 확인할 일이다 — 예전엔 "실제로 나갔으면 경과가 아니다"로 빼서, 출항 9/28 인
+//   우선호가 9/29 에도 표시 없이 접안 중으로 보였다. 하루가 안 됐으면 시간으로 센다.
+function overdueLabel(row) {
+  const dep = departureOf(row);
+  if (!dep) return null;
+  const hours = Math.floor((Date.now() - new Date(dep).getTime()) / 3600000);
+  if (hours < 1) return null;
+  return hours >= 24 ? `${Math.floor(hours / 24)}일` : `${hours}시간`;
 }
 
 // 08_스케줄링_전면재설계_자동배정_설계문서.md §7.2 — 선석 배정현황 페이지.
@@ -133,6 +142,7 @@ export default function BerthOccupiedList({ scope }) {
       await postAssessAndRecord({
         callSign: row.call_sign, vesselName: row.vessel_name, draughtM: draughtOf(row.call_sign),
         chemId: row.cargo_chem_id, cargoName: row.cargo_name, wharfName: row.wharf_name,
+        targetSource: 'AIS', // 이 목록은 AIS 로 본 실제 접안 부두다 — 입항 건 키는 백엔드가 지금 입항 건으로 채운다
       });
       setJudging((m) => { const n = { ...m }; delete n[key]; return n; });
       load();
@@ -276,16 +286,16 @@ export default function BerthOccupiedList({ scope }) {
                       >
                         근거
                       </button>
-                      {overdueDays(row) > 0 && (
+                      {overdueLabel(row) && (
                         <span
-                          title="PORT-MIS 출항 신고 시각이 지났는데 아직 이 선석에 잡혀 있습니다 — 현재 점유가 아닐 수 있습니다"
+                          title="PORT-MIS 출항 시각이 지났는데 AIS 로는 아직 이 선석에 잡혀 있습니다 — 출항 지연이거나 신고·위치 중 하나가 틀렸을 수 있습니다"
                           style={{
                             color: COLORS.yellow, fontSize: '11px', fontWeight: 700,
                             border: `1px solid ${COLORS.yellow}`, borderRadius: '4px', padding: '1px 5px',
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          출항예정 {overdueDays(row)}일 경과
+                          출항 시각 {overdueLabel(row)} 지남
                         </span>
                       )}
                     </span>

@@ -57,9 +57,12 @@ const RISK_COLOR = (lv) => ({
 }[lv] || COLORS.textDim);
 
 const VERDICT_COLOR = {
-  APPROVED: COLORS.teal,
-  REJECTED: COLORS.red, PENDING: COLORS.info,
+  APPROVED: COLORS.teal, CAUTION: COLORS.yellow,
+  REJECTED: COLORS.red, UNKNOWN: COLORS.textDim, PENDING: COLORS.info,
 };
+
+// 도구 의견(백엔드 opinions) 중 한 축. 옛 응답(스냅샷)에는 없다 — 그때는 옛 근거로 대신한다.
+const opinionOf = (orchestration, axis) => (orchestration.opinions || []).find((o) => o.axis === axis);
 
 /** 오케스트레이터 결과 → 에이전트별 발화 목록 */
 function toMessages({ orchestration, berthWeather, vessel }) {
@@ -88,7 +91,12 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   const wStatus = orchestration.weather_grade || berthWeather?.status;
   if (wStatus) {
     const obs = usingOrchestrationWeather ? null : berthWeather?.observed;
-    const reasons = usingOrchestrationWeather ? orchestration.weather_reasons : berthWeather?.reasons;
+    // [2026-09-29] 기상 의견의 근거만 싣는다 — '파고 … 적용하지 않음 - 참고값'처럼 등급과 무관한
+    // 문장은 백엔드가 근거에서 뺐다(항내 부두 31건 중 30건에 떠 있었다).
+    const weatherOpinion = opinionOf(orchestration, '기상');
+    const reasons = usingOrchestrationWeather
+      ? (weatherOpinion?.evidence ?? orchestration.weather_reasons)
+      : berthWeather?.reasons;
     const wBerthName = usingOrchestrationWeather
       ? (orchestration.berth_assigned || vessel?.berth || '대상 선석')
       : (vessel?.berth || '대상 선석');
@@ -106,6 +114,12 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   // 끝났다 — 기상·스케줄링 발화는 근거를 보여주는데 안전만 비어 있어서, 정작 이
   // 시스템의 핵심인 "왜 위험한가"를 협상 로그에서 확인할 수 없었다.
   if (orchestration.risk_level) {
+    // [2026-09-29] IMDG 참고는 한 줄로 묶는다. 이웃 선석마다 같은 화물이 되풀이돼(가솔린 ×4 등)
+    //   체크리스트가 참고 줄 26개에 묻혔다. 판정에 쓰지 않는 값이라 이웃 화물 이름만 모은다.
+    const imdgNames = [...new Set((orchestration.safety_imdg_reference || []).map((t) => t.split(':')[0]))];
+    const imdgRef = imdgNames.length
+      ? [`[참고 · 판정 미반영] IMDG 격리코드 해당 이웃 화물 ${imdgNames.length}종(${imdgNames.join(', ')}) — 선내 적부 기준이라 부두 간 배치에는 적용되지 않습니다`]
+      : [];
     // [2026-08-23] 판정 근거를 먼저, 참고 정보는 맨 뒤에 접두사를 붙여 싣는다.
     // 예전엔 IMDG 격리코드가 목록 맨 위에 선석 이름과 붙어 나와, 부두 간 배치가
     // 규정을 위반한 것처럼 읽혔다(IMDG는 단일 선박 내 적부 기준이라 부두 간에는
@@ -116,27 +130,55 @@ function toMessages({ orchestration, berthWeather, vessel }) {
       ...(orchestration.safety_unassessed || []),
       ...(orchestration.safety_hazards?.length
         ? [`주요 위험성: ${orchestration.safety_hazards.join(' · ')}`] : []),
-      ...(orchestration.safety_imdg_reference || []).map(
-        (t) => `[참고 · 판정 미반영] ${t} — 선내 적부 기준이라 부두 간 배치에는 적용되지 않습니다`
-      ),
+      ...imdgRef,
     ];
     // [2026-09-25] 한 배가 여러 화물을 실으면 화물마다 판정하고 가장 위험한 쪽이
     // 대표 등급이 된다. 어느 화물 때문에 이 등급인지를 맨 앞에 보여준다.
     const verdicts = orchestration.safety_cargo_verdicts || [];
-    const verdictLine = verdicts.length > 1
-      ? [`화물 ${verdicts.length}종 판정: ${verdicts.map(
+    // [2026-09-29] 모든 화물이 같은 등급이면 한 번만 말한다 — 이웃 질산 하나 때문에 탄화수소 6종이
+    //   전부 배정불가일 때 "케로젠 배정불가 · 가솔린 배정불가 · …"가 같은 말을 6번 했다(사용자 지적).
+    const sameLevel = verdicts.length > 1 && verdicts.every((v) => v.risk_level === verdicts[0].risk_level);
+    const verdictLine = verdicts.length <= 1 ? []
+      : sameLevel ? [`화물 ${verdicts.length}종 모두 ${verdicts[0].risk_level}${verdicts[0].risk_level === '안전' ? '' : ' — 원인은 아래 충돌'}`]
+      : [`화물 ${verdicts.length}종 판정: ${verdicts.map(
         (v) => `${v.target_cargo_name} ${v.risk_level}${v.is_governing ? '(대표)' : ''}`,
-      ).join(' · ')}`]
-      : [];
+      ).join(' · ')}`];
+    // [2026-09-28] 같은 선박 화물끼리의 혼재 충돌. 인접 충돌이 없어도 이것 때문에 '주의'일 수 있다.
+    const onboardLines = (orchestration.safety_onboard || []).map(
+      (t) => `[같은 선박] ${t} — 격리 적재 확인 필요`
+    );
+    // [2026-09-29] 등급의 근거는 백엔드가 코드로 만든 혼재 의견(verdict_basis)만 싣는다. 예전엔
+    // LLM 서술(300자 안팎)이 근거 목록에 섞여, 등급의 원인을 화물 유해성으로 잘못 설명했다
+    // ("발암성 때문에 주의"). 화물 특성·유해성·체크리스트는 참고라 접어 둔다.
+    const segregation = opinionOf(orchestration, '혼재');
+    // [2026-09-29] 전문·특성·유해성·체크리스트는 안전이 아닌 화물들로, 모두 안전이면 전 화물을 묶어
+    //   만든다(백엔드 _focus). 화물 특성(LLM)은 화물이 하나일 때만 온다.
+    const fold = [
+      ...(orchestration.safety_profile ? [orchestration.safety_profile] : []),
+      // 주요 위험성은 아래 hazardLines 로 따로 둔다 — 2줄 이하면 펼치고, 그보다 길면 별도로 접는다.
+      ...(orchestration.safety_checklist || []).map((c) => `☐ ${c}`),
+      ...imdgRef,
+    ];
     msgs.push({
       agent: 'safety', time: at(6),
       text: `혼재 판정: ${orchestration.risk_level}`,
-      // 판단 사유 전문은 길어서 접어 둔다(현우: 설명이 과하다)
+      detail: segregation
+        ? [...verdictLine, ...segregation.evidence]
+        : [
+          ...verdictLine,
+          ...onboardLines,
+          ...(detail.length ? detail : ['인접 선석 화물과 혼재금지 충돌 없음']),
+        ],
+      fold: segregation ? fold : [],
+      // 체크리스트·전문 제목에는 물질 이름을 넣지 않는다 — 화물이 여러 종이면 제목이 이름 나열이 됐다(사용자 요청 9/29).
+      foldLabel: '화물 특성·체크리스트',
+      // [2026-09-29] 주요 위험성은 백엔드가 MSDS GHS 분류로 만든 줄이다(여러 화물이면 항목마다 물질명).
+      //   한 줄에 ' · '로 이으면 항목 안의 '·'와 섞여 읽히지 않아 줄마다 나눈다.
+      hazardLines: orchestration.safety_hazards?.length ? orchestration.safety_hazards : null,
+      // [2026-09-29] 판단 사유 전문 — 코드가 만든 검사 사실 + 화물 특성(LLM). 등급 원인을 LLM 이 쓰던 예전
+      //   서술(9/29 이전)이 아니라서 다시 둔다. 근거·특성과 겹치므로 접어 둔다.
       longText: orchestration.safety_reasoning || null,
-      detail: [
-        ...verdictLine,
-        ...(detail.length ? detail : ['인접·동시 작업 화물과 혼재금지·IMDG 격리 충돌 없음']),
-      ],
+      longTextLabel: '판단 사유 전문',
     });
   }
 
@@ -158,11 +200,19 @@ function toMessages({ orchestration, berthWeather, vessel }) {
   }
 
   // 3.7) 혼재 판정으로 지금 선석이 부적합이면 — 그때만 대체 선석을 제안한다(배정 아님).
+  // [2026-09-29] reason 은 혼재 근거(verdict_basis)를 '; '로 이은 문장이라, 위 혼재 심사 메시지와 같은 내용이
+  //   한 덩어리로 되풀이됐다(사용자 지적). 여기서는 충돌 쌍만 줄마다 보이고 기준·근거는 혼재 심사에 맡긴다.
   if (rejected.length) {
+    const pairsOf = (reason) => (reason || '').split('; ')
+      .filter((t) => t.startsWith('이웃 화물 충돌: '))
+      .map((t) => t.replace('이웃 화물 충돌: ', '').split(' — ')[0]);
     msgs.push({
       agent: 'scheduling', time: at(4),
-      text: '혼재 판정으로 이 선석이 부적합합니다.',
-      detail: rejected.map((r) => `${r.berth_id}: ${r.reason}`),
+      text: `혼재 판정으로 ${rejected.map((r) => r.berth_id).join(', ')}이(가) 부적합합니다 — 충돌 근거는 혼재 심사 참고`,
+      detail: rejected.flatMap((r) => {
+        const pairs = pairsOf(r.reason);
+        return pairs.length ? pairs.map((p) => `충돌 · ${p}`) : [r.reason];
+      }),
     });
   }
   const alts = orchestration.suggested_alternatives || [];
@@ -192,14 +242,17 @@ function toMessages({ orchestration, berthWeather, vessel }) {
     if (!AXIS_OF[m.agent] || seen.has(m.agent)) continue;
     seen.add(m.agent);
     const o = byAxis[AXIS_OF[m.agent]];
-    if (o) { m.level = o.level; m.checked = o.checked || []; m.missing = o.missing || []; }
+    if (o) { m.level = o.level; m.checked = o.checked || []; m.notes = o.notes || []; }
     m.source = SOURCE[m.agent];
   }
 
+  // 종합 — 등급(백엔드 level)과 LLM 이 정리한 문장, 그리고 관제사가 챙길 것(확인 필요·조건).
+  // [2026-09-29] '확인 필요'는 LLM 문장과 별개로 항상 코드가 보여준다 — 모델이 빠뜨려도 사라지지 않게.
   msgs.push({
     agent: 'orchestrator', time: at(1),
     text: orchestration.summary || `${orchestration.decision_label || orchestration.status}`,
-    detail: [],
+    detail: (orchestration.conditions || []).map((c) => `조건: ${c}`),
+    checks: orchestration.needs_check || [],
     verdict: orchestration.status,
     verdictLabel: decisionKo(orchestration.decision_label),
     axes: (orchestration.opinions || []).map((o) => ({ axis: o.axis, level: o.level })),
@@ -366,6 +419,8 @@ export default function AgentConsole({ mode = 'qa' }) {
         vessel_name: sub.vessel_name || base.vessel_name,
         callsgn: base.callsgn || consoleRequest.callsgn,
         presence_berth_name: sub.wharf || base.presence_berth_name || null,
+        // 행이 넘긴 계류시설의 출처. 없으면 위치 판정(AIS) 부두다.
+        target_source: sub.wharf ? (sub.source || 'AIS') : 'AIS',
         berth: sub.wharf || base.berth || null,
         draught_m: Number(sub.draught_m) > 0 ? Number(sub.draught_m) : (base.draught_m ?? null),
         cargo: base.cargo || sub.cargo || null,
@@ -497,11 +552,13 @@ export default function AgentConsole({ mode = 'qa' }) {
       await orchestrate({
         cargoName: t.cargo?.name,
         casNo: t.cargo?.cas_no,
+        chemId: t.cargo?.chem_id ?? null,
         dwt: null, // 실AIS 위치 데이터엔 DWT가 없음 — 미상으로 보내 오케스트레이터가 보수적으로 판단하게 함
         draught: t.draught_m ?? undefined,
         vesselName: t.vessel_name,
         callSign: t.callsgn,
         assignedWharfName: t.presence_berth_name ?? null,
+        targetSource: t.target_source ?? 'AIS',
         // 같은 입항 건의 나머지 화물
         extraCargos: t.cargos ?? [],
       });
@@ -784,12 +841,10 @@ export default function AgentConsole({ mode = 'qa' }) {
                       </details>
                     </>
                   ))}
-                  {m.longText && (
-                    <details style={{ marginTop: 5 }}>
-                      <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>판단 사유 전문</summary>
-                      <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4, lineHeight: 1.6 }}>{m.longText}</div>
-                    </details>
-                  )}
+                  {/* [2026-09-29] 판정에 쓰지 않은 참고값(외해 파고 등) — '확인' 칩에 두면 확인한 근거처럼 읽혀 글로 둔다 */}
+                  {m.notes?.map((t, j) => (
+                    <div key={`note-${j}`} style={{ fontSize: 11.5, color: COLORS.textDim, marginTop: 5 }}>참고 · {t}</div>
+                  ))}
                   {m.checked?.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 7, alignItems: 'center' }}>
                       <span style={{ fontSize: 10.5, color: COLORS.textDim, fontWeight: 700 }}>확인</span>
@@ -798,11 +853,8 @@ export default function AgentConsole({ mode = 'qa' }) {
                       ))}
                     </div>
                   )}
-                  {m.missing?.length > 0 && (
-                    <div style={{ fontSize: 11, color: COLORS.yellow, marginTop: 5 }}>
-                      못 본 것 · {m.missing.join(' · ')} — 없는 값을 지어내지 않고 등급을 보수적으로 둡니다
-                    </div>
-                  )}
+                  {/* [2026-09-29] 에이전트별 '못 본 것'은 뺐다 — 종합 카드의 '확인 필요'가 같은 항목을 모아 보여 준다
+                      (백엔드 needs_check = 의견들의 missing 합). 같은 문장이 근거·못 본 것·확인 필요에 세 번 떴다. */}
                   {m.source && (
                     <div style={{ fontSize: 10.5, color: COLORS.textDim, marginTop: 5 }}>자료 · {m.source}</div>
                   )}
@@ -815,6 +867,52 @@ export default function AgentConsole({ mode = 'qa' }) {
                       ))}
                       <span style={{ fontSize: 11, color: COLORS.textDim }}>선석 → 기상 → 혼재 순서로 보고, 앞 단계에서 걸리면 거기서 멈춥니다</span>
                     </div>
+                  )}
+                  {/* 판정에 쓰지 못한 근거 — 관제사가 챙길 일이라 접지 않는다 */}
+                  {m.checks?.length > 0 && (
+                    <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${COLORS.glassBorder}` }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: COLORS.yellow }}>확인 필요</div>
+                      <ul style={{ margin: '3px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
+                        {m.checks.map((c, j) => <li key={j}>{c}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {/* 주요 위험성 — 등급 근거는 아니지만 관제사가 바로 보고 싶어 하는 정보라 짧으면 펼쳐 둔다.
+                      [2026-09-29] 여러 화물이면 줄이 판정 근거보다 길어져 접는다. 접히는 참고 칸(화물 특성·
+                      체크리스트, 판단 사유 전문)과 한곳에 모아 둔다 — 확인 칩 위에 따로 떨어져 있었다(사용자 요청). */}
+                  {m.hazardLines && (m.hazardLines.length <= 2 ? (
+                    <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 6 }}>
+                      <span style={{ fontWeight: 700 }}>주요 위험성</span>
+                      <ul style={{ margin: '2px 0 0', paddingLeft: 16 }}>
+                        {m.hazardLines.map((h) => <li key={h}>{h}</li>)}
+                      </ul>
+                    </div>
+                  ) : (
+                    <details style={{ marginTop: 5 }}>
+                      <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>
+                        주요 위험성 {m.hazardLines.length}건 보기
+                      </summary>
+                      <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
+                        {m.hazardLines.map((h) => <li key={h}>{h}</li>)}
+                      </ul>
+                    </details>
+                  ))}
+                  {/* 참고 정보(화물 특성·체크리스트) — 등급의 근거가 아니라 접어 둔다 */}
+                  {m.fold?.length > 0 && (
+                    <details style={{ marginTop: 5 }}>
+                      <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>
+                        {m.foldLabel} 보기
+                      </summary>
+                      <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
+                        {m.fold.map((d, j) => <li key={j}>{d}</li>)}
+                      </ul>
+                    </details>
+                  )}
+                  {m.longText && (
+                    <details style={{ marginTop: 5 }}>
+                      <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>{m.longTextLabel || '판단 사유 전문'}</summary>
+                      <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{m.longText}</div>
+                    </details>
                   )}
                 </div>
               </div>

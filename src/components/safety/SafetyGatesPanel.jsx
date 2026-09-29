@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import useOnsanApi, { useChemicalList } from '../../hooks/useOnsanApi';
+import { fetchAdjacentCargos } from '../../api/backendAdapter';
+import { cargoNames } from '../../utils/cargoText';
 import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
@@ -60,7 +62,10 @@ export default function SafetyGatesPanel() {
   // 목록이 로드되면 첫 화물을 기본 선택값으로 채운다 (로딩 전엔 빈 값)
   useEffect(() => {
     if (chemicals.length && !form.cargo_chem_id) {
-      setForm((f) => ({ ...f, cargo_chem_id: chemicals[0].chem_id }));
+      // 가나다순이라 숫자·영문 이름("1,2-Benzenedicarboxylic acid…")이 맨 앞에 와 기본값이 됐다.
+      // 한글 이름 중 첫 화물을 기본으로 둔다(2026-09-29).
+      const first = chemicals.find((c) => /^[가-힣]/.test(c.name_ko || '')) || chemicals[0];
+      setForm((f) => ({ ...f, cargo_chem_id: first.chem_id }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chemicals]);
@@ -83,10 +88,26 @@ export default function SafetyGatesPanel() {
   // (cargo_basis = 'PORT-MIS 실선종 기반', 581행 전량 is_synthetic).
   // 그래서 아래 select 에 "화물 배정은 합성"이라고 적어 둔다.
   const { data: dash } = useDashboardData();
-  const berthedVessels = (dash?.berth_cargo ?? [])
-    .filter((r) => r.callsgn && r.facility_name)
-    .slice(0, 60);
-  const berthedTotal = (dash?.berth_cargo ?? []).filter((r) => r.callsgn && r.facility_name).length;
+  // [2026-09-29] 화물 행이 아니라 **배 단위**로 고른다. 예전엔 "달포부두 · DSFN9 · 가솔린"처럼 화물 한 줄을
+  //   골라 그 화물 하나만, 이웃 화물은 비운 채 심사해서, 같은 배를 콘솔은 "화물 4종 × 이웃 2건"으로 보는데
+  //   여기서는 "이웃 화물 없음 → 안전"이 나왔다.
+  const berthedShips = (() => {
+    const m = new Map();
+    for (const r of dash?.berth_cargo ?? []) {
+      if (!r.callsgn || !r.facility_name) continue;
+      const key = `${r.callsgn}|${r.facility_name}`;
+      if (!m.has(key)) m.set(key, { callsgn: r.callsgn, facility_name: r.facility_name, rows: [] });
+      m.get(key).rows.push(r);
+    }
+    return [...m.values()];
+  })();
+  const berthedVessels = berthedShips.slice(0, 60);
+  const berthedTotal = berthedShips.length;
+
+  // 불러온 배 — 이 배의 나머지 화물과 백엔드 이웃 화물(선박 상세 패널·판정 잡과 같은 인접 계산)을
+  // 심사에 싣는다. 사람이 위 칸을 바꾸면 수동 입력으로 돌아간다(null).
+  //   adjacent: undefined = 조회 중, null = 조회 실패, 배열 = 결과
+  const [shipLoad, setShipLoad] = useState(null);
 
   /** 재항 화물 1건(berth_current_cargo 행)을 폼에 옮긴다 */
   const applyBerthedRow = (row) => {
@@ -107,7 +128,35 @@ export default function SafetyGatesPanel() {
     }));
   };
 
-  const loadFromBerthed = (idx) => applyBerthedRow(berthedVessels[Number(idx)]);
+  const loadFromBerthed = (idx) => {
+    const ship = berthedVessels[Number(idx)];
+    if (!ship) return;
+    const identified = ship.rows.filter((r) => r.chem_id)
+      .filter((r, i, arr) => arr.findIndex((x) => x.chem_id === r.chem_id) === i);
+    const main = identified[0];
+    setForm((f) => ({
+      ...f,
+      // chem_id 가 없는 행(위험물인데 물질 미확인)만 있으면 화물을 바꾸지 않는다.
+      cargo_chem_id: main?.chem_id || f.cargo_chem_id,
+      berth_name: ship.facility_name,
+      adjacent_berth: '',
+      adjacent_chem_id: '',
+    }));
+    if (!main) { setShipLoad(null); return; }
+    const load = {
+      callsgn: ship.callsgn, berth: ship.facility_name, main: main.chem_id,
+      names: identified.map((r) => r.cargo_name || r.chem_id),
+      unidentified: ship.rows.length - ship.rows.filter((r) => r.chem_id).length,
+      extras: identified.slice(1).map((r) => ({ chem_id: r.chem_id, cas_no: r.cas_no ?? null })),
+      adjacent: undefined,
+    };
+    setShipLoad(load);
+    fetchAdjacentCargos({ wharf_name: ship.facility_name, call_sign: ship.callsgn })
+      .then((list) => setShipLoad((s) => (s === load || s?.callsgn === load.callsgn ? { ...s, adjacent: list } : s)))
+      .catch(() => setShipLoad((s) => (s?.callsgn === load.callsgn ? { ...s, adjacent: null } : s)));
+  };
+  // 폼이 불러온 배 그대로일 때만 그 배의 화물·이웃을 싣는다.
+  const shipActive = shipLoad && form.cargo_chem_id === shipLoad.main && form.berth_name === shipLoad.berth;
 
   // ── 경고에서 넘어온 선석 자동 채움 ────────────────────────────────────────
   // 오른쪽 "현재 위험 선석" 카드나 헤더 경고 벨에서 선석을 누르면 여기로 온다.
@@ -120,6 +169,7 @@ export default function SafetyGatesPanel() {
 
   useEffect(() => {
     if (!prefill?.berth_name) return undefined;
+    setShipLoad(null);   // 경고가 지목한 조합을 재현한다 — 앞서 불러온 배의 입력을 섞지 않는다
     const rows = dash?.berth_cargo ?? [];
     const atBerth = rows.filter((r) => r.facility_name === prefill.berth_name);
     const [flaggedA, flaggedB] = prefill.chem_ids ?? [];
@@ -159,7 +209,10 @@ export default function SafetyGatesPanel() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  const set = (k) => (e) => {
+    setShipLoad(null);   // 손으로 바꾸면 불러온 배의 화물·이웃은 더 이상 이 폼의 입력이 아니다
+    setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  };
 
   const selectedCargo = chemicals.find((c) => c.chem_id === form.cargo_chem_id);
   const adjacentCargo = chemicals.find((c) => c.chem_id === form.adjacent_chem_id);
@@ -184,17 +237,23 @@ export default function SafetyGatesPanel() {
 
   const run = async () => {
     if (running) return;
-    const adjacent_operations = adjacentBerth && adjacentCargo
-      ? [{ berth_name: adjacentBerth, chem_id: adjacentCargo.chem_id, cargo_name: adjacentCargo.name_ko, activity: '하역중' }]
-      : [];
+    // 불러온 배면 그 배의 이웃 화물 전부(백엔드 인접 계산), 아니면 손으로 고른 한 건.
+    const adjacent_operations = shipActive
+      ? shipLoad.adjacent
+      : adjacentBerth && adjacentCargo
+        ? [{ berth_name: adjacentBerth, chem_id: adjacentCargo.chem_id, cargo_name: adjacentCargo.name_ko, activity: '하역중' }]
+        : [];
     setRunning(true);
-    // 백엔드 입력 계약 그대로만 보낸다 (대상 화물 + 인접 화물). 쓰이지 않는 값을
-    // 같이 보내면 "저 입력도 판정에 들어가나 보다"라는 오해가 코드에도 남는다.
+    // 백엔드 입력 계약 그대로만 보낸다 (대상 화물 + 같은 배의 나머지 화물 + 인접 화물). 쓰이지 않는
+    // 값을 같이 보내면 "저 입력도 판정에 들어가나 보다"라는 오해가 코드에도 남는다.
     const req = {
       cargo_name: selectedCargo?.name_ko,
       chem_id: form.cargo_chem_id,
       berth_name: form.berth_name,
       adjacent_operations,
+      extra_cargos: shipActive ? shipLoad.extras : [],
+      // 불러온 배의 호출부호 — 없으면 하역방식을 신고에서 찾지 못해 "신고가 없어"로 나왔다(2026-09-29)
+      call_sign: shipActive ? shipLoad.callsgn : null,
     };
 
     // [2026-08-23] 2단계 표시 — 등급·충돌근거를 먼저 그리고(실측 0.07초) 체크리스트를
@@ -315,18 +374,32 @@ export default function SafetyGatesPanel() {
               onChange={(e) => { loadFromBerthed(e.target.value); e.target.value = ''; }}
               style={{ ...inputStyle, flex: 1 }}
             >
-              <option value="">선박 선택 — 화물·선석·인접 화물이 자동으로 채워집니다</option>
-              {berthedVessels.map((r, i) => (
-                <option key={`${r.callsgn}-${i}`} value={i}>
-                  {r.facility_name} · {r.callsgn} · {r.cargo_name || '물질 미확인'}
-                  {r.chem_id ? '' : ' (판정 불가)'}
-                </option>
-              ))}
+              <option value="">선박 선택 — 그 배의 화물 전부와 이웃 화물이 심사에 실립니다</option>
+              {berthedVessels.map((s, i) => {
+                const names = cargoNames(s.rows.map((r) => r.cargo_name || '물질 미확인'));
+                return (
+                  <option key={`${s.callsgn}-${s.facility_name}`} value={i}>
+                    {s.facility_name} · {s.callsgn} · {names[0]}{names.length > 1 ? ` 외 ${names.length - 1}종` : ''}
+                    {s.rows.some((r) => r.chem_id) ? '' : ' (판정 불가)'}
+                  </option>
+                );
+              })}
             </select>
             <span style={{ fontSize: '11px', color: COLORS.textDim, whiteSpace: 'nowrap' }}>
-              {berthedVessels.length} / {berthedTotal}건
+              {berthedVessels.length} / {berthedTotal}척
             </span>
           </div>
+          {shipActive && (
+            <div style={{ fontSize: '12px', color: shipLoad.adjacent === null ? COLORS.red : COLORS.teal, marginTop: '6px' }}>
+              {shipLoad.callsgn} 불러옴 — 화물 {shipLoad.names.length}종({shipLoad.names.join(', ')})
+              {shipLoad.unidentified > 0 && ` · 물질 미확인 ${shipLoad.unidentified}건 제외`}
+              {' · '}
+              {shipLoad.adjacent === undefined ? '이웃 화물 조회 중…'
+                : shipLoad.adjacent === null ? '이웃 화물 조회 실패 — 이웃을 모르고 심사하면 "이웃 없음 = 안전"이 되므로 심사하지 않습니다'
+                  : `이웃 화물 ${shipLoad.adjacent.length}건`}
+              <span style={{ color: COLORS.textDim }}> · 아래 칸을 바꾸면 수동 입력으로 돌아갑니다</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -367,7 +440,7 @@ export default function SafetyGatesPanel() {
       <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
         <button
           onClick={run}
-          disabled={running || !form.cargo_chem_id}
+          disabled={running || !form.cargo_chem_id || (shipActive && shipLoad.adjacent == null)}
           style={{
             marginLeft: 'auto',
             background: running ? COLORS.card : `linear-gradient(135deg, ${COLORS.teal}, ${COLORS.tealDark})`,
@@ -410,8 +483,34 @@ export default function SafetyGatesPanel() {
                   또 붙이는 구조라 "인화성 인화성 가스 폭발 위험"으로 찍혔다.
                   등급값(고인화성 등)이 오던 자리에 문장이 들어오면서 깨진 것.
                 · IMDG 격리코드: 부두 간 판정 근거가 아니라 참고 정보라 제거됨. */}
-            <div style={{ fontSize: '12.5px', color: COLORS.textSecondary, lineHeight: 1.6, flex: 1, minWidth: 0 }}>
-              {firstSentence(result.explanation?.summary)}
+            {/* [2026-09-29] 등급의 근거(코드)는 1단계(/safety/verdict)부터 바로 보인다. LLM 서술은
+                화물 특성 1~2문장으로 줄였다 — 등급 설명을 맡겼더니 원인을 유해성으로 잘못 댔다.
+                새 필드가 없는 응답(스냅샷)만 옛 서술을 보여준다. */}
+            <div style={{ fontSize: '12px', color: COLORS.textSecondary, lineHeight: 1.6, flex: 1, minWidth: 0 }}>
+              {result.explanation?.basis?.length > 0 ? (
+                <>
+                  {result.explanation.basis.map((b) => <div key={b}>{b}</div>)}
+                  {result.explanation.needs_check?.length > 0 && (
+                    <div style={{ marginTop: '4px' }}>
+                      <span style={{ fontWeight: 700, color: COLORS.yellow }}>확인 필요</span>
+                      {result.explanation.needs_check.map((c) => <div key={c}>· {c}</div>)}
+                    </div>
+                  )}
+                  {result.explanation.profile && (
+                    <div style={{ marginTop: '4px' }}>
+                      <span style={{ fontWeight: 700 }}>화물 특성</span> · {result.explanation.profile}
+                    </div>
+                  )}
+                  {/* [2026-09-29] 주요 위험성 — 백엔드가 MSDS GHS 분류로 만든 줄(여러 화물이면 항목별 물질명).
+                      여러 화물엔 LLM 화물 특성이 없으므로 이게 화물 설명을 대신한다. */}
+                  {result.explanation.reasoning?.length > 0 && (
+                    <div style={{ marginTop: '4px' }}>
+                      <span style={{ fontWeight: 700 }}>주요 위험성</span>
+                      {result.explanation.reasoning.map((h) => <div key={h}>· {h}</div>)}
+                    </div>
+                  )}
+                </>
+              ) : firstSentence(result.explanation?.summary)}
             </div>
           </div>
 
@@ -472,7 +571,7 @@ export default function SafetyGatesPanel() {
           </summary>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
           {result.explanation?.summary && (
-            <div style={{ fontSize: '12px', color: COLORS.textSecondary, lineHeight: 1.65 }}>{result.explanation.summary}</div>
+            <div style={{ fontSize: '12px', color: COLORS.textSecondary, lineHeight: 1.65, whiteSpace: 'pre-line' }}>{result.explanation.summary}</div>
           )}
           <button onClick={() => setShowAllGates((v) => !v)} style={{
             alignSelf: 'flex-start', background: 'none', border: 'none', color: COLORS.info,

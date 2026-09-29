@@ -473,6 +473,7 @@ export async function fetchUpcomingArrivals({ aheadHours = 72, pastHours = 12 } 
  */
 export async function postAssessAndRecord({
   callSign, vesselName, draughtM, dwtT, chemId, casNo, cargoName, wharfName, hours = 8,
+  cargos = [], targetSource = null, portCallKey = null,
 }) {
   if (!wharfName) throw new Error('계류시설이 확인되지 않아 판정할 수 없습니다');
   if (!(Number(draughtM) > 0)) throw new Error('흘수가 없어 판정할 수 없습니다(판정불가)');
@@ -486,11 +487,18 @@ export async function postAssessAndRecord({
     body: JSON.stringify({
       vessel: { draught_m: Number(draughtM), dwt_t: dwtT ? Number(dwtT) : null, name_hint: vesselName, call_sign: callSign },
       cargo,
+      // [2026-09-29] 같은 입항 건의 나머지 화물 · 선석 출처 · 입항 건 키. 예전엔 첫 화물 하나만 보내
+      //   여러 화물 배도 한 화물로 기록됐고, 기록이 어느 입항 건 것인지 남지 않았다.
+      cargos: cargos
+        .filter((c) => c?.chem_id && c.chem_id !== cargo.chem_id)
+        .map((c) => ({ chem_id: c.chem_id, name_hint: c.name })),
       window_start: new Date(now).toISOString(),
       window_end: new Date(now + hours * 3600 * 1000).toISOString(),
       assigned_wharf_name: wharfName,
+      ...(targetSource ? { target_source: targetSource } : {}),
       call_sign: callSign,
       vessel_name: vesselName,
+      ...(portCallKey ? { port_call_key: portCallKey } : {}),
     }),
   });
   if (!res.ok) {

@@ -93,7 +93,8 @@ const COLUMNS = [
   { key: 'ship_kind_nm', label: '선종 (PORT-MIS)', width: '13%', getValue: (v) => v.ship_kind_nm ?? '' },
   { key: 'nav_status_category', label: '상태', width: '10%', getValue: (v) => (NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label },
   { key: 'cargo', label: '화물', width: '16%', getValue: (v) => (v.cargo ? cargoSummary(v.cargos?.length ? v.cargos : [v.cargo]) : '') },
-  { key: 'berth', label: '배정 선석', width: '10%', getValue: (v) => v.berth ?? (v.anchorage ? `정박지 ${v.anchorage}` : '') },
+  // AIS 위치로 본 계류 위치(선석·정박지) — 배정이 아니다(2026-09-29 라벨 수정)
+  { key: 'berth', label: '계류 위치', width: '10%', getValue: (v) => v.berth ?? (v.anchorage ? `정박지 ${v.anchorage}` : '') },
   { key: 'sog', label: '속력', width: '6%', getValue: (v) => v.sog ?? 0 },
   { key: 'received_at_utc', label: '최근 수신', width: '16%', getValue: (v) => (v.received_at_utc ? new Date(v.received_at_utc).getTime() : 0) },
 ];

@@ -49,7 +49,9 @@ const STAGE_NOTE = {
 };
 // 판정 이유의 첫 줄은 대개 결론을 되풀이한다("배정된 선석이 이 선박·화물 조건에 맞습니다/맞지 않습니다").
 // 표에는 그 다음의 구체적인 이유 한 줄을 보인다. 전체 이유는 칩에 마우스를 올리면 보인다.
-const GENERIC_REASON = /^배정된 선석이 이 선박·화물 조건에 맞/;
+// [2026-09-29] 9/29 부터 주어가 출처대로 바뀌었다("지금 접안한 선석이", "PORT-MIS 신고 선석이").
+//   옛 기록("배정된 선석이")과 백엔드가 표시용으로 고친 문장("이 선석이")까지 함께 알아본다.
+const GENERIC_REASON = /^(배정된|이|지금 접안한|PORT-MIS 신고) 선석이 이 선박·화물 조건에 맞/;
 function keyReason(reasons) {
   const list = (reasons || []).map(String).filter(Boolean);
   return list.find((t) => !GENERIC_REASON.test(t)) || list[0] || null;
@@ -120,6 +122,8 @@ function UpcomingSection() {
         callSign: r.call_sign, vesselName: r.vessel_name, draughtM: r.draught_m,
         chemId: r.chem_id, casNo: r.cas_no, cargoName: r.cargo_name,
         wharfName: r.wharf_name || r.facility_name,
+        // 이 행의 화물 전부 · PORT-MIS 사전배정 선석 · 이 행의 입항 건 — 표에 같은 입항 건 판정만 붙는다
+        cargos: r.cargos || [], targetSource: 'PORT-MIS', portCallKey: r.port_call_key,
       });
       setJudging((m) => { const n = { ...m }; delete n[key]; return n; });
       setReloadKey((k) => k + 1);
@@ -296,6 +300,8 @@ function UpcomingSection() {
                           onClick={() => requestConsole(r.call_sign, r.chem_id ? { chem_id: r.chem_id, name: r.cargo_name } : null, {
                             subject: {
                               vessel_name: r.vessel_name, wharf: r.wharf_name || r.facility_name, draught_m: r.draught_m,
+                              // 이 표의 계류시설은 PORT-MIS 사전배정이다 — 판정 문구가 "배정된 선석"이 된다(2026-09-29)
+                              source: 'PORT-MIS',
                               cargo: r.chem_id || r.cas_no ? { chem_id: r.chem_id, cas_no: r.cas_no, name: r.cargo_name } : null,
                               cargos: r.cargos || [],
                             },
