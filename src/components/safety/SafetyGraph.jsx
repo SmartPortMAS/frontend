@@ -64,7 +64,8 @@ export default function SafetyGraph() {
         100 = 하역을 막을 이유 없음
       </p>
 
-      <div style={{ flex: 1, minHeight: '300px' }}>
+      {/* 높이를 정해 준다 — 대시보드로 옮기면서 부모 높이가 없어 차트(높이 100%)가 0 으로 그려졌다(2026-09-30) */}
+      <div style={chartData.length > 0 ? { height: 320 } : { minHeight: 40 }}>
         {error && (
           <div style={{ color: 'var(--text-dim)', fontSize: '13px' }}>
             안전 지수를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
