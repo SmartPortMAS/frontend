@@ -12,6 +12,9 @@ import {
   shipScale,
 } from '../../utils/geoUtils';
 import useSensorStore from '../../stores/useSensorStore';
+import SceneLabel from './SceneLabel';
+import { simClock, simTarget, slotMoor } from '../../utils/simClock';
+import { stateAt } from '../../utils/berthSim';
 
 // 선석 미배정 선박의 기본 대기점 (만 중앙)
 const DEFAULT_HOLDING = bayShift([0, 0], 170);
@@ -93,12 +96,21 @@ export default function Ship({ ship, onClick }) {
 
   // 계류 지점: 배정된 선석의 안벽 옆(만 방향 15유닛)
   // 선수는 해안 접선(+T, 남동 외해) 방향 = MOOR_HEADING — 출항 대비 계류
+  // [2026-09-30] 같은 부두에 둘 이상 접안하면 바깥쪽으로 나란히(slot) — 예전엔 한 자리에 겹쳐 그려졌다
   const moor = useMemo(() => {
     const berth = ONSAN_BERTHS_3D[ship.berth];
-    return berth ? berth.moor : DEFAULT_HOLDING;
-  }, [ship.berth]);
+    return berth ? slotMoor(berth, ship.slot) : DEFAULT_HOLDING;
+  }, [ship.berth, ship.slot]);
 
   const { targetPos, targetHeading, isMoored, isAnchored, isUnderway } = useMemo(() => {
+    // 72시간 시뮬레이션의 배 — 자리는 매 프레임 시계(simClock)로 다시 잡는다(useFrame). 여기는 처음 자리와 표시용
+    if (ship.plan) {
+      const tg = simTarget(ship.plan, stateAt(ship.plan, simClock.t), moor, ship.waitIdx);
+      return {
+        targetPos: tg.pos, targetHeading: tg.heading, isMoored: Boolean(tg.moored),
+        isAnchored: Boolean(tg.anchored), isUnderway: Boolean(tg.moving),
+      };
+    }
     // 실시간 AIS 좌표가 있으면 그대로 사용 (라이브 데이터 모드)
     if (ship.vessel_lat) {
       const [x, , z] = convertLatLonToVector3(ship.vessel_lat, ship.vessel_lon);
@@ -159,7 +171,7 @@ export default function Ship({ ship, onClick }) {
 
     // 계류/하역 중: 안벽 옆에 고정, 선수는 접선 방향
     return { targetPos: moor, targetHeading: MOOR_HEADING, isMoored: true, isAnchored: false, isUnderway: false };
-  }, [ship.status, ship.anchorage, ship.vessel_lat, ship.vessel_lon, ship.vessel_heading, ship.vessel_speed, moor, predictionOffset]);
+  }, [ship.status, ship.anchorage, ship.vessel_lat, ship.vessel_lon, ship.vessel_heading, ship.vessel_speed, moor, predictionOffset, ship.plan, ship.waitIdx, ship.phase]);
 
   useFrame((state, delta) => {
     if (!shipRef.current) return;
@@ -169,14 +181,24 @@ export default function Ship({ ship, onClick }) {
     let tx = targetPos[0];
     let tz = targetPos[1];
     let heading = targetHeading;
-    if (isAnchored) {
+    let anchoredNow = isAnchored;
+    let mooredNow = isMoored;
+    const simOn = Boolean(ship.plan) && simClock.active;
+    if (simOn) {
+      const tg = simTarget(ship.plan, stateAt(ship.plan, simClock.t), moor, ship.waitIdx);
+      [tx, tz] = tg.pos;
+      heading = tg.heading;
+      anchoredNow = Boolean(tg.anchored);
+      mooredNow = Boolean(tg.moored);
+    }
+    if (anchoredNow) {
       tx += Math.sin(t * 0.05 + bobPhase) * 6;
       tz += Math.cos(t * 0.045 + bobPhase) * 6;
       heading += Math.sin(t * 0.03 + bobPhase) * 0.35;
     }
 
-    // 대형 선박다운 묵직한 이동 (관성 표현)
-    const lerpFactor = Math.min(1, delta * 0.8);
+    // 대형 선박다운 묵직한 이동 (관성 표현). 시뮬레이션은 시간이 빨리 흘러 조금 더 바짝 따라간다
+    const lerpFactor = Math.min(1, delta * (simOn ? 3.2 : 0.8));
     shipRef.current.position.x = THREE.MathUtils.lerp(
       shipRef.current.position.x, tx, lerpFactor
     );
@@ -185,16 +207,16 @@ export default function Ship({ ship, onClick }) {
     );
 
     // 상하 요동: 계류 중엔 잔잔하게, 항해 중엔 조금 더 크게
-    const bobAmp = isMoored ? 0.05 : 0.14;
+    const bobAmp = mooredNow ? 0.05 : 0.14;
     shipRef.current.position.y = Math.sin(t * 0.6 + bobPhase) * bobAmp;
 
     // 좌우 롤·앞뒤 피치까지 넣어 파도에 실린 느낌
-    const roll = Math.sin(t * 0.5 + bobPhase) * (isMoored ? 0.006 : 0.018);
-    const pitch = Math.sin(t * 0.42 + bobPhase * 1.7) * (isMoored ? 0.003 : 0.010);
+    const roll = Math.sin(t * 0.5 + bobPhase) * (mooredNow ? 0.006 : 0.018);
+    const pitch = Math.sin(t * 0.42 + bobPhase * 1.7) * (mooredNow ? 0.003 : 0.010);
     const targetQuat = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(pitch, heading, roll)
     );
-    shipRef.current.quaternion.slerp(targetQuat, Math.min(1, delta * 1.2));
+    shipRef.current.quaternion.slerp(targetQuat, Math.min(1, delta * (simOn ? 3 : 1.2)));
   });
 
   // Hull colors: operating = dark maroon, docked/arriving = dark navy
@@ -202,7 +224,13 @@ export default function Ship({ ship, onClick }) {
   const deckColor = '#374151';
   // 재화중량에 비례한 선체 크기 (출항 공선은 작게 보임)
   const scl = shipScale(ship.cargoAmount);
-  const meta = STATUS_META[ship.status] || { label: ship.status, color: '#8ba3b8' };
+  const berthOdd = Math.max(0, Object.keys(ONSAN_BERTHS_3D).indexOf(ship.berth)) % 2;
+  const labelStep = berthOdd + (ship.slot || 0) * 2;
+  const meta = ship.plan
+    ? { label: ship.simLabel || '', color: ship.simColor || '#8ba3b8' }
+    : STATUS_META[ship.status] || { label: ship.status, color: '#8ba3b8' };
+  // 접안해 있는 배는 점 색만으로 충분하다 — '접안 중' 글을 배마다 붙이면 이웃 배 이름표와 겹친다
+  const labelText = !ship.plan && (ship.status === 'mooring' || ship.status === 'docked') ? '' : meta.label;
 
   return (
     <group
@@ -216,16 +244,31 @@ export default function Ship({ ship, onClick }) {
       scale={[scl, scl, scl]}
     >
       {/* 선명 + 상태 라벨 */}
-      <Html position={[0, 30, 0]} center zIndexRange={[20, 0]} distanceFactor={320}>
-        <div style={shipLabelStyle}>
+      {/* 같은 부두의 둘째 배는 이름표를 한 칸 위로 — 나란히 댄 배의 이름표가 겹쳤다 */}
+      {ship.labelMode !== 'hidden' && (
+      <SceneLabel position={[0, 30 + (ship.slot || 0) * 22 + (ship.labelMode === 'fixed' ? 0 : berthOdd * 16), 0]} fixed={ship.labelMode === 'fixed'}>
+        <div style={{
+          ...shipLabelStyle,
+          // 멀리서 크기를 고정한 이름표는 이웃 선석 · 같은 부두의 둘째 배와 겹치지 않게 높이를 엇갈린다
+          ...(ship.labelMode === 'fixed' ? { transform: `translateY(${-(labelStep * 24)}px)` } : {}),
+        }}>
           <span style={{
             width: '7px', height: '7px', borderRadius: '50%',
             background: meta.color, display: 'inline-block',
           }} />
           {ship.id}
-          <span style={{ color: meta.color, fontWeight: 600 }}>{meta.label}</span>
+          {labelText && <span style={{ color: meta.color, fontWeight: 600 }}>{labelText}</span>}
+          {ship.simProgress != null && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ width: '34px', height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.18)', overflow: 'hidden', display: 'inline-block' }}>
+                <span style={{ display: 'block', width: `${ship.simProgress}%`, height: '100%', background: meta.color }} />
+              </span>
+              <span style={{ color: meta.color, fontWeight: 700, fontFamily: 'ui-monospace, Consolas, monospace' }}>{ship.simProgress}%</span>
+            </span>
+          )}
         </div>
-      </Html>
+      </SceneLabel>
+      )}
 
       {/* 항적 (항해 중에만): 선미 뒤로 퍼지는 물거품 */}
       {isUnderway && (

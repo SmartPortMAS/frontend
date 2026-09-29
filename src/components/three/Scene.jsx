@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { OrbitControls, Sky } from '@react-three/drei';
+import { OrbitControls, Sky, Stars } from '@react-three/drei';
 import BerthFocus from './BerthFocus';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import { Suspense, useEffect, useRef } from 'react';
@@ -45,16 +45,21 @@ import useSensorStore from '../../stores/useSensorStore';
 // 3D 처음 화면 — Canvas 의 첫 카메라 위치 · OrbitControls 첫 목표와 같아야 한다
 const HOME_POS = [330, 230, -250];
 const HOME_TARGET = [0, 0, 0];
+// 72시간을 온산 전체로 볼 때 — 만 쪽에서 더 높이, 입출항 항로와 E2 정박지까지 한 화면에 든다
+const WIDE_POS = [528, 450, -254];
+const WIDE_TARGET = [173, 0, 29];
 
 /** 처음 화면(조감)으로 카메라를 천천히 되돌린다 — store.requestTwinHome() 이 부른다 */
 function CameraHome() {
   const { camera, controls } = useThree();
   const at = useSensorStore((s) => s.twinHomeAt);
+  const kind = useSensorStore((s) => s.twinHomeKind);
   const goal = useRef(null);
   useEffect(() => {
     if (!at) return;
-    goal.current = { pos: new THREE.Vector3(...HOME_POS), look: new THREE.Vector3(...HOME_TARGET) };
-  }, [at]);
+    const wide = kind === 'wide';
+    goal.current = { pos: new THREE.Vector3(...(wide ? WIDE_POS : HOME_POS)), look: new THREE.Vector3(...(wide ? WIDE_TARGET : HOME_TARGET)) };
+  }, [at, kind]);
   useFrame(() => {
     const g = goal.current;
     if (!g) return;
@@ -65,19 +70,84 @@ function CameraHome() {
   return null;
 }
 
+/** 72시간 패널이 아래를 덮는 만큼 장면을 위로 민다 — 카메라는 그대로 두고 그리는 창만 옮긴다 */
+function ViewShift() {
+  const { camera, size } = useThree();
+  const shift = useSensorStore((s) => s.twinViewShift);
+  const cur = useRef(0);
+  const last = useRef('');
+  useFrame(() => {
+    const goal = shift || 0;
+    cur.current = Math.abs(goal - cur.current) < 0.6 ? goal : THREE.MathUtils.lerp(cur.current, goal, 0.12);
+    const key = `${Math.round(cur.current)}|${size.width}|${size.height}`;
+    if (key === last.current) return;
+    last.current = key;
+    if (Math.round(cur.current) === 0) camera.clearViewOffset();
+    else camera.setViewOffset(size.width, size.height, 0, Math.round(cur.current), size.width, size.height);
+  });
+  useEffect(() => () => { camera.clearViewOffset(); }, [camera]);
+  return null;
+}
+
 function SimulationEnvironment({ focusBerth, focusRings = true }) {
+  const lite = useSensorStore((s) => s.twinLite);
+
+  return (
+    <>
+      <color attach="background" args={['#0a1628']} />
+      <SkyAndLights />
+
+      <Water />
+      <Port />
+      <BerthFocus berthName={focusBerth} showRings={focusRings} />
+      <CameraHome />
+      <ViewShift />
+
+      {/* [2026-09-29] 후처리는 매 프레임 화면 전체를 다시 그려 느린 PC 에서 가장 큰 비용이었다(동안·현우 체감).
+          장식이라 기본은 끄고, 촬영 때만 ?fx=1 로 켠다. */}
+      {LITE_PARAM !== '0' && <PerfProbe />}
+      {FX_ON && !lite && (
+        <EffectComposer disableNormalPass>
+          <Bloom luminanceThreshold={0.55} mipmapBlur intensity={0.8} />
+          <Vignette eskil={false} offset={0.15} darkness={0.9} />
+        </EffectComposer>
+      )}
+
+      <OrbitControls
+        makeDefault
+        target={HOME_TARGET}
+        minPolarAngle={Math.PI / 8}
+        maxPolarAngle={Math.PI / 2 - 0.05}
+        minDistance={30}
+        maxDistance={1100}
+        enableDamping
+        dampingFactor={0.08}
+      />
+    </>
+  );
+}
+
+// 촬영용 — ?hour=14 로 장면의 시각(낮밤)을 고정한다
+const HOUR_Q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('hour') : null;
+const HOUR_FIXED = HOUR_Q != null && Number(HOUR_Q) >= 0 && Number(HOUR_Q) < 24 ? Number(HOUR_Q) : null;
+
+/** 하늘과 빛 — 지금 시각, 72시간 시뮬레이션 중에는 그 시각의 낮밤을 따른다 */
+function SkyAndLights() {
   const predictionOffset = useSensorStore((s) => s.predictionOffset);
   const lite = useSensorStore((s) => s.twinLite);
+  // 시뮬레이션 시각은 20분 단위로만 받는다 — 한 시각 안에서 하늘을 여러 번 다시 그릴 까닭이 없다
+  const simAt = useSensorStore((s) => (s.outlookPreview?.simOn ? Math.floor(s.outlookPreview.at_ms / 1200000) * 1200000 : null));
 
   // 기준 시각은 현재 시각이다.
   //
   // 예전엔 store.timestamp 를 읽었는데 그 값을 채우는 코드가 없어(WebSocket 경로
   // 잔해) 항상 폴백인 정오로 고정됐다. 밤 10시에도 부두는 한낮이었고, 같은 화면의
   // CCTV 패널은 실제 시각으로 야간·IR 을 그려서 둘이 어긋났다.
-  const now = new Date();
+  const now = simAt ? new Date(simAt) : new Date();
   let hour = now.getHours() + now.getMinutes() / 60;
-  hour = (hour + predictionOffset / 60) % 24;
+  hour = (hour + (simAt ? 0 : predictionOffset / 60)) % 24;
   if (hour < 0) hour += 24;
+  if (HOUR_FIXED != null && !simAt) hour = HOUR_FIXED;
 
   const sunAngle = ((hour - 6) / 12) * Math.PI;
   const sunX = Math.cos(sunAngle) * 1000;
@@ -89,10 +159,16 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
   const ambientIntensity = (isNight ? 0.42 : 0.5) + (lite ? 0.15 : 0);
   const sunIntensity = isNight ? 0 : Math.max(Math.sin(sunAngle), 0) * 1.8;
 
+  // 해 뜰 녘 · 질 녘 한 시간은 낮과 밤 사이를 잇는다(0 = 밤, 1 = 낮)
+  const day = THREE.MathUtils.clamp(Math.min(hour - 5.5, 18.5 - hour), 0, 1);
+  const fogColor = new THREE.Color('#0a1628').lerp(new THREE.Color('#9db8cf'), day * 0.85);
+  // 해가 낮게 걸린 동안(해 뜰 녘 · 질 녘)은 Sky 가 화면 위쪽에 갈색 띠로 보인다 — 해가 충분히 오른 뒤에만 그린다
+  const sunUp = !isNight && Math.sin(sunAngle) > 0.22;
+
   return (
     <>
-      <color attach="background" args={['#0a1628']} />
-      <fog attach="fog" args={['#0a1628', 500, 1800]} />
+      {!sunUp && <color attach="background" args={[new THREE.Color('#0a1628').lerp(new THREE.Color('#31506f'), day)]} />}
+      <fog attach="fog" args={[fogColor, 520, 1900]} />
 
       <ambientLight intensity={ambientIntensity} color="#b0c4de" />
       <hemisphereLight
@@ -119,45 +195,23 @@ function SimulationEnvironment({ focusBerth, focusRings = true }) {
         />
       )}
 
-      <Sky
-        distance={450000}
-        sunPosition={[sunX, sunY, -500]}
-        inclination={0}
-        azimuth={0.25}
-        rayleigh={isNight ? 0 : 1.5}
-        turbidity={isNight ? 0 : 6}
-      />
+      {/* [2026-09-30] 밤에는 Sky 를 그리지 않는다 — 산란을 0 으로 둔 Sky 가 화면 위쪽에 회색 띠로 보였다. 대신 별 */}
+      {sunUp && (
+        <Sky
+          distance={450000}
+          sunPosition={[sunX, sunY, -500]}
+          inclination={0}
+          azimuth={0.25}
+          rayleigh={1.5}
+          turbidity={6}
+        />
+      )}
+      {!sunUp && <Stars radius={900} depth={120} count={lite ? 900 : 2200} factor={9} saturation={0} fade speed={0.4} />}
       {/* drei <Environment preset> 은 쓰지 않는다 — 프리셋 HDR 을 GitHub 에서
           실시간으로 내려받는데, 2026-08-17 에 GitHub 가 429 를 돌려주자 이
           컴포넌트가 죽으면서 /twin 전체가 빈 화면이 됐다. 반사광 질감을 조금
           더할 뿐인 장식이 화면 생존을 외부 CDN 에 걸어둘 이유가 없다.
           조명은 위의 태양·반구광·Sky 가 이미 전부 담당한다. */}
-
-      <Water />
-      <Port />
-      <BerthFocus berthName={focusBerth} showRings={focusRings} />
-      <CameraHome />
-
-      {/* [2026-09-29] 후처리는 매 프레임 화면 전체를 다시 그려 느린 PC 에서 가장 큰 비용이었다(동안·현우 체감).
-          장식이라 기본은 끄고, 촬영 때만 ?fx=1 로 켠다. */}
-      {LITE_PARAM !== '0' && <PerfProbe />}
-      {FX_ON && !lite && (
-        <EffectComposer disableNormalPass>
-          <Bloom luminanceThreshold={0.55} mipmapBlur intensity={0.8} />
-          <Vignette eskil={false} offset={0.15} darkness={0.9} />
-        </EffectComposer>
-      )}
-
-      <OrbitControls
-        makeDefault
-        target={HOME_TARGET}
-        minPolarAngle={Math.PI / 8}
-        maxPolarAngle={Math.PI / 2 - 0.05}
-        minDistance={30}
-        maxDistance={1100}
-        enableDamping
-        dampingFactor={0.08}
-      />
     </>
   );
 }

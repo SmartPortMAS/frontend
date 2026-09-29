@@ -3,6 +3,7 @@ import useVesselThread from '../../../hooks/useVesselThread';
 import { ONSAN_BERTHS_3D, ONSAN_WEATHER_GROUP } from '../../../utils/geoUtils';
 import { COLORS, WEATHER_STATUS_COLORS } from '../../../utils/constants';
 import { VERDICT_RANK, berthKey } from '../../../utils/verdict';
+import { stateAt, isAtBerth } from '../../../utils/berthSim';
 
 // 어두운 3D 바탕용 판정 색 — 관제 화면(utils/verdict)과 뜻은 같고 밝기만 다르다(OutlookTimeline LEVEL_COLOR 와 같음)
 const DOT = { 적합: '#10b981', 주의: '#f59e0b', 부적합: '#ef4444', 판정불가: '#a78bfa' };
@@ -18,6 +19,9 @@ export default function BerthStatusBar() {
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
   const { berths } = useVesselThread();
+  // [2026-09-30] 72시간 시뮬레이션이 돌면 그 시각의 점유를 보인다 — 3D 의 배와 같은 계획(plans)을 읽는다
+  const preview = useSensorStore((s) => s.outlookPreview);
+  const simOn = Boolean(preview?.simOn);
 
   return (
     <div style={{
@@ -28,17 +32,22 @@ export default function BerthStatusBar() {
       border: `1px solid ${COLORS.glassBorder}`, borderRadius: '10px',
       padding: '5px 10px',
     }}>
-      <span style={{ fontSize: '11px', fontWeight: 800, color: '#AFC2CC', whiteSpace: 'nowrap', marginRight: '4px' }}>
-        선석 현황
+      <span style={{ fontSize: '11px', fontWeight: 800, color: simOn ? '#38bdf8' : '#AFC2CC', whiteSpace: 'nowrap', marginRight: '4px', minWidth: 52 }}>
+        {simOn ? `+${preview.offsetH}시간` : '선석 현황'}
       </span>
       {Object.entries(ONSAN_BERTHS_3D).map(([id, b]) => {
         const row = berths.find((r) => berthKey(r.wharf_name) === berthKey(b.name));
-        const ships = (row?.slots || []).filter((s) => s.call_sign);
+        const ships = simOn
+          ? preview.plans.filter((p) => p.berthId === id && isAtBerth(stateAt(p, preview.at_ms).phase))
+            .map((p) => ({ call_sign: p.callsgn, vessel_name: p.name, status: p.level }))
+          : (row?.slots || []).filter((s) => s.call_sign);
         const cap = Math.max(row?.max_concurrent_vessels || 0, (row?.slots || []).length, ships.length, 1);
         const worst = ships.map((s) => s.status).filter(Boolean)
           .sort((x, y) => (VERDICT_RANK[x] ?? 9) - (VERDICT_RANK[y] ?? 9))[0];
-        const verdict =
-          berthWeather && ONSAN_WEATHER_GROUP[id] === berthWeather.berth_group
+        const simWx = simOn ? (preview.berthId === id ? preview.status : preview.berthLevels?.[id]?.status) : null;
+        const verdict = simOn
+          ? simWx || null
+          : berthWeather && ONSAN_WEATHER_GROUP[id] === berthWeather.berth_group
             ? berthWeather.status
             : null;
         const escalated = verdict && verdict !== '정상';

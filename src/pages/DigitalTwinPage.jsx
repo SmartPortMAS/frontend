@@ -16,7 +16,7 @@ import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
 import { BACKEND_BASE, postTwinFocus } from '../api/backendAdapter';
-import { FaMap, FaPlay, FaExclamationTriangle, FaArrowRight } from 'react-icons/fa';
+import { FaPlay, FaExclamationTriangle, FaFastForward } from 'react-icons/fa';
 import { levelStyle, alertParts } from '../utils/alertUtils';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
@@ -26,6 +26,9 @@ import { levelStyle, alertParts } from '../utils/alertUtils';
 // 5173 하나만 보고 있으면 "떠 있는데 못 찾는" 상황이 생기므로 후보를 순차 탐색한다.
 const OMNIVERSE_PORTS = [5173, 5174, 5175, 5176];
 const omniverseUrl = (port) => `http://localhost:${port}`;
+
+// 온산항 전체의 72시간 — 선석을 지목하지 않는다
+const WIDE_FOCUS = { wide: true, berth: null, berthId: null, call_sign: null, vessel_name: null, omniOk: false };
 
 // 경고 한 건이 화면에 머무는 시간. 결론만 보여주므로 5초면 충분히 읽힌다.
 const TICKER_ROTATE_MS = 5000;
@@ -45,7 +48,8 @@ export default function DigitalTwinPage() {
   // 그때 "빨간 링이 대상 선석"이라고 안내하면 있지도 않은 링을 찾게 만든다.
   const focusInScene = focusBerth ? Boolean(findBerthIdByName(focusBerth)) : false;
   const wantOmniverse = searchParams.get('omniverse') === '1';
-  //   ?outlook=OTK 1부두   → 그 선석의 "앞으로 72시간" 판정 흐름을 바로 연다 (시연 영상·캡처용)
+  //   ?outlook=OTK 1부두   → 그 선석의 "앞으로 72시간"을 바로 연다 (시연 영상·캡처용)
+  //   ?outlook=all         → 온산항 전체의 72시간
   const wantOutlook = searchParams.get('outlook') || null;
 
   // 상단 띠에 세울 실경고 — 심각한 것부터 전부 돈다.
@@ -117,7 +121,6 @@ export default function DigitalTwinPage() {
   const selectionLabel = selectedObject
     ? (selectedObject.type === 'Ship' ? selectedObject.id : ONSAN_BERTHS[selectedObject.id]?.name || selectedObject.id)
     : null;
-  const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
   const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
   const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
   const requestTwinHome = useSensorStore((s) => s.requestTwinHome);
@@ -146,8 +149,17 @@ export default function DigitalTwinPage() {
     if (searchParams.get('berth') || searchParams.get('outlook')) setSearchParams({}, { replace: true });
     requestTwinHome();
   };
+  // [2026-09-30] 머리 단추 — 선석을 고르지 않고 온산항 전체의 72시간을 돌려 본다(조감 시점)
+  const openPortOutlook = () => {
+    setShowOmniverseStream(false);
+    setShowMap(false);
+    setSelectedObject(null);
+    setOutlookFocus(WIDE_FOCUS);
+    requestTwinHome('wide');
+  };
   useEffect(() => {
     if (!wantOutlook) return;
+    if (wantOutlook === 'all') { setOutlookFocus(WIDE_FOCUS); requestTwinHome('wide'); return; }
     const id = findBerthIdByName(wantOutlook);
     if (id && ONSAN_BERTHS_3D[id]) {
       setOutlookFocus({ berth: ONSAN_BERTHS[id].name, berthId: id, call_sign: null, vessel_name: null, omniOk: OMNIVERSE_BERTH_IDS.has(id) });
@@ -226,7 +238,7 @@ export default function DigitalTwinPage() {
       {focusBerth && !showOmniverseStream && !outlookFocus && (
         <div style={{
           // CCTV(왼쪽 440) 와 머리 단추(오른쪽 230) 사이 — 좁은 화면에서도 둘을 덮지 않게
-          position: 'absolute', top: 90, left: 440, right: 236,
+          position: 'absolute', top: 90, left: 440, right: 390,
           zIndex: 840, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', whiteSpace: 'nowrap',
           background: 'rgba(15, 23, 42, 0.88)', backdropFilter: 'blur(10px)',
           border: `1px solid ${focusInScene ? 'rgba(255, 75, 110, 0.55)' : 'rgba(245, 158, 11, 0.55)'}`,
@@ -308,7 +320,8 @@ export default function DigitalTwinPage() {
         <>
           {/* 72시간을 보는 동안 레이더 · 선박 목록은 접는다 — 아래 72시간 패널과 겹쳤다(현우) */}
           {!outlookFocus && <RadarMap />}
-          <CCTVPanel />
+          {/* 카메라 창도 접는다 — 지금의 현장을 비추는 창이라 72시간 뒤 장면과 섞이고, 움직이는 배를 가린다 */}
+          {!outlookFocus && <CCTVPanel />}
           {!outlookFocus && <VesselTrafficList />}
           <BerthStatusBar />
           {selectedObject && !outlookFocus && (
@@ -332,6 +345,21 @@ export default function DigitalTwinPage() {
             Omniverse 닫기
           </button>
         ) : (
+          <>
+          {!outlookFocus && (
+            <button
+              className="action-btn"
+              onClick={openPortOutlook}
+              title="온산항 전체의 앞으로 72시간 — 접안한 배가 떠나고 입항 예정 선박이 들어오는 흐름을 돌려 봅니다"
+              style={{
+                padding: '10px 16px', background: 'rgba(14, 116, 144, 0.85)', backdropFilter: 'blur(10px)', color: '#fff',
+                border: '1px solid rgba(56, 189, 248, 0.6)', borderRadius: '8px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', whiteSpace: 'nowrap',
+              }}
+            >
+              <FaFastForward /> 앞으로 72시간
+            </button>
+          )}
           <button
             className="action-btn"
             onClick={() => setOmniPreviewOpen(true)}
@@ -344,6 +372,7 @@ export default function DigitalTwinPage() {
           >
             <FaPlay /> 정밀 검토 · Omniverse
           </button>
+          </>
         )}
       </div>
 
@@ -371,7 +400,7 @@ export default function DigitalTwinPage() {
             <HelpTip title="정밀 검토">
               <div>지목한 선석의 <strong>앞으로 72시간</strong>을 기상청 단기예보 · 국립해양조사원 조석예보로 한 시각씩 판정합니다. 판정 규칙은 관제 화면과 같습니다.</div>
               <div style={{ marginTop: 4 }}>지목이 없으면 조감 → 과거 사례를 순환합니다. 3D 관제 화면에서 배나 선석을 누르고 [Omniverse 로 보기]를 누르면 그곳을 봅니다. 평소에는 이 화면 안의 [앞으로 72시간 판정 흐름]으로 봅니다.</div>
-              <div style={{ marginTop: 4 }}>선박 이동·하역 진행은 예측 근거(유량계·소요시간 모델)가 없어 재현하지 않습니다.</div>
+              <div style={{ marginTop: 4 }}>항만 전체의 입출항 흐름은 3D 관제 화면의 [앞으로 72시간]에서 돌려 봅니다. 여기는 지목한 선석 하나를 고화질로 봅니다.</div>
             </HelpTip>
             {replayCases.map((r) => (
               <button
@@ -496,7 +525,6 @@ export default function DigitalTwinPage() {
         <OutlookTimeline
           focus={outlookFocus}
           onClose={closeOutlook}
-          onOmniverse={outlookFocus.omniOk ? () => requestOmniverse(outlookFocus) : null}
         />
       )}
 

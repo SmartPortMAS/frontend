@@ -163,8 +163,12 @@ const useSensorStore = create((set, get) => ({
   outlookPreview: null,
   setOutlookPreview: (v) => set({ outlookPreview: v }),
   // [2026-09-30] 3D 처음 화면(조감)으로 — 72시간을 닫으면 카메라가 첫 위치로 돌아간다(현우)
+  // 72시간 패널이 3D 아래쪽을 덮는 만큼 장면을 위로 미는 픽셀 수(Scene ViewShift)
+  twinViewShift: 0,
+  setTwinViewShift: (v) => set({ twinViewShift: Math.max(0, Number(v) || 0) }),
   twinHomeAt: 0,
-  requestTwinHome: () => set({ twinHomeAt: Date.now() }),
+  twinHomeKind: 'home',   // 'home' = 처음 화면(조감) · 'wide' = 항로와 정박지까지(72시간 온산 전체)
+  requestTwinHome: (kind) => set({ twinHomeAt: Date.now(), twinHomeKind: kind === 'wide' ? 'wide' : 'home' }),
 
   // 경고 → 안전 심사 연결. 경고 카드에서 선석을 고르면 그 경고의 내용이 여기 담기고,
   // 안전 심사 폼(SafetyGatesPanel)이 받아서 폼을 채운다.
