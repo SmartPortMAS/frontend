@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { showDisclosure } from '../../../utils/disclosure';
 import { FaPlay, FaPause, FaTimes, FaFastForward, FaUndo } from 'react-icons/fa';
 import { fetchTwinOutlook, fetchUpcomingArrivals, fetchBerthAssignments } from '../../../api/backendAdapter';
 import { ONSAN_BERTHS_3D } from '../../../utils/geoUtils';
@@ -252,7 +253,7 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {
     ? `${a.for === 'vessel' ? (a.vessel_name || a.call_sign || '') : `이 선석 최근(${a.vessel_name || a.call_sign || ''})`} · ${a.stage || ''} ${a.level} (${hm(a.assessed_at_utc)})${a.acknowledged_by ? ' · 확인됨' : ''}`
     : '아직 없음 — 선박 판정 화면에서 [판정 요청]';
   const gateLine = g?.state
-    ? `${g.label || g.gate_id} ${g.state === 'LOCKED' ? '잠김' : '해제'}${g.state === 'LOCKED' && g.reason_ko ? ` — ${String(g.reason_ko).slice(0, 40)}` : ''} · ${g.offline ? '장치 미연결' : g.simulate ? '모의 장치' : '실물'}${g.demo ? ' · 시연 입력 중' : ''}`
+    ? `${g.label || g.gate_id} ${g.state === 'LOCKED' ? '잠김' : '해제'}${g.state === 'LOCKED' && g.reason_ko ? ` — ${String(g.reason_ko).slice(0, 40)}` : ''} · ${g.offline ? '장치 미연결' : showDisclosure() ? (g.simulate ? '모의 장치' : '실물') : '장치 연결'}${g.demo && showDisclosure() ? ' · 시연 입력 중' : ''}`
     : null;
 
   // 요약 — 지금 실측으로 이미 막혀 있으면 그것부터 말한다(안 그러면 "지금 중단"과 "막히는 예보 없음"이 모순처럼 보인다)

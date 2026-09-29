@@ -349,7 +349,7 @@ export default function DigitalTwinPage() {
             </span>
             <HelpTip title="정밀 검토">
               <div>지목한 선석의 <strong>앞으로 72시간</strong>을 기상청 단기예보 · 국립해양조사원 조석예보로 한 시각씩 판정합니다. 판정 규칙은 관제 화면과 같습니다.</div>
-              <div style={{ marginTop: 4 }}>지목이 없으면 조감 → 과거 사례를 순환합니다. 3D 관제 화면에서 배나 선석을 누르고 [Omniverse 로 보기]를 누르면 그곳을 봅니다. 시연 PC 에서는 발열 때문에 이 화면 안의 [앞으로 72시간 판정 흐름]을 씁니다.</div>
+              <div style={{ marginTop: 4 }}>지목이 없으면 조감 → 과거 사례를 순환합니다. 3D 관제 화면에서 배나 선석을 누르고 [Omniverse 로 보기]를 누르면 그곳을 봅니다. 평소에는 이 화면 안의 [앞으로 72시간 판정 흐름]으로 봅니다.</div>
               <div style={{ marginTop: 4 }}>선박 이동·하역 진행은 예측 근거(유량계·소요시간 모델)가 없어 재현하지 않습니다.</div>
             </HelpTip>
             {replayCases.map((r) => (

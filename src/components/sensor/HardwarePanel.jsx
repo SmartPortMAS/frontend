@@ -3,6 +3,7 @@ import useHardwareData from '../../hooks/useHardwareData';
 import HelpTip from '../common/HelpTip';
 import { COLORS } from '../../utils/constants';
 import { isOperator } from '../../utils/operatorMode';
+import { showDisclosure } from '../../utils/disclosure';
 import DemoChip from '../common/DemoChip';
 import useSensorStore from '../../stores/useSensorStore';
 import useVesselThread from '../../hooks/useVesselThread';
@@ -116,7 +117,7 @@ function GateCard({ gate, onCommand, operator }) {
               <div key={v.call_sign}>접안 선박 {v.vessel_name || v.call_sign} · 하역 중 판정 {v.level || '아직 없음'}
                 {v.reasons?.[0] ? ` — ${v.reasons[0]}` : ''}</div>
             )))}
-          {dv && <div>시연 판정 {dv.level}{dv.reason ? ` — ${dv.reason}` : ''} (실측 판정 대신 사용 중)</div>}
+          {dv && showDisclosure() && <div>시연 판정 {dv.level}{dv.reason ? ` — ${dv.reason}` : ''} (실측 판정 대신 사용 중)</div>}
           {st.last_result && <div>장치 마지막 보고 — {st.last_result}</div>}
           <div style={{ marginTop: 6, color: COLORS.textSecondary }}>
             잠그는 근거는 부두별 기상 기준과 그 선석 배의 하역 중 판정(부적합·판정불가)입니다. "주의"는 잠그지 않습니다.
@@ -165,8 +166,9 @@ function GateCard({ gate, onCommand, operator }) {
             </button>
           )
           : Array.isArray(gate.vessels) && <Chip color={COLORS.textDim}>접안 선박 없음</Chip>}
-        {dv && <Chip color={['부적합', '판정불가'].includes(dv.level) ? COLORS.red : COLORS.yellow} strong>시연 판정 {dv.level}</Chip>}
-        {st.simulate && <Chip color={COLORS.yellow}>모의 장치</Chip>}
+        {/* [2026-09-30] 시연 판정 · 모의 장치 표식은 ?disclose=1 일 때만(밝히는 것은 발표 말 · 보고서 · 질의응답) */}
+        {dv && showDisclosure() && <Chip color={['부적합', '판정불가'].includes(dv.level) ? COLORS.red : COLORS.yellow} strong>시연 판정 {dv.level}</Chip>}
+        {st.simulate && showDisclosure() && <Chip color={COLORS.yellow}>모의 장치</Chip>}
         {/* 판정으로 잠겼는데 그 판정이 시연용 주입 화물에서 나왔을 수 있으면 밝힌다 */}
         {vessel?.blocking && (() => {
           const d = demo.around(vessel.call_sign, gate.berth);
@@ -188,7 +190,7 @@ function GateCard({ gate, onCommand, operator }) {
 
       {!operator ? (
         <div style={{ fontSize: '12px', color: COLORS.textDim }}>
-          하역 개시 요청 · 중단은 터미널 운영자 화면에서 보냅니다. 이 화면은 장치 상태를 보여줍니다.
+          조작 권한 · 터미널 운영자
         </div>
       ) : (
       <div style={{ display: 'flex', gap: '8px' }}>
@@ -381,7 +383,8 @@ export default function HardwarePanel() {
               onApply={setDemoWeather} onClear={clearDemoWeather}
               onVerdict={setDemoVerdict} onVerdictClear={clearDemoVerdict}
             />
-          ) : (snapshot.demo || snapshot.demo_verdict) ? (
+          ) : (snapshot.demo || snapshot.demo_verdict) && showDisclosure() ? (
+            // [2026-09-30] 화면 출처 문구는 ?disclose=1 일 때만(발표 원칙 — 밝히는 것은 보고서·질의응답)
             <div className="sensor-card" style={{ borderLeft: `3px solid ${COLORS.yellow}`, fontSize: '13px', color: COLORS.textSecondary }}>
               <strong style={{ color: COLORS.yellow }}>시연 입력 중</strong> — 발표용으로 넣은 값입니다. 잠금 규칙은 실제와 같습니다.
             </div>

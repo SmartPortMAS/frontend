@@ -1,4 +1,5 @@
 import { Html } from '@react-three/drei';
+import { showDisclosure } from '../../utils/disclosure';
 import {
   FaTimes, FaShip, FaDatabase, FaWater, FaAnchor, FaFlask, FaPlay,
 } from 'react-icons/fa';
@@ -26,6 +27,7 @@ function Row({ label, value }) {
  *  센서 데이터 탭에는 이 고지가 있는데 3D 트윈에는 없어서, 같은 값이 한 화면에선
  *  데모, 다른 화면에선 계측값처럼 보였다. */
 function MockNotice() {
+  if (!showDisclosure()) return null;   // [2026-09-30] 출처 표식은 ?disclose=1 일 때만
   return (
     <div style={{
       marginTop: '10px', fontSize: '11px', color: '#f59e0b', lineHeight: 1.5,

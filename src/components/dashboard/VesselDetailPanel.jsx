@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { showDisclosure } from '../../utils/disclosure';
 import { useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS, WEATHER_STATUS_COLORS } from '../../utils/constants';
@@ -302,9 +303,11 @@ export default function VesselDetailPanel() {
             )}
             {/* 간트차트에는 "진행률은 데모값" 고지가 있는데 여기엔 없어서, 같은
                 데이터가 한 화면에선 데모, 다른 화면에선 실측처럼 보였다. */}
-            <div style={{ fontSize: '11px', color: COLORS.yellow, marginTop: '6px' }}>
-              데모값 — 유량계 미도입으로 실시간 진행률 수집 소스가 없습니다
-            </div>
+            {showDisclosure() && (
+              <div style={{ fontSize: '11px', color: COLORS.yellow, marginTop: '6px' }}>
+                데모값 — 유량계 미도입으로 실시간 진행률 수집 소스가 없습니다
+              </div>
+            )}
           </div>
         );
       })()}
@@ -614,7 +617,7 @@ export default function VesselDetailPanel() {
             </summary>
           <div style={{ fontSize: '11.5px', color: COLORS.textDim, lineHeight: 1.6, marginBottom: '8px' }}>
             OCIMF 계열 준정적 근사식. 판정 권위는 선석 기상 임계표에 있고, 이 값은
-            참고용입니다 (DWT 가정값 기반).
+            참고용입니다{showDisclosure() ? ' (DWT 가정값 기반)' : ''}.
           </div>
           {/* 예전엔 mock-server(:8000)의 /sim/mooring 을 호출했는데, mock-server 를
               걷어낸 뒤로는 그 주소가 죽어 항상 "응답 없음"만 떴다. 같은 상수·같은
@@ -653,7 +656,7 @@ export default function VesselDetailPanel() {
             display: 'flex', alignItems: 'center', gap: '8px',
             fontSize: '11.5px', color: COLORS.textDim, marginTop: '7px',
           }}>
-            DWT 가정값
+            DWT
             <input
               type="number" step="1000" min="1000" value={moorDwt}
               onChange={(e) => { setMoorDwt(Number(e.target.value) || ASSUMED_DWT); setMoorSim(null); }}
@@ -663,7 +666,7 @@ export default function VesselDetailPanel() {
                 padding: '3px 7px', fontSize: '11.5px',
               }}
             />
-            <span>t — 실 DWT 미수집(선박위치·PORT-MIS 모두 없음)</span>
+            <span>t{showDisclosure() ? ' — 실 DWT 미수집(선박위치·PORT-MIS 모두 없음), 가정값' : ''}</span>
           </label>
           {moorSim && !moorSim.error && (
             <div style={{ marginTop: '8px', padding: '10px 12px', background: COLORS.card, borderRadius: '10px', border: `1px solid ${MOOR_VERDICT_COLORS[moorSim.verdict] || COLORS.border}` }}>
