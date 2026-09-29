@@ -490,11 +490,12 @@ export default function OutlookTimeline({ focus, onClose }) {
     }
     if (from == null) return out;
     const left = xPct(from); const right = xPct(to);
+    const haltH = Math.round(p.halts.reduce((sum, hh) => sum + (hh.to - hh.from), 0) / H);
     const basis = p.endBasis === '신고' ? '출항 예정(신고)' : p.endBasis === '추정' ? '출항 추정(이 부두 재항 중앙값)' : p.endBasis === '가정' ? '출항 가정' : null;
     const tip = [
       `${p.name} · ${shortBerthName(p.berthId)}`,
       p.kind === 'now' ? '접안 중' : `입항 예정 ${hm(p.eta)}${p.waitH ? ` · 대기 ${p.waitH}시간` : ''}`,
-      p.leaveAt ? `${basis} ${hm(p.leaveAt)}${p.delayH ? ` · 기상 중단으로 ${p.delayH}시간 늦음` : ''}` : '출항 예정 미신고',
+      p.leaveAt ? `${basis} ${hm(p.leaveAt)}${haltH ? ` · 기상 중단 ${haltH}시간` : ''}${p.delayH ? ` · 예정보다 ${p.delayH}시간 늦음` : ''}` : '출항 예정 미신고',
       p.level || null, p.cargo || null,
     ].filter(Boolean).join(' · ');
     out.push(
