@@ -817,7 +817,7 @@ export default function OutlookTimeline({ focus, onClose, onBerth, onWide }) {
                 />
               </div>
               <div style={{ position: 'relative', height: 14, fontSize: 10.5, color: '#aab8be' }}>
-                {pts.map((p, i) => (i % 12 === 0 ? (
+                {pts.map((p, i) => (i % 12 === 0 && i < n - 8 ? (   // 끝 눈금과 겹치는 마지막 눈금은 뺀다
                   <span key={p.at_utc} style={{ position: 'absolute', left: `${(i / n) * 100}%`, whiteSpace: 'nowrap' }}>{tickLabel(p.at_utc)}</span>
                 ) : null))}
                 <span style={{ position: 'absolute', right: 0, whiteSpace: 'nowrap' }}>{tickLabel(tEnd)}</span>
