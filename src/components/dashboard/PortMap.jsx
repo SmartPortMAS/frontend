@@ -94,10 +94,13 @@ const LEGEND_RINGS = ['부적합', '주의', '판정불가', '적합'];
 // 단, 기본 뷰는 '부두'에만 맞춘다. 석유공사 원유부이는 같은 온산 시설이지만
 // 해상 계류점이라 부두에서 4 km 넘게 떨어져 있다. 부이까지 한 화면에 넣으면
 // 정작 부두 무리가 다시 뭉쳐 이름표가 겹친다. 부이는 아래 '온산 전체' 버튼으로 본다.
+// [2026-09-30] 선석 원은 서버 선석 좌표(위치 판정이 쓰는 좌표)로 그린다 — 아래 컴포넌트의 posOf.
+//   화면 정본(ONSAN_BERTHS)의 대표 좌표는 서버 좌표와 100 m ~ 1.2 km 어긋나, 선석 현황판이 'OTK1 아젤리아'라고
+//   하는데 지도에서는 그 배가 UTK 원 옆에 그려졌다(9/30 실측: 아젤리아 · 우황 · 아르페지오 · 수성7).
+//   서버 좌표가 없는 곳(석유공사부이)만 대표 좌표를 쓴다. 이 상수는 서버 자료가 오기 전 첫 화면용이다.
 const ONSAN_WHARF_BOUNDS = Object.values(ONSAN_BERTHS)
   .filter((b) => b.waterway !== '부이(해상)')
   .map((b) => onsanDisplayPos(b));
-const ONSAN_ALL_BOUNDS = Object.values(ONSAN_BERTHS).map((b) => onsanDisplayPos(b));
 const ONSAN_FIT = { padding: [48, 48], maxZoom: 15 };
 const ONSAN_CENTER = [35.435, 129.365];   // 첫 렌더용 근사값 (곧 fitBounds 가 덮어쓴다)
 const ONSAN_ZOOM = 14;
@@ -112,7 +115,29 @@ export default function PortMap() {
   const berthWeather = useSensorStore((s) => s.berthWeather);
   const { data } = useDashboardData();
   // 판정 고리 — 선박 판정·선석 현황판과 같은 자료(접안 중이면 선석 판정, 아니면 입항 판정)
-  const { verdicts } = useVesselThread();
+  const mapRef = useRef(null);
+  const { verdicts, berths: berthRows } = useVesselThread();
+  // 선석 원 좌표 — 서버 선석 좌표가 있으면 그것(배의 접안 판정과 같은 기준), 없으면 대표 좌표
+  const serverPos = useMemo(() => {
+    const m = new Map();
+    for (const b of berthRows) {
+      if (b.latitude != null && b.longitude != null) m.set(berthKey(b.wharf_name), [Number(b.latitude), Number(b.longitude)]);
+    }
+    return m;
+  }, [berthRows]);
+  const posOf = (b) => serverPos.get(berthKey(b.name)) || onsanDisplayPos(b);
+  const wharfBounds = useMemo(
+    () => Object.values(ONSAN_BERTHS).filter((b) => b.waterway !== '부이(해상)').map(posOf),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [serverPos]
+  );
+  // 서버 좌표가 처음 도착하면 한 번 다시 맞춘다(UTK 가 대표 좌표보다 북쪽이라 첫 화면에서 잘렸다)
+  const fitted = useRef(false);
+  useEffect(() => {
+    if (fitted.current || serverPos.size === 0 || !mapRef.current) return;
+    fitted.current = true;
+    mapRef.current.fitBounds(wharfBounds, ONSAN_FIT);
+  }, [serverPos, wharfBounds]);
   const levelOf = (v) => verdicts.get(normKey(v.callsgn))?.level || null;
   const isTracked = (v) => Boolean(tracked?.callsgn) && normKey(v.callsgn) === normKey(tracked.callsgn);
   // 기타 선박(액체화물선이 아닌 배) 보이기 — 켜자마자 지도가 KPI("관제 선박 N척")와 맞아 보이도록 기본 켬.
@@ -131,7 +156,6 @@ export default function PortMap() {
   // 지도는 성능 때문에 상한(MAP_VESSEL_LIMIT)까지만 그린다. 그 상한에 걸렸을 때
   // 범례에 "표시/전체"를 같이 적어, 숫자가 멈춘 이유를 화면에서 알 수 있게 한다.
   const otherTotal = Math.max(realTraffic.length, (data?.real_traffic_total ?? 0) - (data?.real_traffic_liquid_total ?? vessels.length));
-  const mapRef = useRef(null);
 
   // 선박 추적 띠의 '위치'를 누르면 지도가 그 배로 간다
   useEffect(() => {
@@ -185,7 +209,7 @@ export default function PortMap() {
     if (!safety?.gates_hit?.some((g) => g.rule.startsWith('MSDS') || g.rule.startsWith('IMDG'))) return null;
     const berthId = findBerthIdByName(v.berth);
     if (!berthId) return null;
-    const [lat, lon] = onsanDisplayPos(ONSAN_BERTHS[berthId]);
+    const [lat, lon] = posOf(ONSAN_BERTHS[berthId]);
     const w = data?.weather;
     const windDir = w?.wind_dir_deg ?? 0;
     const windMs = w?.wind_speed_ms ?? 5;
@@ -200,7 +224,8 @@ export default function PortMap() {
       positions: [[lat, lon], pt(L, dir - half), pt(L * 1.1, dir), pt(L, dir + half)],
       cargo: v.cargo?.name, windMs, windDir, lengthM: Math.round(L * 1.1),
     };
-  }, [selectedVessel, data, safety]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVessel, data, safety, serverPos]);
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%', borderRadius: '16px', overflow: 'hidden' }}>
@@ -274,7 +299,7 @@ export default function PortMap() {
           return (
             <Polyline
               key={`${a}-${b}`}
-              positions={[onsanDisplayPos(ba), onsanDisplayPos(bb)]}
+              positions={[posOf(ba), posOf(bb)]}
               pathOptions={{ color: COLORS.yellow, weight: 2, dashArray: '4 6', opacity: 0.7 }}
             >
               <Tooltip sticky>
@@ -297,9 +322,10 @@ export default function PortMap() {
           return (
           <Circle
             key={id}
-            center={onsanDisplayPos(b)}
+            center={posOf(b)}
             // 선석 원이 배 아이콘보다 작아 화면에서 묻혔다. 선석은 판정 단위이자 클릭 대상이라 배보다 눈에 먼저 들어와야 한다.
-            radius={b.waterway === '부이(해상)' ? 340 : 230}
+            // 서버 좌표로 옮기면서 실제 간격(S-Oil 2↔4 약 250 m)에 맞춰 줄였다
+            radius={b.waterway === '부이(해상)' ? 300 : 150}
             pathOptions={{
               color: selected ? COLORS.navy : vColor,
               fillColor: vColor,
@@ -398,7 +424,7 @@ export default function PortMap() {
           지도 옵션
         </div>
         {[
-          { label: '온산 부두', bounds: ONSAN_WHARF_BOUNDS },
+          { label: '온산 부두', bounds: wharfBounds },
           // '온산 전체(원유부이 포함)' 버튼은 뺐다(2026-08-21) — 온산 부두 뷰와
           // 차이가 석유공사부이 하나뿐이라 선택지 값을 못 했다. 부이는 '울산항
           // 전체'에서 보인다.
