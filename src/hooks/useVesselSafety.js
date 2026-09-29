@@ -98,7 +98,7 @@ export default function useVesselSafety(vessel) {
       setState({
         assessment: {
           risk_level: '판단불가', gates_hit: [{
-            rule: '-', severity: 'HOLD', reason: '이웃 화물 조회 실패 — 판단 보류(fail-safe)',
+            rule: '-', severity: 'HOLD', reason: '이웃 화물 조회 실패 — 판단 보류',
           }], checklist: [], is_local_fallback: true, source: 'ERROR',
         },
         loading: false, narrativeLoading: false,
@@ -148,7 +148,7 @@ export default function useVesselSafety(vessel) {
             assessment: {
               risk_level: '판단불가', gates_hit: [{
                 rule: '-', severity: 'HOLD',
-                reason: '안전 에이전트 조회 실패 — 판단 보류(fail-safe)',
+                reason: '안전 에이전트 조회 실패 — 판단 보류',
               }], checklist: [], is_local_fallback: true, source: 'ERROR',
             },
             loading: false,
