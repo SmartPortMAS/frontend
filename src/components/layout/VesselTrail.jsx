@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { FaShip, FaMapMarkerAlt, FaClipboardCheck, FaShieldAlt, FaCube, FaLock, FaLockOpen, FaTimes, FaSearch } from 'react-icons/fa';
+import { FaShip, FaMapMarkerAlt, FaClipboardCheck, FaCube, FaLock, FaLockOpen, FaTimes, FaSearch } from 'react-icons/fa';
 import useSensorStore from '../../stores/useSensorStore';
 import useVesselThread from '../../hooks/useVesselThread';
 import VesselPicker from './VesselPicker';
@@ -8,7 +8,8 @@ import VesselPicker from './VesselPicker';
 // 선박 추적 띠 (2026-09-29 밤)
 //
 // 배 한 척을 고르면 그 배가 다섯 화면에서 각각 어떤 상태인지 한 줄로 보인다.
-//   위치(대시보드) → 판정(선박 판정) → 혼재(화물 혼재 심사) → 현장(3D 관제) → 게이트(현장 설비)
+//   위치(대시보드) → 판정(선박 판정 — 선석 · 기상 · 혼재) → 현장(3D 관제) → 게이트(현장 설비)
+//   [2026-09-30] 혼재 칸은 판정 칸에 합쳤다(메뉴 넷 = 띠 네 칸). 벗어난 판정은 '주의 · 혼재'처럼 원인 축을 같이 적는다.
 // 칸을 누르면 그 화면으로 가서 같은 배를 비춘다. 설명 글이 아니라 자리와 색으로 흐름을 보인다.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -17,7 +18,6 @@ const STAGE_TEXT = { 입항전: '입항 전', 접안직전: '접안 직전', 하
 const STEPS = [
   { key: 'where', path: '/', label: '위치', icon: FaMapMarkerAlt },
   { key: 'verdict', path: '/arrivals', label: '판정', icon: FaClipboardCheck },
-  { key: 'cargo', path: '/safety', label: '혼재', icon: FaShieldAlt },
   { key: 'scene', path: '/twin', label: '현장', icon: FaCube },
   { key: 'gate', path: '/sensors', label: '게이트', icon: FaLock },
 ];

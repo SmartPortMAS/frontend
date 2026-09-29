@@ -950,12 +950,12 @@ export default function AgentConsole({ mode = 'qa' }) {
                       <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{m.longText}</div>
                     </details>
                   )}
-                  {/* 혼재 단계의 자세한 근거(화물쌍 · 규정 그래프)는 화물 혼재 심사 화면이 같은 입력으로 펼친다 */}
+                  {/* 혼재 단계의 자세한 근거(화물쌍 · 규정 그래프)는 이 화면 아래 '화물 혼재' 카드가 같은 입력으로 펼친다 */}
                   {mode === 'reasoning' && m.agent === 'safety' && !/생략/.test(String(m.text)) && (
                     <button
                       type="button"
                       className="console-link"
-                      onClick={() => { requestThreadFocus('cargo'); navigate('/safety'); }}
+                      onClick={() => { requestThreadFocus('cargo'); setOpen(false); }}
                     >
                       혼재 근거 자세히 →
                     </button>

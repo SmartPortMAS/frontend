@@ -64,6 +64,18 @@ function cargoStep(reasons, level) {
   return null;
 }
 
+/** 벗어난 판정의 원인 축 — 선석 · 기상 · 혼재 · 흘수 (판정 이유 문장에서) */
+function causeOf(reasons, level) {
+  if (!level || level === '적합') return null;
+  const text = (reasons || []).join(' ');
+  if (/혼재|호환성|격리/.test(text)) return '혼재';
+  if (/풍속|파고|기상|강수/.test(text)) return '기상';
+  if (/흘수 여유|여유 -|수심이|흘수가/.test(text)) return '흘수';
+  if (/화물을 식별|화물 미확인/.test(text)) return '화물 미확인';
+  if (/흘수 없음|흘수 미신고|흘수를 알 수/.test(text)) return '흘수 없음';
+  return null;
+}
+
 function slotsOf(berths) {
   return berths.flatMap((b) => (b.slots || [])
     .filter((s) => s.call_sign)
@@ -99,7 +111,11 @@ export function threadOf(callsgn, data, traffic) {
     cargos: arr?.cargos?.map((c) => c.name) || slot?.cargo_names || [],
     steps: {
       where: { value: where || '—', tone: where ? 'info' : 'none' },
-      verdict: { value: level || '판정 전', tone: LEVEL_TONE[level] || 'none' },
+      verdict: {
+        value: level ? [level, causeOf(reasons, level)].filter(Boolean).join(' · ') : '판정 전',
+        short: level || null,
+        tone: LEVEL_TONE[level] || 'none',
+      },
       cargo: cargoStep(reasons, level) || { value: '—', tone: 'none' },
       scene: { value: berth || '—', tone: berth ? 'info' : 'none' },
       gate: gate

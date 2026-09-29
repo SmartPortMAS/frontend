@@ -84,7 +84,7 @@ export default function InfoPopup({ object, onClose }) {
     // [2026-09-30] 레이더 · 선박 목록(z 1000) 위로 — 정보창을 열면 레이더가 가렸다(현우). 경고 띠(2000)보다는 아래.
     <Html fullscreen zIndexRange={[1500, 1400]} style={{ pointerEvents: 'none' }}>
       {/* 머리 단추(top 50~88)와 두 줄 선석 현황 띠 아래에 배치 — 가려지지 않음 */}
-      <div style={{ position: 'absolute', top: 108, right: 16, pointerEvents: 'auto', width: '300px' }}>
+      <div style={{ position: 'absolute', top: 140, right: 16, pointerEvents: 'auto', width: '300px' }}>
         <div className="glass-hud" style={{ width: '100%' }}>
           <div className="hud-header">
             <div className="hud-title">

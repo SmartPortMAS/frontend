@@ -105,7 +105,7 @@ export default function CCTVPanel() {
   // 접었을 때는 헤더 줄만 남긴다 — 3D 화면을 넓게 보려는 용도라 최소 폭으로.
   if (collapsed) {
     return (
-      <div className="cctv-collapsed" style={{ position: 'absolute', top: 44, left: 20, zIndex: 1000 }}>
+      <div className="cctv-collapsed" style={{ position: 'absolute', top: 90, left: 20, zIndex: 1000 }}>
         <button type="button" onClick={() => setCollapsed(false)} className="hud-chip" title="부두 CCTV 펼치기">
           <FaVideo size={11} /> 부두 CCTV
           <FaChevronDown size={9} />
@@ -123,7 +123,7 @@ export default function CCTVPanel() {
     : '공석';
 
   return (
-    <div style={{ position: 'absolute', top: 44, left: 20, zIndex: 1000, width: '400px' }}>
+    <div style={{ position: 'absolute', top: 90, left: 20, zIndex: 1000, width: '400px' }}>
       {/* 조작 줄 — 카메라 선택·자동순회·접기.
           패널 본체는 pointerEvents:none 을 유지해 3D 조작을 가리지 않고,
           이 줄에만 pointerEvents:auto 를 준다. */}

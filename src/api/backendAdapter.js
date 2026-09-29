@@ -456,10 +456,11 @@ export async function fetchAdjacentCargos({ wharf_name, call_sign = null }) {
   }));
 }
 
-export async function fetchAlternativeBerths({ draught_m, chem_id, cas_no, name_hint, hours = 24, extra_cargos = [], exclude_wharf_name = null }) {
+// start — 입항 전 선박은 입항 예정 시각부터의 점유를 본다(없으면 지금부터)
+export async function fetchAlternativeBerths({ draught_m, chem_id, cas_no, name_hint, hours = 24, extra_cargos = [], exclude_wharf_name = null, start = null }) {
   if (draught_m == null) throw new Error('흘수 미수집 — 후보 조회 불가');
   if (!chem_id && !cas_no) throw new Error('화물 미확인 — 후보 조회 불가');
-  const now = new Date();
+  const now = start instanceof Date && !Number.isNaN(start.getTime()) ? start : new Date();
   const res = await fetch(`${BACKEND_BASE}/scheduling/alternatives`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

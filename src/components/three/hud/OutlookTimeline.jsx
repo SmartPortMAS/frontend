@@ -133,6 +133,7 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {   // 
           draught_basis: r.draught_basis || null,
           depth: Number(r.depth_m) > 0 ? Number(r.depth_m) : (ONSAN_BERTHS_3D[berthId] ? null : null),
           report_type: r.report_type || null,
+          level0: r.assessment?.level || null,   // 입항 전 판정(있으면) — 일정 막대 색
         };
       }).filter(Boolean));
       setLeaving((berths || []).flatMap((b) => (b.slots || [])
@@ -202,6 +203,68 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {   // 
     sched.filter((g) => g.berthId === focus.berthId && g.etd).forEach((g) => evs.push({ kind: 'out', at: g.etd, g }));
     return evs.sort((a, b) => ms(a.at) - ms(b.at));
   }, [sched, leaving, focus.berthId]);
+  // ── 선박 일정 흐름 (2026-09-30) ──────────────────────────────────────────
+  // 현우: "72시간이 기상만 바뀌는 게 아니라 선박 이동 · 작업 흐름이 보여야 하지 않나".
+  // 자료로 말할 수 있는 흐름은 신고된 일정이다 — 지금 접안한 배는 출항 예정 시각까지, 입항 예정 선박은 입항 예정 →
+  // 출항 예정 시각까지 그 선석에 머문다(PORT-MIS 신고 · 항만공사 선박위치). 같은 시간축에 막대로 놓아 기상 · 조위
+  // 판정과 겹쳐 본다. 항로 위 이동 경로와 하역 진행률은 근거 자료(도선 · 예선 일정, 유량계)가 없어 그리지 않는다.
+  const [allBerths, setAllBerths] = useState(false);
+  const tStart = n ? ms(pts[0].at_utc) : Date.now();
+  const tEnd = n ? ms(pts[n - 1].at_utc) + 3600000 : tStart + 72 * 3600000;
+  const xPct = (t) => Math.min(100, Math.max(0, ((t - tStart) / (tEnd - tStart)) * 100));
+  const staysOf = (berthId) => {
+    const row = berths.find((b) => berthIdOf(b.wharf_name) === berthId);
+    const cur = (row?.slots || []).filter((x) => x.call_sign).map((x) => ({
+      key: `c-${x.call_sign}`, name: x.vessel_name || x.call_sign, level: x.status || null, kind: 'now',
+      from: tStart, to: ms(x.departure_scheduled_utc) > tStart ? ms(x.departure_scheduled_utc) : null,
+    }));
+    const nxt = sched.filter((g) => g.berthId === berthId).map((g) => ({
+      key: `s-${g.call_sign}-${g.eta}`, name: g.vessel_name || g.call_sign, level: g.level0, kind: 'plan',
+      from: ms(g.eta), to: g.etd ? ms(g.etd) : null,
+    }));
+    return [...cur, ...nxt].filter((x) => x.from < tEnd);
+  };
+  const focusStays = useMemo(() => staysOf(focus.berthId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [berths, sched, focus.berthId, tStart, tEnd]);
+  const stopSpans = useMemo(() => {   // 기상으로 하역이 막히는 구간(이 선석 기준) — 일정 막대 뒤에 깐다
+    const out = [];
+    pts.forEach((pt, i) => {
+      if (!(pt.weather_level && pt.weather_level !== '적합')) return;
+      const last = out[out.length - 1];
+      if (last && last.to === i) last.to = i + 1; else out.push({ from: i, to: i + 1 });
+    });
+    return out;
+  }, [pts]);
+  const jumpTo = (t) => {
+    if (!n) return;
+    const i = pts.findIndex((pt) => ms(pt.at_utc) >= t);
+    setCursor(i >= 0 ? i : n - 1); setPlaying(false);
+  };
+  const stayBar = (st, top, h, showName) => {
+    const left = xPct(st.from);
+    const right = xPct(st.to ?? tEnd);
+    const tone = LEVEL_COLOR[st.level] || (st.kind === 'now' ? '#7FB3E8' : '#60a5fa');
+    const tip = `${st.name} · ${st.kind === 'now' ? '접안 중' : `입항 예정 ${hm(new Date(st.from).toISOString())}`}`
+      + `${st.to ? ` → 출항 예정 ${hm(new Date(st.to).toISOString())}` : ' · 출항 예정 미신고'}${st.level ? ` · ${st.level}` : ''}`;
+    return (
+      <button
+        key={st.key} type="button" title={tip} onClick={() => jumpTo(st.kind === 'now' ? (st.to ?? tStart) : st.from)}
+        style={{
+          position: 'absolute', left: `${left}%`, width: `${Math.max(right - left, 0.8)}%`, top, height: h,
+          borderRadius: 3, border: st.kind === 'plan' ? `1px dashed ${tone}` : 'none', padding: '0 5px',
+          background: st.to
+            ? (st.kind === 'plan' ? `${tone}40` : `${tone}cc`)
+            : `linear-gradient(90deg, ${tone}${st.kind === 'plan' ? '40' : 'cc'} 60%, ${tone}00)`,
+          color: '#fff', fontSize: 10.5, fontWeight: 700, lineHeight: `${h}px`, textAlign: 'left',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', fontFamily: 'inherit',
+        }}
+      >
+        {showName ? st.name : ''}
+      </button>
+    );
+  };
+
   const idxOf = (iso) => {
     if (!n) return null;
     const t = ms(iso);
@@ -376,21 +439,22 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {   // 
       border: '1px solid rgba(56, 189, 248, 0.45)', borderRadius: 12, padding: '12px 16px 10px',
       color: '#e8f0f2', fontSize: 12.5, boxShadow: '0 12px 32px rgba(0,0,0,0.45)',
     }}>
-      {/* 머리 — 무엇의 72시간인가 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {/* 머리 — 무엇의 72시간인가. 한 줄로(닫기 단추만 아래 줄로 떨어지지 않게) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap', minWidth: 0 }}>
         <span style={{ color: '#38bdf8' }}>●</span>
-        <strong style={{ fontSize: 14 }}>{focus.berth}{vesselName ? ` · ${vesselName}` : ''}</strong>
-        <span style={{ fontWeight: 800, color: '#38bdf8' }}>앞으로 72시간</span>
+        <strong style={{ fontSize: 14, whiteSpace: 'nowrap' }}>{focus.berth}{vesselName ? ` · ${vesselName}` : ''}</strong>
+        <span style={{ fontWeight: 800, color: '#38bdf8', whiteSpace: 'nowrap' }}>앞으로 72시간</span>
         <HelpTip title="앞으로 72시간">
           <div>이 선석(과 지금 접안한 배)의 <strong>앞으로 72시간</strong>을 한 시각씩 판정합니다 — 기상은 기상청 단기예보, 흘수 여유는 국립해양조사원 조석예보로 다시 보고,
             화물 혼재 · 선석 조건처럼 시간이 지나도 바뀌지 않는 사유는 지금 판정을 그대로 얹습니다. 판정 규칙은 관제 화면과 같습니다.</div>
           <div style={{ marginTop: 4 }}>쓰는 때: 하역 도중 기상이 나빠지는 시각을 미리 보고 하역 종료 · 개시 연기를 터미널에 알리거나, 저조 때 흘수 여유가 모자라는 시각을 피해 입항 시각을 조정할 때.</div>
           <div style={{ marginTop: 4 }}>시간축을 누르거나 재생하면 3D 화면의 선석 색과 라벨이 그 시각의 판정으로 바뀝니다. 빨간 선이 첫 변화입니다.</div>
+          <div style={{ marginTop: 4 }}>아래 <strong>선박 일정</strong> 막대는 그 선석에 머무는 배입니다 — 실선은 지금 접안한 배(출항 예정 신고 시각까지), 점선은 입항 예정 선박(입항 예정 → 출항 예정). 빗금은 기상으로 하역이 막히는 구간입니다. [온산 전체]는 11개 선석의 일정을 한 번에 봅니다.</div>
           <div style={{ marginTop: 4 }}>입항·출항 예정(PORT-MIS 신고)도 시간축에 올립니다 — 입항 예정 시각에 선석에 반투명 선체가 서고(▼ 파랑), 출항 예정 시각에 사라집니다(▲ 회색). 그 시각의 조석예보로 흘수 여유를 계산해 필요 여유 max(1.0 m, 흘수×10%)보다 작으면 주의, 흘수 신고가 없으면 판정불가입니다.</div>
           <div style={{ marginTop: 4 }}>선박 이동 경로·하역 진행은 예측 근거(유량계·소요시간 모델)가 없어 재현하지 않습니다.</div>
         </HelpTip>
-        {data && <span style={{ color: '#94a3b8', fontSize: 11.5 }}>{data.berth_group || '부두군 미상'} 기준 · {rule}</span>}
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+        {data && <span style={{ color: '#94a3b8', fontSize: 11.5, whiteSpace: 'nowrap' }}>{rule}</span>}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexShrink: 0 }}>
           <button type="button" onClick={onClose} style={iconBtn} title="닫기 — 선석 색이 실측으로 돌아갑니다"><FaTimes /></button>
         </span>
       </div>
@@ -479,6 +543,54 @@ export default function OutlookTimeline({ focus, onClose, onOmniverse }) {   // 
               <button type="button" onClick={() => { setCursor(-1); setPlaying(true); }} style={iconBtn} title="처음부터 다시 재생"><FaUndo /></button>
             </span>
           </div>
+
+          {/* 선박 일정 — 같은 시간축. 실선 = 지금 접안, 점선 = 입항 예정(신고). 막대를 누르면 그 시각으로 */}
+          {(focusStays.length > 0 || allBerths) && (() => {
+            const ids = allBerths ? Object.keys(ONSAN_BERTHS_3D) : [focus.berthId];
+            const rowH = allBerths ? 15 : 18;
+            const rows = allBerths ? ids.map((id) => ({ id, stays: staysOf(id) })) : focusStays.map((st) => ({ id: st.key, stays: [st] }));
+            return (
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <div style={{ width: 61, flexShrink: 0, display: 'grid', gap: 3, alignContent: 'start' }}>
+                  {allBerths
+                    ? ids.map((id) => (
+                      <span key={id} style={{ height: rowH, lineHeight: `${rowH}px`, fontSize: 10.5, whiteSpace: 'nowrap', color: id === focus.berthId ? '#e8f0f2' : '#94a3b8', fontWeight: id === focus.berthId ? 800 : 500 }}>
+                        {ONSAN_BERTHS_3D[id].name.replace(/\s*부두$/, '').replace(/\s+/g, '')}
+                      </span>
+                    ))
+                    : <span style={{ fontSize: 11, color: '#94a3b8', lineHeight: `${rowH}px` }}>선박 일정</span>}
+                </div>
+                <div style={{ flex: 1, minWidth: 0, position: 'relative', height: rows.length * (rowH + 3) - 3 }}>
+                  {stopSpans.map((sp) => (
+                    <span
+                      key={`stop-${sp.from}`} title="기상으로 하역이 막히는 구간(이 선석 기준)"
+                      style={{
+                        position: 'absolute', top: -2, bottom: -2, left: `${(sp.from / n) * 100}%`, width: `${((sp.to - sp.from) / n) * 100}%`,
+                        background: 'repeating-linear-gradient(135deg, rgba(239,68,68,0.28) 0 4px, rgba(239,68,68,0.08) 4px 8px)',
+                      }}
+                    />
+                  ))}
+                  {rows.map((r, i) => (
+                    <span key={r.id} style={{ position: 'absolute', left: 0, right: 0, top: i * (rowH + 3), height: rowH, background: 'rgba(232,240,242,0.05)', borderRadius: 3 }} />
+                  ))}
+                  {rows.map((r, i) => r.stays.map((st) => stayBar(st, i * (rowH + 3), rowH, true)))}
+                  {cursor >= 0 && (
+                    <span style={{ position: 'absolute', top: -3, bottom: -3, left: `${((cursor + 0.5) / n) * 100}%`, width: 1, background: '#fff', opacity: 0.8 }} />
+                  )}
+                </div>
+                <span style={{ flexShrink: 0, width: 191, display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start' }}>
+                  <button type="button" onClick={() => setAllBerths((v) => !v)} style={{ ...iconBtn, padding: '3px 8px' }} aria-pressed={allBerths}>
+                    {allBerths ? '이 선석만' : '온산 전체'}
+                  </button>
+                </span>
+              </div>
+            );
+          })()}
+          {focusStays.length === 0 && !allBerths && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+              <button type="button" onClick={() => setAllBerths(true)} style={{ ...iconBtn, padding: '3px 8px' }}>온산 전체</button>
+            </div>
+          )}
 
           {/* 그 시각의 판정 */}
           {view && (

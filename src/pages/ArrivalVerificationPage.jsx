@@ -7,7 +7,7 @@ import {
 import { fetchUpcomingArrivals, fetchPendingApprovals, postAssessAndRecord } from '../api/backendAdapter';
 import useSensorStore from '../stores/useSensorStore';
 import { COLORS } from '../utils/constants';
-import { cargoNames, cargoSummary } from '../utils/cargoText';
+import { cargoNames, cargoFit } from '../utils/cargoText';
 import HelpTip from '../components/common/HelpTip';
 import DemoChip from '../components/common/DemoChip';
 import SyntheticChip from '../components/common/SyntheticChip';
@@ -15,6 +15,7 @@ import { useDemoCargo } from '../utils/demoCargo';
 import BerthOccupiedList from '../components/dashboard/BerthOccupiedList';
 import AgentConsole from '../components/dashboard/AgentConsole';
 import GanttChart from '../components/dashboard/GanttChart';
+import ShipCargoPanel from '../components/safety/ShipCargoPanel';
 import useVesselThread, { normKey } from '../hooks/useVesselThread';
 import useDashboardData from '../hooks/useDashboardData';
 import { VERDICT_COLOR, VERDICT_RANK } from '../utils/verdict';
@@ -217,9 +218,10 @@ function UpcomingSection({ initialTab }) {
   // 추적 띠·경고에서 넘어오면 그 배의 시점 탭을 열고 그 줄로 간다
   const threadFocus = useSensorStore((st) => st.threadFocus);
   useEffect(() => {
-    if (threadFocus?.target !== 'verdict' || !tracked?.callsgn) return undefined;
+    if (!['verdict', 'cargo'].includes(threadFocus?.target) || !tracked?.callsgn) return undefined;
     const stage = thread?.slot ? '하역중' : thread?.arrival?.stage;
     if (stage && STAGES.includes(stage)) setTab(stage);
+    if (threadFocus.target === 'cargo') return undefined;   // 화물 혼재 카드가 스스로 내려간다(ShipCargoPanel)
     let tries = 0;
     const id = setInterval(() => {
       tries += 1;
@@ -284,6 +286,7 @@ function UpcomingSection({ initialTab }) {
             기상·조위·흘수·인접 화물이 기준을 벗어나면 조치안을 만들어 권한 있는 곳 — 선석 운영 주체 · VTS · 터미널 — 에 근거와 함께 넘깁니다.</div>
             <div style={{ marginTop: 4 }}>시점은 사실로 정합니다 — 입항 전(입항 예정 시각 전) · 접안 직전(입항 시각이 지났거나 묘박 대기)은 PORT-MIS 입항 신고(12시간 전 ~ 72시간 뒤),
             하역 중은 항만공사 선박위치로 본 실제 접안입니다.</div>
+            <div style={{ marginTop: 4 }}>세 시점은 조치안을 받는 곳이 다릅니다 — 입항 전은 선석 운영 주체(선석 조정), 접안 직전은 VTS(접안 · 대기 지시), 하역 중은 터미널 안전관리자(하역 개시 · 중단 → 게이트).</div>
             <div style={{ marginTop: 4 }}>확인 대기는 판정 감시가 기록했지만 관제사가 아직 확인하지 않은 판정입니다. 판정 옆 [근거]를 누르면 선석 → 기상 → 혼재 → 종합 순서로 판단 과정이 열리고, 거기서 [판정 확인]을 남깁니다.</div>
             <div style={{ marginTop: 4 }}>판정이 없는 선박은 [판정 요청]으로 그 자리에서 판정하고 결과는 판정 이력에 남습니다.</div>
           </HelpTip>
@@ -452,7 +455,7 @@ function UpcomingSection({ initialTab }) {
                     {/* 이 입항 건에 단 화물 전부 — 입항 후 위치 화면과 같은 키(입항 건)라 같은 화물이다 */}
                     <td style={{ ...td, maxWidth: 200 }} title={cargoNames(r.cargos).join(', ')}>
                       <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {r.cargos?.length ? cargoSummary(r.cargos, 3) : <span style={{ color: COLORS.textDim }}>미확인</span>}
+                        {r.cargos?.length ? cargoFit(r.cargos, 17) : <span style={{ color: COLORS.textDim }}>미확인</span>}
                       </div>
                       <DemoChip entries={demo.ofShip(r.call_sign)} />
                     </td>
@@ -766,11 +769,15 @@ export default function ArrivalVerificationPage() {
   // 대시보드 '확인 대기 판정' 타일은 ?view=pending 으로 온다
   const [params] = useSearchParams();
   const initialTab = params.get('view') === 'pending' ? 'pending' : null;
+  const trackedCs = useSensorStore((st) => st.trackedVessel?.callsgn);
   return (
     <div className="dashboard-page">
       {/* [2026-09-29 밤] 사용 순서 띠(1 입항 선박 → … → 5 게이트)를 뺐다 — 선박 추적 띠와 시점 탭이 같은 흐름을
           자리와 색으로 보이므로 번호 띠는 같은 말을 한 번 더 하는 글이었다(현우). */}
       <div className="dash-section"><UpcomingSection initialTab={initialTab} /></div>
+      {/* [2026-09-30] 화물 혼재 심사를 이 화면 안으로 합쳤다 — 추적 중인 배 한 척의 혼재 근거와 대체 선석 검토.
+          배를 고르지 않았으면 볼 대상이 없어 카드가 없다. */}
+      {trackedCs && <div className="dash-section" id="cargo"><ShipCargoPanel /></div>}
       {/* 부두별 접안 이력은 대시보드 선석 상세 서랍으로 옮겼다 — 보고서·영상 촬영용으로만 ?review=1 */}
       {review && <div className="dash-section"><GanttChart /></div>}
       {/* [2026-09-29] 사후 검토는 실측 기록 재생이라 실제 시스템에도 있을 기능 — 숨기지 않고 접어서 둔다(현우) */}

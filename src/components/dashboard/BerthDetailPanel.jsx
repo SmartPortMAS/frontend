@@ -94,7 +94,8 @@ function BerthTimeline({ history, current }) {
               }}
               title={title}
             >
-              <span>{it.name}</span>
+              {/* 이름이 다 들어가는 막대에만 적는다(좁은 막대는 마우스를 올리면 보인다) — 잘린 글자를 두지 않는다 */}
+              {(solidEnd - left) * 3.6 >= String(it.name).length * 10 + 10 && <span>{it.name}</span>}
             </span>
             {it.kind === 'now' && it.end > now && (
               <span
@@ -103,7 +104,8 @@ function BerthTimeline({ history, current }) {
                 title={title}
               >
                 {/* 입항한 지 얼마 안 돼 칠한 막대가 짧으면 이름을 출항 예정 쪽에 적는다 */}
-                {solidEnd - left < 14 && <span>{it.name}</span>}
+                {(solidEnd - left) * 3.6 < String(it.name).length * 10 + 10
+                  && (x(it.end) - x(now)) * 3.6 >= String(it.name).length * 10 + 10 && <span>{it.name}</span>}
               </span>
             )}
           </span>

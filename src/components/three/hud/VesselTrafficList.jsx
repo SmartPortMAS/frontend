@@ -34,6 +34,7 @@ export default function VesselTrafficList() {
   const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
   const [filter, setFilter] = useState('ALL');
   const [collapsed, setCollapsed] = useState(false);
+  const autoFolded = useRef(false);
   const trackedCs = useSensorStore((s) => s.trackedVessel?.callsgn);
 
   // 필터 칩에 건수를 같이 적는다 — 눌러보기 전에 어느 상태가 몇 척인지 보여야
@@ -53,7 +54,7 @@ export default function VesselTrafficList() {
   // CCTV 패널 아래에 놓는다. CCTV 가 접히면 그만큼 따라 올라간다 —
   // 예전 top:226 은 CCTV 에 조작줄이 붙기 전 값이라 두 패널이 겹쳤다.
   const cctvCollapsed = useSensorStore((s) => s.hudCctvCollapsed);
-  const TOP = cctvCollapsed ? 88 : 336;
+  const TOP = cctvCollapsed ? 134 : 382;   // 선석 현황 띠(한 줄, 전체 폭) 아래로 46 내렸다(2026-09-30)
   // [2026-09-30] 목록 높이를 줄 단위로 맞춘다 — 스크롤 창 끝에 반쯤 잘린 배가 걸리거나 3D 영역 밖으로 넘쳐
   //   목록이 끊겨 보였다(현우). 3D 영역의 실제 높이를 재서, 머리 · 칩 줄 · 여백을 빼고 남는 만큼 온전한 줄만 넣는다.
   const rootRef = useRef(null);
@@ -70,8 +71,15 @@ export default function VesselTrafficList() {
   const ROW = 42;
   const GAP = 6;
   const avail = hostH - TOP - 40 - 38 - 16 - 16;   // 머리 · 칩 줄 · 목록 안 여백 · 바닥 여백
-  const rows = Math.max(3, Math.floor((avail + GAP) / (ROW + GAP)));
+  const rows = Math.max(1, Math.floor((avail + GAP) / (ROW + GAP)));
   const listMax = rows * (ROW + GAP) - GAP + 16;
+  // 세 줄도 못 넣는 낮은 화면이면 처음엔 접어 둔다(누르면 펼친다) — 반쯤 잘린 목록을 보이지 않는다
+  useEffect(() => {
+    if (autoFolded.current || hostH === 780) return;
+    autoFolded.current = true;
+    if (avail < 3 * (ROW + GAP) - GAP) setCollapsed(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostH]);
 
   if (collapsed) {
     return (
@@ -122,7 +130,7 @@ export default function VesselTrafficList() {
 
       {/* 상태 필터 */}
       <div style={{
-        display: 'flex', gap: '4px', padding: '8px 10px 4px', flexWrap: 'nowrap',
+        display: 'grid', gridTemplateColumns: `repeat(${FILTERS.length}, minmax(0, 1fr))`, gap: '4px', padding: '8px 10px 4px',
       }}>
         {FILTERS.map((f) => {
           const on = filter === f.key;
@@ -136,8 +144,8 @@ export default function VesselTrafficList() {
                 background: on ? 'rgba(255,255,255,0.14)' : 'transparent',
                 border: `1px solid ${on ? (c || '#6FD3BE') : 'var(--hud-border)'}`,
                 color: on ? (c || 'var(--hud-text)') : 'var(--hud-dim)',
-                borderRadius: '999px', padding: '3px 8px', whiteSpace: 'nowrap',
-                fontSize: '11.5px', fontWeight: on ? 800 : 600,
+                borderRadius: '999px', padding: '3px 0', whiteSpace: 'nowrap', textAlign: 'center',
+                fontSize: '11px', fontWeight: on ? 800 : 600, letterSpacing: '-0.02em',
                 cursor: 'pointer', fontFamily: 'inherit',
               }}
             >

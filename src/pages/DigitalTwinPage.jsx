@@ -53,12 +53,9 @@ export default function DigitalTwinPage() {
   //   채운다. 마우스를 올리면 멈추고 ‹ › 로 넘긴다.
   const { data: dashForTicker } = useDashboardData();
   const allAlerts = dashForTicker?.alerts ?? [];
-  const tickerItems = useMemo(() => {
-    const order = { DANGER: 0, WARNING: 1, INFO: 2 };
-    return [...allAlerts].sort((x, y) => (order[x.level] ?? 9) - (order[y.level] ?? 9));
-  }, [allAlerts]);
+  // [2026-09-30] 위험만 돈다 — 주의 · 참고까지 51건을 돌리면 볼 수 없다(현우). 나머지는 경고 벨에서 본다.
+  const tickerItems = useMemo(() => allAlerts.filter((x) => x.level === 'DANGER'), [allAlerts]);
   const dangerCount = allAlerts.filter((a) => a.level === 'DANGER').length;
-  const warnCount = allAlerts.filter((a) => a.level === 'WARNING').length;
   const [tickerIdx, setTickerIdx] = useState(0);
   const [tickerHold, setTickerHold] = useState(false);
   const [tickerTick, setTickerTick] = useState(0);   // 멈춤을 풀면 진행 선을 처음부터
@@ -227,12 +224,13 @@ export default function DigitalTwinPage() {
           카메라만 옮기면 사용자는 '왜 여기가 비춰지는지' 모른다. */}
       {focusBerth && !showOmniverseStream && !outlookFocus && (
         <div style={{
-          position: 'absolute', top: 46, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 840, display: 'flex', alignItems: 'center', gap: '10px',
+          // CCTV(왼쪽 440) 와 머리 단추(오른쪽 230) 사이 — 좁은 화면에서도 둘을 덮지 않게
+          position: 'absolute', top: 90, left: 440, right: 236,
+          zIndex: 840, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', whiteSpace: 'nowrap',
           background: 'rgba(15, 23, 42, 0.88)', backdropFilter: 'blur(10px)',
           border: `1px solid ${focusInScene ? 'rgba(255, 75, 110, 0.55)' : 'rgba(245, 158, 11, 0.55)'}`,
           borderRadius: '10px', padding: '8px 14px', color: '#fff',
-          fontSize: '12.5px', fontWeight: 700, maxWidth: '78%',
+          fontSize: '12.5px', fontWeight: 700, width: 'fit-content', margin: '0 auto',
         }}>
           <span style={{ color: focusInScene ? '#ff4b6e' : '#f59e0b' }}>●</span>
           {focusBerth}
@@ -284,9 +282,7 @@ export default function DigitalTwinPage() {
                 {p.why}{p.action ? `  →  ${p.action}${p.recipient ? ` (${p.recipient})` : ''}` : ''}
               </span>
             </div>
-            <span style={{ flexShrink: 0, color: '#8b98ab', fontSize: 11.5 }}>
-              <span style={{ color: '#ff8a80', fontWeight: 700 }}>위험 {dangerCount}</span> · 주의 {warnCount}
-            </span>
+            <span style={{ flexShrink: 0, color: '#ff8a80', fontSize: 11.5, fontWeight: 700 }}>위험 {dangerCount}</span>
             {tickerItems.length > 1 && (
               <span className="tk-nav">
                 <button type="button" onClick={() => stepTicker(-1)} aria-label="이전 경고">‹</button>
@@ -319,7 +315,7 @@ export default function DigitalTwinPage() {
 
       {/* [2026-09-28] 머리 단추는 하나(현우 D4·D7). Omniverse 는 시연 PC 에서 켜지 않으므로 촬영한 정밀 검토 장면을 연다.
           실시간 스트림은 촬영용 주소(?omniverse=1)로만 켠다. 2D 지도는 대시보드 지도와 같아 뺐다. */}
-      <div style={{ position: 'absolute', top: 50, right: 20, zIndex: 1000, display: 'flex', gap: '10px' }}>
+      <div style={{ position: 'absolute', top: 90, right: 20, zIndex: 1000, display: 'flex', gap: '10px' }}>
         {showOmniverseStream ? (
           <button
             className="action-btn"

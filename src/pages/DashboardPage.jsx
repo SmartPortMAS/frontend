@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import SafetyGraph from '../components/safety/SafetyGraph';
 import KPICard from '../components/dashboard/KPICard';
 import WeatherPanel from '../components/dashboard/WeatherPanel';
 import PortMap from '../components/dashboard/PortMap';
@@ -9,6 +10,19 @@ import useDashboardData from '../hooks/useDashboardData';
 import useSensorStore from '../stores/useSensorStore';
 import { fetchPendingApprovals, fetchBerthAssignments } from '../api/backendAdapter';
 import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt } from 'react-icons/fa';
+
+// 화면에 들어올 때 불러온다 — 안전 평가 지수는 첫 계산이 40~60초라 첫 화면 자료와 같이 부르지 않는다
+function WhenVisible({ children, minHeight = 120 }) {
+  const ref = useRef(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    if (seen || !ref.current) return undefined;
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setSeen(true); }, { rootMargin: '200px' });
+    io.observe(ref.current);
+    return () => io.disconnect();
+  }, [seen]);
+  return <div ref={ref} style={seen ? undefined : { minHeight }}>{seen ? children : null}</div>;
+}
 
 export default function DashboardPage() {
   const { data } = useDashboardData();
@@ -93,14 +107,15 @@ export default function DashboardPage() {
   return (
     <div className="dashboard-page">
       <div className="kpi-grid">
-        <KPICard title="관제 선박" value={vesselTotal} unit="척" icon={<FaShip />} change={`액체화물선 ${liquidCount}척 · 선종 미확인 ${unknownCount}척`} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
-        <KPICard title="접안 중" value={mooredCount} unit="척" icon={<FaAnchor />} change={`정박지 대기 ${anchorCount}척 · 항내 소형선 ${unknownNavCount}척`} trend="neutral" />
+        {/* 자료가 오기 전에는 0 이 아니라 '—' — 0척으로 보이면 항만이 빈 것처럼 읽힌다 */}
+        <KPICard title="관제 선박" value={data ? vesselTotal : '—'} unit={data ? '척' : ''} icon={<FaShip />} change={data ? `액체화물선 ${liquidCount} · 선종 미확인 ${unknownCount}` : '불러오는 중'} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
+        <KPICard title="접안 중" value={data ? mooredCount : '—'} unit={data ? '척' : ''} icon={<FaAnchor />} change={data ? `정박지 대기 ${anchorCount} · 소형선 ${unknownNavCount}` : '불러오는 중'} trend="neutral" />
         <KPICard
           title="온산 선석 점유"
           value={berthRows ? occupiedBerths : '—'}
           unit={berthRows ? '개' : ''}
           icon={<FaWarehouse />}
-          change={berthRows ? `온산 부두 ${onsanBerthRows.length}곳 중` : '선석 점유를 불러오지 못했습니다'}
+          change={berthRows ? `온산 부두 ${onsanBerthRows.length}곳 중` : '불러오지 못함'}
           trend="neutral"
           onClick={showBerthBoard}
         />
@@ -111,7 +126,7 @@ export default function DashboardPage() {
           icon={<FaShieldAlt />}
           change={pending
             ? `부적합 ${unfitCount}${cautionCount ? ` · 주의 ${cautionCount}` : ''} · 판정불가 ${unknownCount2}`
-            : '판정 이력을 불러오지 못했습니다'}
+            : '불러오지 못함'}
           trend={!pending ? 'neutral' : unfitCount > 0 ? 'negative' : 'positive'}
           to="/arrivals?view=pending"
         />
@@ -143,6 +158,11 @@ export default function DashboardPage() {
       {/* 입항 선박 목록 (Full Width) */}
       <div className="dash-section">
         <PortCallTable />
+      </div>
+
+      {/* [2026-09-30] 다차원 안전 평가 지수 — 항만 전체 요약이라 대시보드 몫이다(화물 혼재 심사 화면에서 옮김) */}
+      <div className="dash-section">
+        <WhenVisible><SafetyGraph /></WhenVisible>
       </div>
 
       {/* 화면에서 내린 것들 —

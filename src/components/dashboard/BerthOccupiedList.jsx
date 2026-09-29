@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchBerthAssignments, postAssessAndRecord } from '../../api/backendAdapter';
 import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
-import { cargoSummary } from '../../utils/cargoText';
+import { cargoFit } from '../../utils/cargoText';
 import HelpTip from '../common/HelpTip';
 import DemoChip from '../common/DemoChip';
 import SyntheticChip from '../common/SyntheticChip';
@@ -50,8 +50,8 @@ function periodLabel(row) {
   }
   // PORT-MIS 입출항 신고가 아직 안 잡힌 배 — 위치 판정으로만 접안을 안다.
   if (row.berth_basis) {
-    const age = row.position_age_min != null ? ` · ${row.position_age_min}분 전 관측` : '';
-    return `입항신고 미확인 (${row.berth_basis} 판정${age})`;
+    const age = row.position_age_min != null ? ` · ${row.position_age_min}분 전` : '';
+    return `입항 신고 없음 · ${row.berth_basis} 판정${age}`;
   }
   return '-';
 }
@@ -196,6 +196,7 @@ export default function BerthOccupiedList({ scope, bare = false }) {
       {rows.length === 0 ? (
         <p style={{ color: COLORS.textDim, fontSize: '13px' }}>점유 중인 선석이 없습니다.</p>
       ) : (
+        <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <thead>
             <tr style={{ textAlign: 'left', color: COLORS.textDim, borderBottom: `1px solid ${COLORS.border}` }}>
@@ -228,12 +229,12 @@ export default function BerthOccupiedList({ scope, bare = false }) {
                 style={{ borderBottom: `1px solid ${COLORS.border}` }}
               >
                 <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{row.wharf_name}{row.slot_no ? ` · 슬롯${row.slot_no}` : ''}</td>
-                <td style={{ padding: '6px 8px' }}>{row.vessel_name || '(선명 미상)'} ({row.call_sign || '-'})</td>
-                <td style={{ padding: '6px 8px', color: COLORS.textSecondary }} title={(row.cargo_names || []).join(', ')}>
-                  {(row.cargo_names?.length ? cargoSummary(row.cargo_names, 3) : row.cargo_name) || '-'}
+                <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{row.vessel_name || '(선명 미상)'} <span style={{ color: COLORS.textDim, fontSize: 11.5 }}>{row.call_sign || ''}</span></td>
+                <td style={{ padding: '6px 8px', color: COLORS.textSecondary, whiteSpace: 'nowrap' }} title={(row.cargo_names || []).join(', ')}>
+                  {(row.cargo_names?.length ? cargoFit(row.cargo_names, 24) : row.cargo_name) || '-'}
                   {' '}<DemoChip entries={demo.ofShip(row.call_sign)} />
                 </td>
-                <td style={{ padding: '6px 8px', color: COLORS.textDim }}>{periodLabel(row)}</td>
+                <td style={{ padding: '6px 8px', color: COLORS.textDim, whiteSpace: 'nowrap' }}>{periodLabel(row)}</td>
                 <td style={{ padding: '6px 8px', color: COLORS.textDim }}>{row.acknowledged_by || '-'}</td>
                 <td style={{ padding: '6px 8px' }}>
                   {/* 판정 전인 행에서 바로 콘솔로 — 예전엔 이 화면이 "승인은 협상
@@ -251,7 +252,7 @@ export default function BerthOccupiedList({ scope, bare = false }) {
                     judging[row.call_sign] === 'busy' ? (
                       <span style={{ color: COLORS.info, fontSize: '12px' }}>판정 중… (10~20초)</span>
                     ) : cannotJudge(row) ? (
-                      <span style={{ color: COLORS.textDim, fontSize: '12px', whiteSpace: 'nowrap' }} title="판정에 필요한 값이 없습니다 — 판정불가">
+                      <span style={{ color: COLORS.purple, fontSize: '12px', whiteSpace: 'nowrap' }} title="판정에 필요한 값이 없습니다 — 판정불가">
                         판정불가 · {cannotJudge(row)}
                       </span>
                     ) : (
@@ -321,6 +322,7 @@ export default function BerthOccupiedList({ scope, bare = false }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

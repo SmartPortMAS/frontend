@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
@@ -14,12 +14,11 @@ import { FaExclamationTriangle, FaCheck, FaTimes, FaChevronRight } from 'react-i
 //
 // [2026-09-29 밤] 줄글 한 덩어리를 칸으로 갈랐다(현우) — 대상(선박·화물쌍) / 선석 · 시점 / 이유 / 조치 → 받는 곳.
 //   아래 회색 줄(자료 출처 이름)은 뺐다. 위 등급 수는 누르면 그 등급만 본다.
-//   줄을 누르면 그 경고를 처리하는 화면으로 간다 — 판정 경고는 선박 판정(그 배), 화물 경고는 혼재 심사(그 선석).
-//
-// 화물 혼재 심사 화면(/safety)에서는 벨을 띄우지 않는다. 그 화면 오른쪽이 같은 경고를 선석 단위로 펼쳐 놓았다.
+//   줄을 누르면 그 경고를 처리하는 화면으로 간다 — 그 배의 선박 판정(화물 경고는 그 배의 화물 혼재 카드).
+// [2026-09-30] 화물 혼재 심사 화면을 선박 판정에 합치면서, 그 화면 오른쪽의 '현재 위험 선석'(같은 경고를 선석별로 묶은 것)은
+//   이 벨의 [선석별] 보기로 옮겼다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALERT_OWNED_PATHS = ['/safety'];
 const LEVEL_TONE = { 부적합: COLORS.red, 주의: COLORS.yellow, 판정불가: COLORS.purple };   // 화면 공용 판정 색
 
 export default function AlertBell() {
@@ -28,13 +27,11 @@ export default function AlertBell() {
   const ackAlert = useSensorStore((s) => s.ackAlert);
   const trackVessel = useSensorStore((s) => s.trackVessel);
   const requestThreadFocus = useSensorStore((s) => s.requestThreadFocus);
-  const setSafetyPrefill = useSensorStore((s) => s.setSafetyPrefill);
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const ownedByPage = ALERT_OWNED_PATHS.includes(pathname);
 
   const [open, setOpen] = useState(false);
   const [only, setOnly] = useState(null);   // 'DANGER' | 'WARNING' | 'INFO' | null
+  const [byBerth, setByBerth] = useState(false);
   const wrapRef = useRef(null);
 
   const alerts = data?.alerts ?? [];
@@ -51,10 +48,6 @@ export default function AlertBell() {
   }, {});
 
   useEffect(() => {
-    if (ownedByPage) setOpen(false);
-  }, [ownedByPage]);
-
-  useEffect(() => {
     if (!open) return undefined;
     const onDown = (e) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
@@ -68,26 +61,21 @@ export default function AlertBell() {
     };
   }, [open]);
 
-  // 경고를 처리하는 화면으로 — 판정 경고는 그 배의 선박 판정, 화물 경고는 그 선석의 혼재 심사
+  // 경고를 처리하는 화면으로 — 그 배를 추적하고 선박 판정으로. 화물 경고는 그 배의 화물 혼재 카드까지 내려간다.
   const openAlert = (a, parts) => {
     const cs = (a.callsgns || [])[0];
-    if (parts.kind === 'verdict' || parts.kind === 'draught') {
-      if (cs) trackVessel({ callsgn: cs, vessel_name: parts.title });
-      requestThreadFocus('verdict');
-      navigate('/arrivals');
-    } else if (a.berth_name) {
-      setSafetyPrefill({ berth_name: a.berth_name, chem_ids: a.chem_ids || [] });
-      navigate('/safety');
-    }
+    const cargo = !(parts.kind === 'verdict' || parts.kind === 'draught');
+    if (cs) trackVessel({ callsgn: cs, vessel_name: cargo ? nameOf(cs) : parts.title });
+    requestThreadFocus(cargo && cs ? 'cargo' : 'verdict');
+    navigate('/arrivals');
     setOpen(false);
   };
 
-  // 미확인을 위로 — 확인한 건 아래로 내려 흐리게 남긴다
+  // 미확인을 위로 — 확인한 건 아래로 내려 흐리게 남긴다. 선석별 보기는 선석 이름으로 묶는다.
   const ordered = [...alerts]
     .filter((a) => !only || (LEVEL_STYLE[a.level] ? a.level : 'INFO') === only)
-    .sort((a, b) => (alertAcks[alertId(a)] ? 1 : 0) - (alertAcks[alertId(b)] ? 1 : 0));
-
-  if (ownedByPage) return null;
+    .sort((a, b) => (byBerth ? String(a.berth_name || '힣').localeCompare(String(b.berth_name || '힣'), 'ko') : 0)
+      || (alertAcks[alertId(a)] ? 1 : 0) - (alertAcks[alertId(b)] ? 1 : 0));
 
   return (
     <div className="alert-bell" ref={wrapRef}>
@@ -120,6 +108,9 @@ export default function AlertBell() {
                 </button>
               ))}
             </div>
+            <div className="alert-filter" role="group" aria-label="묶기">
+              <button type="button" aria-pressed={byBerth} onClick={() => setByBerth((v) => !v)} style={{ '--tone': COLORS.navy }}>선석별</button>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
               {unacked.length > 0 && (
                 <button type="button" className="alert-dropdown-allack" onClick={() => unacked.forEach((a) => ackAlert(alertId(a)))}>
@@ -138,15 +129,23 @@ export default function AlertBell() {
                 활성 경고 없음
               </div>
             )}
-            {ordered.map((a) => {
+            {ordered.map((a, i) => {
               const id = alertId(a);
               const ack = alertAcks[id];
               const style = levelStyle(a.level);
               const p = alertParts(a, nameOf);
-              const canOpen = p.kind === 'verdict' || p.kind === 'draught' || Boolean(a.berth_name);
+              const canOpen = Boolean((a.callsgns || [])[0]) || p.kind === 'verdict' || p.kind === 'draught';
+              const head = byBerth && (i === 0 || (ordered[i - 1].berth_name || '') !== (a.berth_name || ''))
+                ? (a.berth_name || '선석 없음') : null;
               return (
+                <div key={id} style={{ display: 'contents' }}>
+                {head && (
+                  <div className="alert-group-head">
+                    <strong>{head}</strong>
+                    <span>{ordered.filter((x) => (x.berth_name || '') === (a.berth_name || '')).length}건</span>
+                  </div>
+                )}
                 <div
-                  key={id}
                   className={`alert-card${canOpen ? ' can-open' : ''}`}
                   style={{ borderLeftColor: style.color, opacity: ack ? 0.45 : 1 }}
                   title={p.full}
@@ -184,6 +183,7 @@ export default function AlertBell() {
                         </button>
                       )}
                   </div>
+                </div>
                 </div>
               );
             })}
