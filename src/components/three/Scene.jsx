@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { OrbitControls, Sky, Stars } from '@react-three/drei';
+import { OrbitControls, Stars } from '@react-three/drei';
 import BerthFocus from './BerthFocus';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import { Suspense, useEffect, useRef } from 'react';
@@ -161,13 +161,14 @@ function SkyAndLights() {
 
   // 해 뜰 녘 · 질 녘 한 시간은 낮과 밤 사이를 잇는다(0 = 밤, 1 = 낮)
   const day = THREE.MathUtils.clamp(Math.min(hour - 5.5, 18.5 - hour), 0, 1);
-  const fogColor = new THREE.Color('#0a1628').lerp(new THREE.Color('#9db8cf'), day * 0.85);
-  // 해가 낮게 걸린 동안(해 뜰 녘 · 질 녘)은 Sky 가 화면 위쪽에 갈색 띠로 보인다 — 해가 충분히 오른 뒤에만 그린다
-  const sunUp = !isNight && Math.sin(sunAngle) > 0.22;
+  // [2026-09-30] 하늘은 늘 어두운 관제 화면 톤 — 낮에는 조금 밝은 남색, 밤에는 별.
+  //   drei Sky 는 낮에 화면 위쪽을 밝은 회색 띠로, 해 뜰 녘 · 질 녘에는 갈색 띠로 칠해 어두운 HUD 와 따로 놀았다.
+  const skyColor = new THREE.Color('#0a1628').lerp(new THREE.Color('#2b4a6b'), day);
+  const fogColor = new THREE.Color('#0a1628').lerp(new THREE.Color('#3d5f82'), day);
 
   return (
     <>
-      {!sunUp && <color attach="background" args={[new THREE.Color('#0a1628').lerp(new THREE.Color('#31506f'), day)]} />}
+      <color attach="background" args={[skyColor]} />
       <fog attach="fog" args={[fogColor, 520, 1900]} />
 
       <ambientLight intensity={ambientIntensity} color="#b0c4de" />
@@ -195,18 +196,7 @@ function SkyAndLights() {
         />
       )}
 
-      {/* [2026-09-30] 밤에는 Sky 를 그리지 않는다 — 산란을 0 으로 둔 Sky 가 화면 위쪽에 회색 띠로 보였다. 대신 별 */}
-      {sunUp && (
-        <Sky
-          distance={450000}
-          sunPosition={[sunX, sunY, -500]}
-          inclination={0}
-          azimuth={0.25}
-          rayleigh={1.5}
-          turbidity={6}
-        />
-      )}
-      {!sunUp && <Stars radius={900} depth={120} count={lite ? 900 : 2200} factor={9} saturation={0} fade speed={0.4} />}
+      {day < 0.5 && <Stars radius={900} depth={120} count={lite ? 900 : 2200} factor={9} saturation={0} fade speed={0.4} />}
       {/* drei <Environment preset> 은 쓰지 않는다 — 프리셋 HDR 을 GitHub 에서
           실시간으로 내려받는데, 2026-08-17 에 GitHub 가 429 를 돌려주자 이
           컴포넌트가 죽으면서 /twin 전체가 빈 화면이 됐다. 반사광 질감을 조금
