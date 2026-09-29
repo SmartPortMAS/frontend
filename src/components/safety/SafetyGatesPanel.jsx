@@ -10,6 +10,7 @@ import ReasoningGraph from './ReasoningGraph';
 import ConflictNetworkGraph from './ConflictNetworkGraph';
 import HelpTip from '../common/HelpTip';
 import DemoChip from '../common/DemoChip';
+import { normKey } from '../../hooks/useVesselThread';
 import { useDemoCargo } from '../../utils/demoCargo';
 import ConflictBasisList from '../common/ConflictBasisList';
 import { FaShieldAlt, FaCheckCircle, FaTimesCircle, FaQuestionCircle } from 'react-icons/fa';
@@ -326,6 +327,29 @@ export default function SafetyGatesPanel() {
     }
   };
 
+  // [2026-09-29 밤] 선박 추적 띠에서 넘어오면 그 배를 불러와 바로 심사한다 — 같은 배를 다시 찾지 않게
+  const tracked = useSensorStore((s) => s.trackedVessel);
+  const threadFocus = useSensorStore((s) => s.threadFocus);
+  const trackedName = tracked && shipLoad && normKey(tracked.callsgn) === normKey(shipLoad.callsgn) ? tracked.vessel_name : null;
+  const handledFocus = useRef(null);
+  const autoRun = useRef(null);
+  useEffect(() => {
+    if (threadFocus?.target !== 'cargo' || !tracked?.callsgn || handledFocus.current === threadFocus.at) return;
+    const idx = berthedVessels.findIndex((s) => normKey(s.callsgn) === normKey(tracked.callsgn));
+    if (idx === -1) return;
+    handledFocus.current = threadFocus.at;
+    autoRun.current = tracked.callsgn;
+    loadFromBerthed(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadFocus?.at, tracked?.callsgn, berthedVessels.length]);
+  useEffect(() => {
+    if (!autoRun.current || !shipActive || !Array.isArray(shipLoad?.adjacent)) return;
+    if (normKey(shipLoad.callsgn) !== normKey(autoRun.current)) return;
+    autoRun.current = null;
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shipActive, shipLoad?.adjacent]);
+
   const style = RISK_STYLE[result?.risk_level] || { color: COLORS.textDim };
   const hits = (result?.gates || []).filter((g) => g.hit);
   const passes = (result?.gates || []).filter((g) => !g.hit);
@@ -416,7 +440,7 @@ export default function SafetyGatesPanel() {
               onChange={(e) => { loadFromBerthed(e.target.value); e.target.value = ''; }}
               style={{ ...inputStyle, flex: 1 }}
             >
-              <option value="">선박 선택 — 그 배의 화물 전부와 이웃 화물이 심사에 실립니다</option>
+              <option value="">선박 선택</option>
               {berthedVessels.map((s, i) => {
                 const names = cargoNames(s.rows.map((r) => r.cargo_name || '물질 미확인'));
                 return (
@@ -433,13 +457,13 @@ export default function SafetyGatesPanel() {
           </div>
           {shipActive && (
             <div style={{ fontSize: '12px', color: shipLoad.adjacent === null ? COLORS.red : COLORS.teal, marginTop: '6px' }}>
-              {shipLoad.callsgn} 불러옴 — 화물 {shipLoad.names.length}종({shipLoad.names.join(', ')})
-              {shipLoad.unidentified > 0 && ` · 물질 미확인 ${shipLoad.unidentified}건 제외`}
+              <strong>{trackedName || shipLoad.callsgn}</strong>
+              <span title={shipLoad.names.join(', ')}> · 화물 {shipLoad.names.length}종</span>
+              {shipLoad.unidentified > 0 && ` · 미확인 ${shipLoad.unidentified}건 제외`}
               {' · '}
               {shipLoad.adjacent === undefined ? '이웃 화물 조회 중…'
-                : shipLoad.adjacent === null ? '이웃 화물 조회 실패 — 이웃을 모르고 심사하면 "이웃 없음 = 안전"이 되므로 심사하지 않습니다'
+                : shipLoad.adjacent === null ? '이웃 화물 조회 실패'
                   : `이웃 화물 ${shipLoad.adjacent.length}건`}
-              <span style={{ color: COLORS.textDim }}> · 아래 칸을 바꾸면 수동 입력으로 돌아갑니다</span>
             </div>
           )}
         </div>

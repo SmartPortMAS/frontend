@@ -119,6 +119,8 @@ export default function BerthOccupiedList({ scope }) {
   // 선석×슬롯 구조를 평평한 행 목록으로 편다 — 이 표는 "지금 뭐가 어디 붙어
   // 있나"만 보면 되므로 빈 슬롯은 뺀다.
   const requestConsole = useSensorStore((st) => st.requestConsole);
+  const tracked = useSensorStore((st) => st.trackedVessel);
+  const trackVessel = useSensorStore((st) => st.trackVessel);
   const demo = useDemoCargo();
   // [2026-09-28] 판정 전 행의 단추를 입항 선박 표와 같은 뜻으로 맞췄다 — "판정 요청"은 서버가 판정해
   // 이력에 기록하고, "근거 →"는 우하단 에이전트 판단 과정을 그 배로 열어 왜 그 결론인지 본다.
@@ -214,7 +216,11 @@ export default function BerthOccupiedList({ scope }) {
             {rows.map((row) => (
               <tr
                 key={`${row.wharf_name}-${row.slot_no}`}
+                data-cs={row.call_sign}
+                onClick={() => trackVessel({ callsgn: row.call_sign, vessel_name: row.vessel_name })}
                 className={[
+                  'row-pick',
+                  tracked?.callsgn === row.call_sign ? 'row-track' : '',
                   focus?.callsgn === row.call_sign ? 'row-focus' : '',
                   judging[row.call_sign] === 'busy' || (focus?.callsgn === row.call_sign && focus.loading) ? 'row-busy' : '',
                 ].join(' ').trim() || undefined}

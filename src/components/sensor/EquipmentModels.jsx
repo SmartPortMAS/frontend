@@ -28,7 +28,7 @@ export function TankModel({ tank }) {
       <div className="sensor-card-header">
         <span className="sensor-id">{tank.id} · {tank.cargoType}</span>
         <span className={`sensor-status ${active ? 'online' : 'offline'}`}>
-          {tank.status.toUpperCase()}
+          {({ active: '가동', idle: '대기', maintenance: '정비' })[tank.status] || tank.status}
         </span>
       </div>
 
@@ -119,7 +119,7 @@ export function PipeModel({ pipe }) {
       <div className="sensor-card-header">
         <span className="sensor-id">{pipe.id}</span>
         <span className={`sensor-status ${flowing ? 'online' : 'offline'}`}>
-          {flowing ? 'FLOWING' : 'IDLE'}
+          {flowing ? '이송 중' : '대기'}
         </span>
       </div>
 

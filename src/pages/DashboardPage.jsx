@@ -97,7 +97,7 @@ export default function DashboardPage() {
           value={berthRows ? occupiedBerths : '—'}
           unit={berthRows ? '개' : ''}
           icon={<FaWarehouse />}
-          change={berthRows ? `온산 부두 ${onsanBerthRows.length}곳 중 · 선박 판정 화면과 같은 기준` : '선석 점유를 불러오지 못했습니다'}
+          change={berthRows ? `온산 부두 ${onsanBerthRows.length}곳 중` : '선석 점유를 불러오지 못했습니다'}
           trend="neutral"
           to="/arrivals#berthed"
         />
@@ -107,7 +107,7 @@ export default function DashboardPage() {
           unit={pending ? '척' : ''}
           icon={<FaShieldAlt />}
           change={pending
-            ? `부적합 ${unfitCount}${cautionCount ? ` · 주의 ${cautionCount}` : ''} · 판정불가 ${unknownCount2}${unknownWhyText ? ` — ${unknownWhyText}` : ''}`
+            ? `부적합 ${unfitCount}${cautionCount ? ` · 주의 ${cautionCount}` : ''} · 판정불가 ${unknownCount2}`
             : '판정 이력을 불러오지 못했습니다'}
           trend={!pending ? 'neutral' : unfitCount > 0 ? 'negative' : 'positive'}
           to="/arrivals"

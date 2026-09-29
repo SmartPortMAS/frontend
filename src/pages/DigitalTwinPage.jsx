@@ -16,7 +16,7 @@ import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
 import { BACKEND_BASE, postTwinFocus } from '../api/backendAdapter';
 import { FaMap, FaPlay, FaExclamationTriangle, FaArrowRight } from 'react-icons/fa';
-import { alertSubject, levelStyle, typeLabel } from '../utils/alertUtils';
+import { levelStyle, alertParts } from '../utils/alertUtils';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
 // 실행: D:\omniverse\start_twin_stream.bat (Isaac Sim 스트리밍 + 웹 뷰어 동시 기동)
@@ -223,11 +223,14 @@ export default function DigitalTwinPage() {
         }}>
           <span style={{ color: focusInScene ? '#ff4b6e' : '#f59e0b' }}>●</span>
           {focusBerth}
-          <span style={{ color: '#94a3b8', fontWeight: 500 }}>
-            {focusInScene
-              ? '빨간 링이 대상 선석, 주황 링이 혼재 판정에 쓰인 인접 선석입니다'
-              : '이 선석은 3차원 장면에 없습니다 — 장면은 온산 부두 11개 선석만 재현합니다'}
-          </span>
+          {focusInScene ? (
+            <span style={{ display: 'inline-flex', gap: 10, color: '#cbd5e1', fontWeight: 600 }}>
+              <span><span style={{ color: '#ff4b6e' }}>●</span> 대상 선석</span>
+              <span><span style={{ color: '#f59e0b' }}>●</span> 이웃 선석</span>
+            </span>
+          ) : (
+            <span style={{ color: '#94a3b8', fontWeight: 500 }}>장면 밖 선석</span>
+          )}
         </div>
       )}
       
@@ -237,7 +240,7 @@ export default function DigitalTwinPage() {
           결론만 남기고 대상·유형을 따로 세운다 — 상세는 안전/환경 관제에서 본다. */}
       {tickerItems.length > 0 && (() => {
         const a = tickerItems[Math.min(tickerIdx, tickerItems.length - 1)];
-        const { subject, verdict } = alertSubject(a);
+        const p = alertParts(a);
         const st = levelStyle(a.level);
         return (
           <div style={{
@@ -251,18 +254,16 @@ export default function DigitalTwinPage() {
               flexShrink: 0, background: st.color, color: '#0b1220', fontWeight: 800,
               fontSize: 11, padding: '2px 7px', borderRadius: 4, letterSpacing: '0.02em',
             }}>{st.label}</span>
-            <span style={{
-              flexShrink: 0, border: '1px solid rgba(232,238,247,0.28)', color: '#c3cede',
-              fontSize: 11, padding: '1px 7px', borderRadius: 4,
-            }}>{typeLabel(a.type)}</span>
-            {subject && (
-              <span style={{ flexShrink: 0, fontWeight: 700 }}>{subject}</span>
-            )}
-            {/* 결론만 — 넘치면 자르되, 잘렸다는 것이 보이게 말줄임으로 둔다 */}
+            {/* [2026-09-29 밤] 문장 대신 칸 — 대상 · 선석 · 등급 · 이유 · 조치(관제 경고 벨과 같은 규칙) */}
+            <span style={{ flexShrink: 0, fontWeight: 800 }}>{p.title}</span>
+            {p.place && <span style={{ flexShrink: 0, color: '#c3cede' }}>{p.place}{p.stage ? ` · ${p.stage}` : ''}</span>}
+            {p.level && <span style={{ flexShrink: 0, fontWeight: 800, color: st.color }}>{p.level}</span>}
             <span style={{
               flex: 1, minWidth: 0, color: '#b8c4d6',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>{verdict}</span>
+            }} title={p.full}>
+              {p.why}{p.action ? `  →  ${p.action}${p.recipient ? ` (${p.recipient})` : ''}` : ''}
+            </span>
             <span style={{ flexShrink: 0, color: '#8b98ab', fontSize: 11 }}>
               위험 {dangerCount} · 표시 {tickerIdx + 1}/{tickerItems.length}
             </span>
@@ -320,7 +321,7 @@ export default function DigitalTwinPage() {
               display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold',
             }}
           >
-            <FaPlay /> 정밀 검토 영상 (Omniverse)
+            <FaPlay /> 정밀 검토 · Omniverse
           </button>
         )}
       </div>

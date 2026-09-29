@@ -2,6 +2,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import PortMisBar from './PortMisBar';
+import VesselTrail from './VesselTrail';
 import { useEffect, useRef, useState } from 'react';
 
 // ToastContainer 는 걷어냈다 — useSensorStore.alerts 를 읽는데 그 배열을 채우는
@@ -26,6 +27,7 @@ export default function Layout() {
         <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
         <div className="main-area" style={{ marginLeft: sidebarCollapsed ? '72px' : '260px' }}>
           <Header />
+          <VesselTrail />
           <main className="page-content" ref={contentRef}>
             <Outlet />
           </main>

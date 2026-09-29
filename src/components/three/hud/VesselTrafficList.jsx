@@ -34,6 +34,7 @@ export default function VesselTrafficList() {
   const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
   const [filter, setFilter] = useState('ALL');
   const [collapsed, setCollapsed] = useState(false);
+  const trackedCs = useSensorStore((s) => s.trackedVessel?.callsgn);
 
   // 필터 칩에 건수를 같이 적는다 — 눌러보기 전에 어느 상태가 몇 척인지 보여야
   // "지금 하역 중인 배가 있나"를 한눈에 판단할 수 있다.
@@ -154,7 +155,9 @@ export default function VesselTrafficList() {
                 title="클릭하면 선박 상세가 열립니다"
                 style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '10px', background: 'rgba(255,255,255,0.04)', borderRadius: '4px',
+                  padding: '10px', borderRadius: '4px',
+                  background: trackedCs && ship.callsgn === trackedCs ? 'rgba(111, 211, 190, 0.18)' : 'rgba(255,255,255,0.04)',
+                  outline: trackedCs && ship.callsgn === trackedCs ? '1px solid #6FD3BE' : 'none',
                   borderLeft: `3px solid ${st.color}`, cursor: 'pointer',
                 }}
               >

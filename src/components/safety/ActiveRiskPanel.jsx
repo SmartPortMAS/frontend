@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import useDashboardData from '../../hooks/useDashboardData';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS } from '../../utils/constants';
-import { alertId, levelStyle, typeLabel, groupAlertsByBerth } from '../../utils/alertUtils';
+import { alertId, levelStyle, typeLabel, groupAlertsByBerth, alertParts } from '../../utils/alertUtils';
 import HelpTip from '../common/HelpTip';
 import DemoChip from '../common/DemoChip';
+import useVesselThread, { normKey } from '../../hooks/useVesselThread';
 import { useDemoCargo } from '../../utils/demoCargo';
 import { FaCheck, FaCheckCircle, FaExclamationTriangle, FaShieldAlt, FaShip, FaCube } from 'react-icons/fa';
 
@@ -46,7 +47,9 @@ const LEVEL_RANK = { DANGER: 2, WARNING: 1 };
 function summarizeAlerts(items, berth) {
   const map = new Map();
   for (const a of items) {
-    const text = shortReason(a.message, berth);
+    // [2026-09-29 밤] 문장 대신 칸 — 대상 · 등급 · 이유(관제 경고 벨과 같은 규칙, utils/alertParts)
+    const p = alertParts(a);
+    const text = p.kind === 'plain' ? shortReason(a.message, berth) : [p.title, p.level, p.why].filter(Boolean).join(' · ');
     const cur = map.get(text);
     if (cur) {
       cur.count += 1;
@@ -61,6 +64,7 @@ export default function ActiveRiskPanel() {
   const setSafetyPrefill = useSensorStore((s) => s.setSafetyPrefill);
   const demo = useDemoCargo();
   const prefill = useSensorStore((s) => s.safetyPrefill);
+  const { thread } = useVesselThread();
   const alertAcks = useSensorStore((s) => s.alertAcks);
   const ackAlert = useSensorStore((s) => s.ackAlert);
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
@@ -137,7 +141,7 @@ export default function ActiveRiskPanel() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', minHeight: 0 }}>
           {berths.map((g) => {
             const color = levelStyle(g.worst).color;
-            const active = prefill?.berth_name === g.berth;
+            const active = prefill?.berth_name === g.berth || (thread?.berth && normKey(thread.berth) === normKey(g.berth));
             const types = [...new Set(g.items.map((a) => typeLabel(a.type)))];
             const unacked = g.items.filter((a) => !alertAcks[alertId(a)]);
             const allAcked = unacked.length === 0;

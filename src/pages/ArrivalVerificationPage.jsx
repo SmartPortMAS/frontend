@@ -113,6 +113,8 @@ function UpcomingSection() {
   }, [reloadKey]);
 
   const requestConsole = useSensorStore((st) => st.requestConsole);
+  const tracked = useSensorStore((st) => st.trackedVessel);
+  const trackVessel = useSensorStore((st) => st.trackVessel);
   const demo = useDemoCargo();
   // 판정 감시 작업은 10분마다 "지금 항내에 있는 배"만 훑는다. 아직 오지 않은 배는 관제사가
   // 여기서 직접 판정을 요청한다 — 결과는 판정 이력에 남고 표가 다시 읽는다.
@@ -262,7 +264,11 @@ function UpcomingSection() {
             {shown.map((r) => (
               <tr
                 key={`${r.call_sign}-${r.arrival_at_utc}`}
+                data-cs={r.call_sign}
+                onClick={() => trackVessel({ callsgn: r.call_sign, vessel_name: r.vessel_name })}
                 className={[
+                  'row-pick',
+                  tracked?.callsgn === r.call_sign ? 'row-track' : '',
                   focus?.callsgn === r.call_sign ? 'row-focus' : '',
                   judging[r.call_sign] === 'busy' || (focus?.callsgn === r.call_sign && focus.loading) ? 'row-busy' : '',
                 ].join(' ').trim() || undefined}
@@ -622,6 +628,20 @@ export default function ArrivalVerificationPage() {
   const navigate = useNavigate();
   const judgingAny = useSensorStore((st) => Object.keys(st.judgeBusy).length > 0);
   const reasoningLive = useSensorStore((st) => Boolean(st.reasoningFocus));
+  // [2026-09-29 밤] 선박 추적 띠·경고에서 넘어오면 그 배의 줄로 간다
+  const threadFocus = useSensorStore((st) => st.threadFocus);
+  const trackedCs = useSensorStore((st) => st.trackedVessel?.callsgn);
+  useEffect(() => {
+    if (threadFocus?.target !== 'verdict' || !trackedCs) return undefined;
+    let tries = 0;
+    const id = setInterval(() => {
+      tries += 1;
+      const row = [...document.querySelectorAll('tr[data-cs]')].find((tr) => tr.dataset.cs === trackedCs);
+      if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); clearInterval(id); }
+      if (tries > 20) clearInterval(id);
+    }, 400);
+    return () => clearInterval(id);
+  }, [threadFocus?.at, threadFocus?.target, trackedCs]);
   // [2026-09-29] 사용 순서 띠를 누르면 자리로 가는 데서 끝나지 않고 그 단계의 첫 대상으로 간다(현우).
   //   2 판정 요청 → 판정이 없는 첫 배의 [판정 요청]을 비춘다(누르지는 않는다 — 기록이 남는 동작이라 관제사가 누른다)
   //   3 근거 → 벗어난(부적합·주의·판정불가) 첫 배의 [근거]를 연다. 없으면 첫 배의 [근거]
@@ -656,7 +676,7 @@ export default function ArrivalVerificationPage() {
           </HelpTip>
         </h2>
         {/* 사용 순서 — 번호는 실제로 따라가는 순서다. 누르면 그 자리로 간다. */}
-        <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 13 }}>
+        <ol className="flow-steps">
           {[
             ['arrival-table', '입항 선박', '시점별 판정 보기'],
             ['arrival-table', '판정 요청', '판정 없는 첫 배로'],
@@ -664,21 +684,16 @@ export default function ArrivalVerificationPage() {
             ['berthed', '접안 선박', '선석별 점유 확인'],
             ['gate', '하역 개시 게이트', '잠금·해제 확인'],
           ].map(([id, head, sub], i) => (
-            <li key={head} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {i > 0 && <span aria-hidden="true" style={{ color: COLORS.textDim }}>→</span>}
+            <li key={head}>
+              {i > 0 && <span className="flow-link" aria-hidden="true" />}
               <a
                 className={(i === 1 && judgingAny) || (i === 2 && reasoningLive) ? 'step-live' : undefined}
                 href={`#${id}`}
+                title={sub}
                 onClick={(e) => { e.preventDefault(); runStep(i, id); }}
-                style={{
-                  display: 'inline-flex', alignItems: 'baseline', gap: 6, padding: '5px 10px',
-                  border: `1px solid ${COLORS.border}`, background: COLORS.cardHover, color: COLORS.textPrimary,
-                  textDecoration: 'none', borderRadius: 4,
-                }}
               >
-                <span style={{ fontFamily: 'ui-monospace, Consolas, monospace', color: COLORS.navy, fontWeight: 700 }}>{i + 1}</span>
+                <span className="flow-no">{i + 1}</span>
                 <strong>{head}</strong>
-                <span style={{ color: COLORS.textDim, fontSize: 12 }}>{sub}</span>
               </a>
             </li>
           ))}

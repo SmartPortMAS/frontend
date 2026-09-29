@@ -102,9 +102,6 @@ export default function RadarMap() {
           가벼운 모드
         </span>
       )}
-      <span className="hud-chip" title="항만공사 선박위치를 온산 중심 원 안에 그린 것입니다. 실제 레이더 영상이 아닙니다." style={{ cursor: 'default' }}>
-        선박위치 레이더 · 실제 레이더 아님
-      </span>
       <button type="button" className="hud-chip" onClick={() => setRadarCollapsed(true)} title="레이더 접기">레이더 접기</button>
     </div>
     <div className="radar-container" style={{

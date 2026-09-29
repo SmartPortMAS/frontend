@@ -112,6 +112,7 @@ export default function PortCallTable() {
   const demo = useDemoCargo();
   const { data } = useDashboardData();
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
+  const tracked = useSensorStore((s) => s.trackedVessel);
 
   // 최근 수신 순 기본 정렬 — 이전 동작(입항 최신순 정렬)과 동일한 기본값 유지.
   const [sort, setSort] = useState({ key: 'received_at_utc', dir: 'desc' });
@@ -228,6 +229,7 @@ export default function PortCallTable() {
               return (
                 <tr
                   key={v.port_call_id}
+                  className={tracked?.callsgn && tracked.callsgn === v.callsgn ? 'row-track' : undefined}
                   onClick={() => setSelectedVessel(v)}
                   style={{ borderBottom: `1px solid rgba(78, 205, 196, 0.06)`, cursor: 'pointer' }}
                   title="클릭하면 선박 상세 패널이 열립니다"

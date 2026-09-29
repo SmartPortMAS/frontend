@@ -110,3 +110,67 @@ export function alertSubject(alert) {
   if (cut === -1) return { subject: alert?.berth_name || '', verdict: head };
   return { subject: head.slice(0, cut), verdict: head.slice(cut + 2) };
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [2026-09-29 밤] 경고 문장을 칸으로 가른다 — 줄글 한 덩어리는 읽히지 않았다(현우).
+//   판정 경고  "[입항전] 한유울산 @ OTK1부두: 부적합 — 이유 → 대체선석 검토 필요(선석운영주체)"
+//   혼재 경고  "4부두: 황산 ↔ 디젤 연료 혼재금지(가연성물질) → 위험 외 4쌍"
+//   인접 참고  "3부두: 아이소부텐 ↔ 인접 4부두(150m) 옥타메틸… — IMDG 격리코드 2 (참고 …)"
+//   흘수 경고  "대한유화부두: 9VDY7 흘수 여유 부족 (UKC 1.07 m, MARGINAL)"
+// 서버 문장은 버리지 않는다 — 전체 문장은 마우스를 올리면 보인다.
+// ─────────────────────────────────────────────────────────────────────────────
+const STAGE_KO = { 입항전: '입항 전', 접안직전: '접안 직전', 하역중: '하역 중' };
+
+function shortWhy(why) {
+  const t = why || '';
+  if (/혼재 충돌/.test(t)) return '이웃 화물과 혼재 충돌';
+  if (/혼재 등급이 '주의'/.test(t)) return '이웃 화물 혼재 주의';
+  if (/찾을 수 없습니다|마스터 미등록/.test(t)) return '선석 자료 없음';
+  if (/화물을 식별/.test(t)) return '화물 미확인';
+  if (/항해상태/.test(t)) return '항해 상태 미확인';
+  if (/흘수|수심|UKC/.test(t)) return '수심 여유 부족';
+  if (/풍속|파고|기상|관측/.test(t)) return '기상 기준';
+  return t.length > 34 ? `${t.slice(0, 33)}…` : t;
+}
+
+export function alertParts(alert, nameOf = () => null) {
+  const msg = alert?.message || '';
+  let m = msg.match(/^\[(입항전|접안직전|하역중)\]\s*(.+?)\s*@\s*(.+?):\s*(부적합|주의|판정불가)\s*—\s*(.+)$/);
+  if (m) {
+    const [, stage, vessel, berth, level, rest] = m;
+    const [why, act] = rest.split(/\s*→\s*/);
+    const am = (act || '').match(/^(.+?)\((.+?)\)\s*\.?$/);
+    return {
+      kind: 'verdict', title: vessel, place: berth, stage: STAGE_KO[stage], level,
+      why: shortWhy(why), action: am ? am[1].replace(/\s*검토 필요\s*$/, '').trim() : null, recipient: am ? am[2] : null, full: msg,
+    };
+  }
+  if (alert?.type === 'SEGREGATION' || alert?.type === 'ONBOARD_SEGREGATION') {
+    m = msg.match(/^(.+?):\s*(.+?)\s*↔\s*(.+?)\s*혼재금지(?:\((.+?)\))?/);
+    if (m) {
+      const more = (alert.pair_count || 1) - 1;
+      return {
+        kind: 'pair', title: `${m[2]} ↔ ${m[3]}`, place: alert.berth_name || m[1], level: alert.risk_level || null,
+        why: ['혼재금지', m[4], more > 0 ? `외 ${more}쌍` : null].filter(Boolean).join(' · '), details: alert.details || [], full: msg,
+      };
+    }
+  }
+  if (alert?.type === 'ADJACENT_SEGREGATION') {
+    m = msg.match(/^(.+?):\s*(.+?)\s*↔\s*인접\s*(.+?)\((\d+)m\)\s*(.+?)\s*—/);
+    if (m) {
+      return { kind: 'pair', title: `${m[2]} ↔ ${m[5]}`, place: `${m[1]} ↔ ${m[3]}`, level: null, why: `이웃 선석 ${m[4]} m`, full: msg };
+    }
+  }
+  if (alert?.type === 'DRAUGHT') {
+    m = msg.match(/^(.+?):\s*(\S+)\s*흘수 여유 부족\s*\(UKC\s*([\d.]+)\s*m/);
+    if (m) {
+      return { kind: 'draught', title: nameOf(m[2]) || m[2], place: m[1], level: null, why: `흘수 여유 ${m[3]} m`, full: msg };
+    }
+  }
+  const { head } = splitAlertMessage(msg);
+  const cut = head.indexOf(': ');
+  return cut === -1
+    ? { kind: 'plain', title: alert?.berth_name || typeLabel(alert?.type), place: null, why: head, full: msg }
+    : { kind: 'plain', title: head.slice(0, cut), place: alert?.berth_name && alert.berth_name !== head.slice(0, cut) ? alert.berth_name : null, why: head.slice(cut + 2), full: msg };
+}

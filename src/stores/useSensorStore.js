@@ -65,7 +65,21 @@ const useSensorStore = create((set, get) => ({
   // 표시하도록 되어 있다.
   setShips: (ships) => set(Array.isArray(ships) ? { ships } : {}),
 
-  setSelectedObject: (obj) => set({ selectedObject: obj }),
+  // 3D 에서 배를 고르면 그 배를 추적한다(선박 추적 띠)
+  setSelectedObject: (obj) => set(() => ({
+    selectedObject: obj,
+    ...(obj?.type === 'Ship' && obj.callsgn ? { trackedVessel: { callsgn: String(obj.callsgn).trim(), vessel_name: obj.id || null } } : {}),
+  })),
+
+  // [2026-09-29] 추적 선박 — 어느 화면에서든 배를 고르면 여기 담기고, 선박 추적 띠·메뉴·각 화면이 같은 배를 비춘다.
+  //   threadFocus: 띠·경고에서 넘어와 그 화면이 그 배 자리로 가야 할 때({ target, at })
+  trackedVessel: null,
+  trackVessel: (v) => set(() => {
+    const cs = v && String(v.callsgn || v.call_sign || '').trim();
+    return { trackedVessel: cs ? { callsgn: cs, vessel_name: v.vessel_name || v.name || null } : null };
+  }),
+  threadFocus: null,
+  requestThreadFocus: (target) => set({ threadFocus: { target, at: Date.now() } }),
 
   // 온산 MVP 에이전트 패널 상태 (/api/v1/*)
   berthGroups: [],
@@ -79,7 +93,6 @@ const useSensorStore = create((set, get) => ({
   // 두 패널이 각자 접힘을 들고 있으면 위치가 어긋나므로 여기서 공유한다.
   // [2026-09-28] CCTV·레이더는 접힌 상태가 기본 — 펼쳐 두면 3D 장면의 절반을 덮었다(현우 D11)
   // [2026-09-29] 다시 펼친 채 시작(현우) — 실제 관제실이 늘 띄워 두는 감시 화면이라 흐름의 첫 장면이다.
-  //   가상이라는 사실은 숨겨서가 아니라 창의 표식("트윈 카메라 · CCTV 영상 없음")으로 밝힌다. 접기 단추는 그대로.
   hudCctvCollapsed: false,
   setHudCctvCollapsed: (v) => set({ hudCctvCollapsed: Boolean(v) }),
   // 3D 가벼운 모드(그림자 끔 · 해상도 1배) — Scene 의 PerfProbe 가 켜거나 ?lite=1
@@ -90,7 +103,10 @@ const useSensorStore = create((set, get) => ({
 
   // 선박 상세 패널 (지도 마커/입항 목록 클릭 → 선박 여정 뷰)
   selectedVessel: null,
-  setSelectedVessel: (v) => set({ selectedVessel: v }),
+  setSelectedVessel: (v) => set(() => ({
+    selectedVessel: v,
+    ...(v?.callsgn ? { trackedVessel: { callsgn: String(v.callsgn).trim(), vessel_name: v.vessel_name || null } } : {}),
+  })),
   // 다른 화면(배정현황 등)에서 "이 배를 협상 콘솔에서 처리해 달라"는 요청.
   // 콘솔이 소비하면 clear 한다 — 값이 남아 있으면 라우팅 때마다 다시 열린다.
   consoleRequest: null,
@@ -113,7 +129,10 @@ const useSensorStore = create((set, get) => ({
   // [2026-09-28] extra = { subject, record } — subject 는 판정에 쓴 선석·흘수·화물(표의 행 그대로),
   // record 는 이력에 남은 판정. 판단 과정 창은 이 둘로 '근거'를 보여준다(실행 버튼 없음).
   requestConsole: (callsgn, cargo = null, extra = {}) =>
-    set({ consoleRequest: { callsgn, cargo, ...extra, at: Date.now() } }),
+    set({
+      consoleRequest: { callsgn, cargo, ...extra, at: Date.now() },
+      ...(callsgn ? { trackedVessel: { callsgn: String(callsgn).trim(), vessel_name: extra?.subject?.vessel_name || null } } : {}),
+    }),
   clearConsoleRequest: () => set({ consoleRequest: null }),
 
   // 3D 관제 화면 → 정밀 검토(Omniverse) 지목. 3D 정보창(캔버스 안)에서 누르고,

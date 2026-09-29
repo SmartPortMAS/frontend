@@ -13,6 +13,7 @@ import { ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 import { cargoSummary } from '../../utils/cargoText';
 import DemoChip from '../common/DemoChip';
 import { useDemoCargo } from '../../utils/demoCargo';
+import { showDisclosure } from '../../utils/disclosure';
 
 // 기록된 판정 카드 — 표와 같은 색·같은 말
 const LEVEL_COLOR = { '적합': COLORS.teal, '주의': COLORS.yellow, '부적합': COLORS.red, '판정불가': COLORS.yellow };
@@ -727,7 +728,7 @@ export default function AgentConsole({ mode = 'qa' }) {
                 {berthNow || '선석 미확인'} · {cargoSummary(target.cargos?.length ? target.cargos : [target.cargo].filter(Boolean)) || '화물 미확인'}
                 {target.draught_m ? ` · 흘수 ${target.draught_m} m` : ''}
               </div>
-              {demoAround.any && (
+              {showDisclosure() && demoAround.any && (
                 <div style={{ fontSize: 11, color: COLORS.textSecondary, marginTop: 4, display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
                   <DemoChip derived={!demoAround.own.length} entries={[...demoAround.own, ...demoAround.near]} />
                   <span>

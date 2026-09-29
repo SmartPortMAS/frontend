@@ -1,3 +1,4 @@
+import { showDisclosure } from '../../../utils/disclosure';
 import { useState, useEffect, useMemo } from 'react';
 import useSensorStore from '../../../stores/useSensorStore';
 import useDashboardData from '../../../hooks/useDashboardData';
@@ -189,7 +190,7 @@ export default function CCTVPanel() {
         CAM-{String(camNo).padStart(2, '0')} · {berth?.name}
       </div>
       <div style={{ position: 'absolute', top: 30, right: 12, color: P.sub, fontSize: '12px', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
-        {P.label} 모드 {isManual ? '· 수동 선택' : '· 자동 순찰'} · CCTV 영상 없음
+        {P.label} 모드 {isManual ? '· 수동 선택' : '· 자동 순찰'}{showDisclosure() ? ' · CCTV 영상 없음' : ''}
       </div>
       <div style={{ position: 'absolute', bottom: 10, left: 12, color: P.sub, fontSize: '12.5px', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
         {footer}
