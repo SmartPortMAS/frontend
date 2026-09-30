@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
 import { COLORS } from '../../utils/constants';
-import { alertId, LEVEL_STYLE, levelStyle, alertParts } from '../../utils/alertUtils';
-import { FaExclamationTriangle, FaCheck, FaTimes, FaChevronRight } from 'react-icons/fa';
+import { alertId, alertIds, ackOf, mergeAlerts, SCOPE_LABEL, LEVEL_STYLE, levelStyle, alertParts } from '../../utils/alertUtils';
+import { FaExclamationTriangle, FaCheck, FaTimes, FaChevronRight, FaShip, FaAnchor } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 관제 경고 — 헤더 알림 벨 + 드롭다운
@@ -34,12 +34,14 @@ export default function AlertBell() {
   const [byBerth, setByBerth] = useState(false);
   const wrapRef = useRef(null);
 
-  const alerts = data?.alerts ?? [];
+  // 같은 두 부두의 인접 혼재 경고는 한 건으로 묶는다(화물쌍은 카드 안 목록으로)
+  const alerts = mergeAlerts(data?.alerts ?? []);
   const vessels = data?.real_traffic ?? [];
   const nameOf = (cs) => vessels.find((v) => v.callsgn === cs)?.vessel_name || null;
   // 배지 숫자는 참고(INFO)를 뺀 실제 경고만 센다. 참고 항목도 목록에는 남는다.
   const warnings = alerts.filter((a) => a.level !== 'INFO');
-  const unacked = warnings.filter((a) => !alertAcks[alertId(a)]);
+  const unacked = warnings.filter((a) => !ackOf(a, alertAcks));
+  const ackAll = (a) => alertIds(a).forEach((id) => ackAlert(id));
 
   const counts = alerts.reduce((acc, a) => {
     const key = LEVEL_STYLE[a.level] ? a.level : 'INFO';
@@ -75,7 +77,7 @@ export default function AlertBell() {
   const ordered = [...alerts]
     .filter((a) => !only || (LEVEL_STYLE[a.level] ? a.level : 'INFO') === only)
     .sort((a, b) => (byBerth ? String(a.berth_name || '힣').localeCompare(String(b.berth_name || '힣'), 'ko') : 0)
-      || (alertAcks[alertId(a)] ? 1 : 0) - (alertAcks[alertId(b)] ? 1 : 0));
+      || (ackOf(a, alertAcks) ? 1 : 0) - (ackOf(b, alertAcks) ? 1 : 0));
 
   return (
     <div className="alert-bell" ref={wrapRef}>
@@ -113,7 +115,7 @@ export default function AlertBell() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
               {unacked.length > 0 && (
-                <button type="button" className="alert-dropdown-allack" onClick={() => unacked.forEach((a) => ackAlert(alertId(a)))}>
+                <button type="button" className="alert-dropdown-allack" onClick={() => unacked.forEach((a) => ackAll(a))}>
                   모두 확인
                 </button>
               )}
@@ -131,7 +133,7 @@ export default function AlertBell() {
             )}
             {ordered.map((a, i) => {
               const id = alertId(a);
-              const ack = alertAcks[id];
+              const ack = ackOf(a, alertAcks);
               const style = levelStyle(a.level);
               const p = alertParts(a, nameOf);
               const canOpen = Boolean((a.callsgns || [])[0]) || p.kind === 'verdict' || p.kind === 'draught';
@@ -156,12 +158,19 @@ export default function AlertBell() {
                 >
                   <div className="alert-card-top">
                     <span className="alert-row-level" style={{ color: style.color, borderColor: style.color }}>{style.label}</span>
+                    {/* 선박 경고인가 선석 경고인가 — 선박은 그 배의 판정, 선석은 선석에 놓인 화물끼리 */}
+                    {p.scope && (
+                      <span className="alert-scope">
+                        {p.scope === 'ship' ? <FaShip aria-hidden="true" /> : <FaAnchor aria-hidden="true" />}{SCOPE_LABEL[p.scope]}
+                      </span>
+                    )}
                     <strong className="alert-card-title">{p.title}</strong>
                     {p.level && <span className="alert-card-level" style={{ color: LEVEL_TONE[p.level] || style.color }}>{p.level}</span>}
                     {canOpen && <FaChevronRight className="alert-card-go" aria-hidden="true" />}
                   </div>
                   <dl className="alert-card-grid">
                     {p.place && (<><dt>선석</dt><dd>{p.place}{p.stage ? <span className="alert-card-stage">{p.stage}</span> : null}</dd></>)}
+                    {p.cargo && (<><dt>화물</dt><dd>{p.cargo}</dd></>)}
                     {p.why && (<><dt>이유</dt><dd>{p.why}</dd></>)}
                     {p.action && (<><dt>조치</dt><dd>{p.action}{p.recipient ? <> → <b>{p.recipient}</b></> : null}</dd></>)}
                   </dl>
@@ -177,7 +186,7 @@ export default function AlertBell() {
                       : (
                         <button
                           type="button" className="alert-row-btn alert-row-btn--ack" title="확인 처리"
-                          onClick={(e) => { e.stopPropagation(); ackAlert(id); }}
+                          onClick={(e) => { e.stopPropagation(); ackAll(a); }}
                         >
                           <FaCheck />
                         </button>

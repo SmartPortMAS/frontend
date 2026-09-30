@@ -17,7 +17,7 @@ import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
 import { BACKEND_BASE, postTwinFocus } from '../api/backendAdapter';
 import { FaPlay, FaExclamationTriangle, FaFastForward } from 'react-icons/fa';
-import { levelStyle, alertParts } from '../utils/alertUtils';
+import { levelStyle, alertParts, mergeAlerts } from '../utils/alertUtils';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
 // 실행: D:\omniverse\start_twin_stream.bat (Isaac Sim 스트리밍 + 웹 뷰어 동시 기동)
@@ -57,7 +57,7 @@ export default function DigitalTwinPage() {
   //   5초마다 글이 툭 바뀌었다(현우). 전부 돌리고, 새 건은 아래에서 올라오며, 띠 아래 선이 다음 건까지 남은 시간을
   //   채운다. 마우스를 올리면 멈추고 ‹ › 로 넘긴다.
   const { data: dashForTicker } = useDashboardData();
-  const allAlerts = dashForTicker?.alerts ?? [];
+  const allAlerts = useMemo(() => mergeAlerts(dashForTicker?.alerts ?? []), [dashForTicker?.alerts]);
   // [2026-09-30] 위험만 돈다 — 주의 · 참고까지 51건을 돌리면 볼 수 없다(현우). 나머지는 경고 벨에서 본다.
   const tickerItems = useMemo(() => allAlerts.filter((x) => x.level === 'DANGER'), [allAlerts]);
   const dangerCount = allAlerts.filter((a) => a.level === 'DANGER').length;
@@ -306,7 +306,7 @@ export default function DigitalTwinPage() {
                 flex: 1, minWidth: 0, color: '#b8c4d6',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }} title={p.full}>
-                {p.why}{p.action ? `  →  ${p.action}${p.recipient ? ` (${p.recipient})` : ''}` : ''}
+                {[p.cargo, p.why].filter(Boolean).join(' · ')}{p.action ? `  →  ${p.action}${p.recipient ? ` (${p.recipient})` : ''}` : ''}
               </span>
             </div>
             <span style={{ flexShrink: 0, color: '#ff8a80', fontSize: 11.5, fontWeight: 700 }}>위험 {dangerCount}</span>

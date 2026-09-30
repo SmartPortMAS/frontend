@@ -18,6 +18,42 @@ import { COLORS } from './constants';
 export const alertId = (a) =>
   `${a.type}-${a.berth_name ?? ''}-${a.message ?? a.created_at_utc ?? ''}`;
 
+/**
+ * 같은 두 부두 사이의 인접 혼재 경고는 한 건으로 묶는다(2026-09-30).
+ * 서버는 화물쌍마다 한 건씩 보내서, 같은 두 부두가 수십 번 되풀이됐다(104건 중 54건).
+ * 관제사가 볼 단위는 '어느 선석과 어느 선석'이고, 화물쌍은 그 안의 목록이다.
+ */
+export function mergeAlerts(alerts) {
+  const out = [];
+  const byPair = new Map();
+  for (const a of alerts || []) {
+    if (a.type !== 'ADJACENT_SEGREGATION' || !a.neighbor_berth_name) { out.push(a); continue; }
+    const key = `${a.berth_name}|${a.neighbor_berth_name}`;
+    const g = byPair.get(key);
+    if (!g) {
+      const m = { ...a, members: [a] };
+      byPair.set(key, m);
+      out.push(m);
+    } else {
+      g.members.push(a);
+      if (a.level === 'DANGER') g.level = 'DANGER';
+      g.callsgns = [...new Set([...(g.callsgns || []), ...(a.callsgns || [])])];
+    }
+  }
+  return out;
+}
+
+/** 묶은 경고는 안에 든 경고 전부의 확인 키를 갖는다 */
+export const alertIds = (a) => (a?.members ? a.members.map(alertId) : [alertId(a)]);
+/** 확인 기록 — 묶은 경고는 전부 확인됐을 때만 확인으로 본다 */
+export const ackOf = (a, acks) => {
+  const ids = alertIds(a);
+  return ids.every((id) => acks[id]) ? acks[ids[0]] : null;
+};
+
+/** 경고가 무엇에 관한 것인가 — 선박(그 배의 판정 · 흘수) / 선석(선석에 놓인 화물끼리) */
+export const SCOPE_LABEL = { ship: '선박', berth: '선석' };
+
 export const LEVEL_STYLE = {
   DANGER: { color: COLORS.red, label: '위험' },
   WARNING: { color: COLORS.yellow, label: '경고' },
@@ -124,8 +160,11 @@ const STAGE_KO = { 입항전: '입항 전', 접안직전: '접안 직전', 하�
 
 function shortWhy(why) {
   const t = why || '';
+  const lv = t.match(/혼재 등급이 '(주의|위험|배정불가)'/);
+  if (lv) return `이웃 화물 혼재 ${lv[1]}`;
+  if (/같은 선박 화물끼리 혼재 충돌/.test(t)) return '같은 배 화물끼리 혼재 충돌';
+  if (/흘수여유가/.test(t)) { const mm = t.match(/흘수여유가\s*([\d.]+)m로 요구 기준\(([\d.]+)m\)/); return mm ? `흘수 여유 ${mm[1]} m (필요 ${mm[2]})` : '흘수 여유 부족'; }
   if (/혼재 충돌/.test(t)) return '이웃 화물과 혼재 충돌';
-  if (/혼재 등급이 '주의'/.test(t)) return '이웃 화물 혼재 주의';
   if (/찾을 수 없습니다|마스터 미등록/.test(t)) return '선석 자료 없음';
   if (/화물을 식별/.test(t)) return '화물 미확인';
   if (/항해상태/.test(t)) return '항해 상태 미확인';
@@ -142,30 +181,49 @@ export function alertParts(alert, nameOf = () => null) {
     const [why, act] = rest.split(/\s*→\s*/);
     const am = (act || '').match(/^(.+?)\((.+?)\)\s*\.?$/);
     return {
-      kind: 'verdict', title: vessel, place: berth, stage: STAGE_KO[stage], level,
+      kind: 'verdict', scope: 'ship', title: vessel, place: berth, stage: STAGE_KO[stage], level,
       why: shortWhy(why), action: am ? am[1].replace(/\s*검토 필요\s*$/, '').trim() : null, recipient: am ? am[2] : null, full: msg,
     };
   }
   if (alert?.type === 'SEGREGATION' || alert?.type === 'ONBOARD_SEGREGATION') {
     m = msg.match(/^(.+?):\s*(.+?)\s*↔\s*(.+?)\s*혼재금지(?:\((.+?)\))?/);
+    const im = m ? null : msg.match(/^(.+?):\s*(.+?)\s*↔\s*(.+?)\s*(IMDG 격리코드\s*\d+)/);
+    if (im) m = [im[0], im[1], im[2], im[3], im[4]];
     if (m) {
       const more = (alert.pair_count || 1) - 1;
+      // 같은 배에 실린 화물끼리(ONBOARD)는 그 배의 일, 선석에 놓인 화물끼리는 그 선석의 일
+      const onboard = alert.type === 'ONBOARD_SEGREGATION';
       return {
-        kind: 'pair', title: `${m[2]} ↔ ${m[3]}`, place: alert.berth_name || m[1], level: alert.risk_level || null,
-        why: ['혼재금지', m[4], more > 0 ? `외 ${more}쌍` : null].filter(Boolean).join(' · '), details: alert.details || [], full: msg,
+        kind: 'pair', scope: onboard ? 'ship' : 'berth',
+        title: onboard ? (nameOf((alert.callsgns || [])[0]) || alert.berth_name || m[1]) : (alert.berth_name || m[1]),
+        place: onboard ? (alert.berth_name || m[1]) : null,
+        cargo: `${m[2]} ↔ ${m[3]}${more > 0 ? ` 외 ${more}쌍` : ''}`, level: alert.risk_level || null,
+        why: (im ? [im[4]] : ['혼재금지', m[4]]).filter(Boolean).join(' · '), details: alert.details || [], full: msg,
       };
     }
   }
   if (alert?.type === 'ADJACENT_SEGREGATION') {
-    m = msg.match(/^(.+?):\s*(.+?)\s*↔\s*인접\s*(.+?)\((\d+)m\)\s*(.+?)\s*—/);
-    if (m) {
-      return { kind: 'pair', title: `${m[2]} ↔ ${m[5]}`, place: `${m[1]} ↔ ${m[3]}`, level: null, why: `이웃 선석 ${m[4]} m`, full: msg };
+    const members = alert.members || [alert];
+    const pairs = [...new Set(members.map((x) => {
+      const mm = String(x.message || '').match(/:\s*(.+?)\s*↔\s*인접\s*.+?\(\d+m\)\s*(.+?)\s*(?:혼재금지|—)/);
+      return mm ? `${mm[1]} ↔ ${mm[2]}` : null;
+    }).filter(Boolean))];
+    m = msg.match(/^(.+?):\s*.+?↔\s*인접\s*(.+?)\((\d+)m\)/);
+    if (m && pairs.length) {
+      const cat = (msg.match(/혼재금지\((.+?)\)/) || [])[1];
+      const dist = alert.distance_m != null ? Math.round(alert.distance_m) : Number(m[3]);
+      return {
+        kind: 'pair', scope: 'berth', title: `${alert.berth_name || m[1]} ↔ ${alert.neighbor_berth_name || m[2]}`, place: null,
+        cargo: `${pairs[0]}${pairs.length > 1 ? ` 외 ${pairs.length - 1}쌍` : ''}`, level: alert.risk_level || null,
+        why: [/혼재금지/.test(msg) ? '혼재금지' : '격리 확인', cat, `이웃 ${dist} m`].filter(Boolean).join(' · '),
+        details: pairs.length > 1 ? pairs : [], full: members.map((x) => x.message).join('\n'),
+      };
     }
   }
   if (alert?.type === 'DRAUGHT') {
     m = msg.match(/^(.+?):\s*(\S+)\s*흘수 여유 부족\s*\(UKC\s*([\d.]+)\s*m/);
     if (m) {
-      return { kind: 'draught', title: nameOf(m[2]) || m[2], place: m[1], level: null, why: `흘수 여유 ${m[3]} m`, full: msg };
+      return { kind: 'draught', scope: 'ship', title: nameOf(m[2]) || m[2], place: m[1], level: null, why: `흘수 여유 ${m[3]} m`, full: msg };
     }
   }
   const { head } = splitAlertMessage(msg);
