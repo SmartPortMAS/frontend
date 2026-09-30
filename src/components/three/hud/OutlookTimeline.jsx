@@ -525,8 +525,10 @@ export default function OutlookTimeline({ focus, onClose, onBerth, onWide }) {
         <button
           key={`${p.key}-w`} type="button" title={tipW} onClick={() => jumpTo(p.appearAt, true)}
           style={{
-            position: 'absolute', left: `${wl}%`, width: `${Math.max(wr - wl, 0.6)}%`, top, height: h, padding: 0,
-            borderRadius: '6px 2px 2px 6px', border: `1px solid rgba(${held ? '248,113,113' : '251,191,36'},0.6)`, cursor: 'pointer', fontFamily: 'inherit',
+            // 앞 배 뒤에서 기다리면(나중에 접안) 줄 아래 얇은 띠 — 같은 줄의 앞 배 막대를 덮지 않게. 끝내 못 대면 막대 높이로
+            position: 'absolute', left: `${wl}%`, width: `${Math.max(wr - wl, 0.6)}%`,
+            top: p.berthAt == null ? top : top + h - 5, height: p.berthAt == null ? h : 5, padding: 0, zIndex: 1,
+            borderRadius: p.berthAt == null ? '6px 2px 2px 6px' : 2, border: `1px solid rgba(${held ? '248,113,113' : '251,191,36'},0.6)`, cursor: 'pointer', fontFamily: 'inherit',
             background: hatch(held ? '248,113,113' : '251,191,36', 0.55), color: '#fff', fontSize: 10.5, lineHeight: `${h - 2}px`, textAlign: 'left', overflow: 'hidden',
           }}
         >
