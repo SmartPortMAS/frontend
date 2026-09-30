@@ -1,4 +1,5 @@
 import { COLORS } from '../../utils/constants';
+import { stripPairs } from '../../utils/pairList';
 
 // 등급 근거(verdict_basis) 목록 — 선박 상세 패널·화물 혼재 심사 화면이 같이 쓴다 (2026-09-29).
 //   '이웃 화물 충돌: 4부두 1·2선석 질산 — 기준A / 기준B' → '충돌 대상 — 쉬운 말 한 줄' + 작은 근거 줄.
@@ -25,7 +26,8 @@ function plain(reasons) {
 export default function ConflictBasisList({ basis, color, fontSize = '12.5px', showSource = true }) {
   const line = (b) => {
     const m = b.match(/^이웃 화물 충돌: (.+?) — (.+)$/);
-    if (!m) return <li key={b}>{b}</li>;
+    // [2026-09-30] '같은 선박 화물끼리 혼재 충돌 11쌍(A↔B, …)' — 결론 한 줄만. 쌍 목록은 '근거 자세히'의 표로(PairGroups)
+    if (!m) return <li key={b}>{stripPairs(b).text}</li>;
     const { what, src } = plain(m[2].split(' / '));
     return (
       <li key={b}>
