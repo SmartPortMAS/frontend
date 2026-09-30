@@ -199,10 +199,13 @@ export default function PortCallTable() {
         })}
       </div>
       {cargoFilter === 'UNKNOWN' && (
-        <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginBottom: '8px', lineHeight: 1.5 }}>
-          선종을 <b>모르는</b> 배입니다 — 일반화물선이 아닙니다. 선종은 PORT-MIS 에만 있고
-          AIS 에는 없는데, PORT-MIS 에 MMSI 컬럼이 없어 호출부호로만 대조할 수 있습니다
-          (AIS 호출부호는 선택 필드라 결측이 많고, 예선·급유선처럼 입항신고 대상이 아닌 배도 섞입니다).
+        <div style={{ fontSize: '11.5px', color: COLORS.textDim, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: 4 }}>
+          {/* [2026-09-30] 설명은 도움말로 — 줄글이 목록 위를 차지했다(현우) */}
+          선종을 <b>모르는</b> 배입니다
+          <HelpTip title="선종 미확인">
+            <div>일반화물선이라는 뜻이 아닙니다. 선종은 PORT-MIS 입항 신고에만 있고 AIS(선박위치)에는 없습니다.</div>
+            <div style={{ marginTop: 4 }}>PORT-MIS 에 MMSI 가 없어 호출부호로만 두 자료를 맞추는데, AIS 호출부호는 선택 항목이라 빠진 배가 많고, 예선 · 급유선처럼 입항 신고 대상이 아닌 배도 섞입니다.</div>
+          </HelpTip>
         </div>
       )}
       <div style={{ overflowX: 'auto' }}>

@@ -1922,3 +1922,15 @@ button.bb-ship:hover { filter: brightness(0.94); }
 .alert-card-more ul { max-height: 132px; overflow-y: auto; }
 /* [2026-09-30] 72시간 시뮬레이션의 앞으로 경고 */
 .alert-ahead { flex-shrink: 0; font-size: 11px; font-weight: 800; color: #0B4A8F; border: 1px solid #9CC3EA; background: #EAF3FC; border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+
+/* [2026-09-30] 혼재 충돌 화물쌍 — 화물별로 묶은 표 */
+.pair-groups { display: grid; gap: 6px; }
+.pair-groups-title { font-size: 12.5px; font-weight: 700; color: var(--text-primary); }
+.pair-groups-grid { display: grid; gap: 5px; }
+.pair-groups-row { display: grid; grid-template-columns: minmax(120px, max-content) 18px 1fr; gap: 6px; align-items: baseline; font-size: 12px; }
+.pair-groups-row b { color: var(--text-primary); }
+.pair-groups-x { font-weight: 800; text-align: center; }
+.pair-groups-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.pair-chip { border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; background: #F7F9FB; color: var(--text-secondary); white-space: nowrap; }
+.sr-heading { font-size: 13px; color: var(--text-secondary); }
+.sr-heading b { color: var(--text-primary); }

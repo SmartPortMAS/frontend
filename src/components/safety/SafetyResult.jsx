@@ -5,6 +5,8 @@ import ConflictNetworkGraph from './ConflictNetworkGraph';
 import DemoChip from '../common/DemoChip';
 import { useDemoCargo } from '../../utils/demoCargo';
 import ConflictBasisList from '../common/ConflictBasisList';
+import PairGroups from '../common/PairGroups';
+import { stripPairs } from '../../utils/pairList';
 import { FaCheckCircle, FaTimesCircle, FaQuestionCircle } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +68,7 @@ function shortBasis(d) {
   return parts.join(' · ') || '-';
 }
 
-export default function SafetyResult({ result, narrativeLoading = false, berthName, cargoName }) {
+export default function SafetyResult({ result, narrativeLoading = false, berthName, cargoName, heading = null, compact = false }) {
   const demo = useDemoCargo();
   const [showAllGates, setShowAllGates] = useState(false);
   const style = RISK_STYLE[result?.risk_level] || { color: COLORS.textDim };
@@ -86,17 +88,29 @@ export default function SafetyResult({ result, narrativeLoading = false, berthNa
   });
 
   if (!result) return null;
+  // [2026-09-30] 근거 문장 안의 긴 화물쌍 목록을 떼어 '근거 자세히'의 표로 — 결론 줄과 판단 사유에 같은 쌍이 두 번 줄글로 나왔다(현우)
+  const basisPairs = (result.explanation?.basis || []).map((b) => stripPairs(b)).filter((x) => x.pairs.length);
+  // 판단 사유는 문장별 항목으로 — 앞의 '[혼재 판정 X]' 꼬리표는 배지가 이미 보여 주고, 같은 선박 쌍 문장은 아래 표 제목이 대신한다
+  const summaryLines = stripPairs(result.explanation?.summary || '').text
+    .replace(/^\[[^\]]*\]\s*/, '')
+    .split(/(?<=[.。])\s+(?=[가-힣A-Za-z(])/)
+    .map((s) => s.trim())
+    .filter((s) => s && !(basisPairs.length && /같은 선박 화물/.test(s)));
   return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {heading && <div className="sr-heading">{heading}</div>}
           {/* [2026-09-29] 등급 배지 위, 근거 글은 그 아래 전체 너비로 — 배지 오른쪽에 좁게 붙으면 충돌 줄이
               여러 번 꺾여 읽히지 않았다(사용자 지적). */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-start' }}>
-            <div style={{
-              padding: '10px 22px', borderRadius: '10px', border: `2px solid ${style.color}`,
-              color: style.color, fontSize: '22px', fontWeight: 800, background: COLORS.card,
-            }}>
-              {result.risk_level}
-            </div>
+            {/* [2026-09-30] compact: 대체 선석 검토처럼 머리글에 등급이 이미 있으면 큰 배지를 다시 안 보인다 */}
+            {!compact && (
+              <div style={{
+                padding: '10px 22px', borderRadius: '10px', border: `2px solid ${style.color}`,
+                color: style.color, fontSize: '22px', fontWeight: 800, background: COLORS.card,
+              }}>
+                {result.risk_level}
+              </div>
+            )}
             {/* [2026-08-23] "혼재 룰엔진 하한 OO · 인화성 OO" 줄을 뺐다.
                 · 하한: 등급을 규칙엔진이 확정하게 바뀌면서(risk_level ==
                   rule_engine_floor) 왼쪽 뱃지와 항상 같은 값이 됐다. 예전엔
@@ -215,14 +229,19 @@ export default function SafetyResult({ result, narrativeLoading = false, berthNa
             근거 자세히 — 판단 사유 · 통과 규칙 {passes.length}개{result.explanation?.checklist?.length ? ` · MSDS 체크리스트 ${result.explanation.checklist.length}` : ''}
           </summary>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
-          {result.explanation?.summary && (
-            <div style={{ fontSize: '12px', color: COLORS.textSecondary, lineHeight: 1.65, whiteSpace: 'pre-line' }}>{result.explanation.summary}</div>
+          {summaryLines.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: COLORS.textSecondary, lineHeight: 1.65 }}>
+              {summaryLines.map((s) => <li key={s}>{s}</li>)}
+            </ul>
           )}
+          {basisPairs.map((x) => (
+            <PairGroups key={x.text} title={x.text.split(' — ')[0].replace(/\s*\d+쌍$/, '')} pairs={x.pairs} color={style.color} />
+          ))}
           <button onClick={() => setShowAllGates((v) => !v)} style={{
             alignSelf: 'flex-start', background: 'none', border: 'none', color: COLORS.info,
             cursor: 'pointer', fontSize: '12px', padding: 0,
           }}>
-            {showAllGates ? '▲ 통과 게이트 접기' : `▼ 통과 게이트 ${passes.length}개 펼치기`}
+            {showAllGates ? '▲ 통과한 규칙 접기' : `▼ 통과한 규칙 ${passes.length}개 보기`}
           </button>
           {showAllGates && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
