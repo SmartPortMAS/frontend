@@ -261,10 +261,20 @@ export default function ShipCargoPanel() {
               <div style={{ marginTop: 14 }}>
                 {pickedRow ? (
                   pickedRow.verdict
-                    ? <SafetyResult result={pickedRow.verdict} berthName={pickedRow.wharf_name} cargoName={subject.cargos[0]?.name} />
+                    ? (
+                      <SafetyResult
+                        result={pickedRow.verdict} berthName={pickedRow.wharf_name} cargoName={subject.cargos[0]?.name}
+                        heading={<>대체 후보 <b>{pickedRow.wharf_name}</b>에 댈 때 — 혼재 <b style={{ color: RISK_STYLE[pickedRow.verdict.risk_level]?.color }}>{pickedRow.verdict.risk_level}</b></>}
+                        compact
+                      />
+                    )
                     : <p className="sc-dim">이 선석의 혼재 심사를 받지 못했습니다.</p>
                 ) : basis.state === 'ready' ? (
-                  <SafetyResult result={basis.result} berthName={subject.berth} cargoName={subject.cargos[0]?.name} />
+                  <SafetyResult
+                    result={basis.result} berthName={subject.berth} cargoName={subject.cargos[0]?.name}
+                    heading={<>{subject.berthSource || '지금 선석'} <b>{subject.berth}</b> — 혼재 <b style={{ color: RISK_STYLE[basis.result?.risk_level]?.color }}>{basis.result?.risk_level}</b> <span className="sc-dim">· 표에서 후보 선석을 누르면 그 선석의 결과</span></>}
+                    compact
+                  />
                 ) : null}
               </div>
             </>
