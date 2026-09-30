@@ -14,6 +14,7 @@ import { cargoSummary } from '../../utils/cargoText';
 import DemoChip from '../common/DemoChip';
 import { useDemoCargo } from '../../utils/demoCargo';
 import { showDisclosure } from '../../utils/disclosure';
+import { stripPairs } from '../../utils/pairList';
 
 // 기록된 판정 카드 — 표와 같은 색·같은 말
 // 화면 공용 판정 색(utils/verdict) — 판정불가는 보라
@@ -76,6 +77,10 @@ const VERDICT_COLOR = {
 const opinionOf = (orchestration, axis) => (orchestration.opinions || []).find((o) => o.axis === axis);
 
 /** 오케스트레이터 결과 → 에이전트별 발화 목록 */
+// [2026-09-30] 판단 과정 줄의 '같은 선박 화물끼리 혼재 충돌 18쌍(A↔B, …)' — 쌍 목록은 떼고 결론 한 줄만.
+//   쌍은 '혼재 근거 자세히 →'의 화물별 표에서 본다(혼재 카드와 같은 규칙, 현우 9/30).
+const tidyLine = (d) => (typeof d === 'string' ? stripPairs(d).text : d);
+
 function toMessages({ orchestration, berthWeather, vessel }) {
   if (!orchestration) return [];
   const msgs = [];
@@ -860,19 +865,19 @@ export default function AgentConsole({ mode = 'qa' }) {
                       2026-08-21). 첫 2건으로 결론의 근거를 보이고 나머지는 펼침으로. */}
                   {m.detail?.length > 0 && (m.detail.length <= 3 ? (
                     <ul style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
-                      {m.detail.map((d, j) => <li key={j}>{d}</li>)}
+                      {m.detail.map((d, j) => <li key={j}>{tidyLine(d)}</li>)}
                     </ul>
                   ) : (
                     <>
                       <ul style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
-                        {m.detail.slice(0, 2).map((d, j) => <li key={j}>{d}</li>)}
+                        {m.detail.slice(0, 2).map((d, j) => <li key={j}>{tidyLine(d)}</li>)}
                       </ul>
                       <details style={{ marginTop: 3 }}>
                         <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>
                           판단 과정 {m.detail.length - 2}건 더 보기
                         </summary>
                         <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 12, color: COLORS.textSecondary }}>
-                          {m.detail.slice(2).map((d, j) => <li key={j}>{d}</li>)}
+                          {m.detail.slice(2).map((d, j) => <li key={j}>{tidyLine(d)}</li>)}
                         </ul>
                       </details>
                     </>
