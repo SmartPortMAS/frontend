@@ -5,7 +5,7 @@ import { COLORS, NAV_STATUS } from '../../utils/constants';
 import HelpTip from '../common/HelpTip';
 import DemoChip from '../common/DemoChip';
 import { useDemoCargo } from '../../utils/demoCargo';
-import { cargoNames, cargoSummary } from '../../utils/cargoText';
+import { cargoNames, cargoSummary, cargoFit } from '../../utils/cargoText';
 
 const formatKST = (utcString) => {
   if (!utcString) return '-';
@@ -73,7 +73,7 @@ function cargoLabel(v) {
   if (v.cargo) {
     const all = cargoNames(v.cargos);
     return all.length > 1
-      ? { text: cargoSummary(v.cargos), title: all.join(', '), dim: false }
+      ? { text: cargoFit(v.cargos, 15), title: all.join(', '), dim: false }
       : { text: `${v.cargo.name} (${v.cargo.un_no})`, dim: false };
   }
   // 호출부호가 다른 배와 겹치면 화물·선종을 붙일 수 없다. 왜 비었는지 적어준다.
@@ -88,17 +88,17 @@ function cargoLabel(v) {
 // width: table-layout:fixed 에서 쓸 고정 비율 (합계 100%) — 정렬 시 내용 길이에 따라
 // 컬럼 폭이 흔들리던 문제를 없애기 위함.
 const COLUMNS = [
-  { key: 'vessel_name', label: '선박명', width: '21%', getValue: (v) => v.vessel_name ?? '' },
-  { key: 'callsgn', label: '호출부호', width: '8%', getValue: (v) => v.callsgn ?? '' },
+  { key: 'vessel_name', label: '선박명', width: '22%', getValue: (v) => v.vessel_name ?? '' },
+  { key: 'callsgn', label: '호출부호', width: '9%', getValue: (v) => v.callsgn ?? '' },
   // 선종은 PORT-MIS 공식 선종코드(51종). 액체/일반 구분의 근거를 화면에 그대로 둔다 —
   // 뱃지만 있으면 "왜 이 배가 위험물선인가"를 물었을 때 답할 근거가 화면에 없다.
-  { key: 'ship_kind_nm', label: '선종 (PORT-MIS)', width: '13%', getValue: (v) => v.ship_kind_nm ?? '' },
+  { key: 'ship_kind_nm', label: '선종', width: '12%', getValue: (v) => v.ship_kind_nm ?? '' },
   { key: 'nav_status_category', label: '상태', width: '10%', getValue: (v) => (NAV_STATUS[v.nav_status_category] || NAV_STATUS.UNKNOWN).label },
-  { key: 'cargo', label: '화물', width: '16%', getValue: (v) => (v.cargo ? cargoSummary(v.cargos?.length ? v.cargos : [v.cargo]) : '') },
+  { key: 'cargo', label: '화물', width: '17%', getValue: (v) => (v.cargo ? cargoSummary(v.cargos?.length ? v.cargos : [v.cargo]) : '') },
   // AIS 위치로 본 계류 위치(선석·정박지) — 배정이 아니다(2026-09-29 라벨 수정)
   { key: 'berth', label: '계류 위치', width: '10%', getValue: (v) => v.berth ?? (v.anchorage ? `정박지 ${v.anchorage}` : '') },
-  { key: 'sog', label: '속력', width: '6%', getValue: (v) => v.sog ?? 0 },
-  { key: 'received_at_utc', label: '최근 수신', width: '16%', getValue: (v) => (v.received_at_utc ? new Date(v.received_at_utc).getTime() : 0) },
+  { key: 'sog', label: '속력', width: '7%', getValue: (v) => v.sog ?? 0 },
+  { key: 'received_at_utc', label: '최근 수신', width: '13%', getValue: (v) => (v.received_at_utc ? new Date(v.received_at_utc).getTime() : 0) },
 ];
 
 function compareVessels(a, b, getValue) {
@@ -112,6 +112,7 @@ export default function PortCallTable() {
   const demo = useDemoCargo();
   const { data } = useDashboardData();
   const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
+  const tracked = useSensorStore((s) => s.trackedVessel);
 
   // 최근 수신 순 기본 정렬 — 이전 동작(입항 최신순 정렬)과 동일한 기본값 유지.
   const [sort, setSort] = useState({ key: 'received_at_utc', dir: 'desc' });
@@ -228,6 +229,7 @@ export default function PortCallTable() {
               return (
                 <tr
                   key={v.port_call_id}
+                  className={tracked?.callsgn && tracked.callsgn === v.callsgn ? 'row-track' : undefined}
                   onClick={() => setSelectedVessel(v)}
                   style={{ borderBottom: `1px solid rgba(78, 205, 196, 0.06)`, cursor: 'pointer' }}
                   title="클릭하면 선박 상세 패널이 열립니다"

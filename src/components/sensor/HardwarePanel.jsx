@@ -3,7 +3,10 @@ import useHardwareData from '../../hooks/useHardwareData';
 import HelpTip from '../common/HelpTip';
 import { COLORS } from '../../utils/constants';
 import { isOperator } from '../../utils/operatorMode';
+import { showDisclosure } from '../../utils/disclosure';
 import DemoChip from '../common/DemoChip';
+import useSensorStore from '../../stores/useSensorStore';
+import useVesselThread from '../../hooks/useVesselThread';
 import { useDemoCargo } from '../../utils/demoCargo';
 import { FaLock, FaLockOpen, FaPlug, FaExclamationTriangle, FaFlask, FaShip } from 'react-icons/fa';
 
@@ -83,12 +86,23 @@ function GateCard({ gate, onCommand, operator }) {
   const wordColor = gate.offline ? COLORS.textDim : locked ? COLORS.red : COLORS.teal;
   const reason = locked ? shortReason(sent) : null;
   const both = sent?.lock_by?.weather && sent?.lock_by?.assessment;
-  const vessel = Array.isArray(gate.vessels) && gate.vessels[0];
+  // [2026-09-29] 잠금을 만든 배를 먼저 — 첫 배만 보이면 '판정 전' 배가 떠서 왜 잠겼는지 안 보였다
+  const vessels = Array.isArray(gate.vessels) ? gate.vessels : [];
+  const vessel = vessels.find((v) => v.blocking) || vessels[0];
+  const moreVessels = Math.max(0, vessels.length - 1);
   const demo = useDemoCargo();
   const dv = gate.demo_verdict;
+  const { thread } = useVesselThread();
+  const trackVessel = useSensorStore((s) => s.trackVessel);
 
   return (
-    <div className="sensor-card" style={{ borderLeft: `3px solid ${edge}`, opacity: gate.offline ? 0.75 : 1 }}>
+    <div
+      className="sensor-card"
+      style={{
+        borderLeft: `3px solid ${edge}`, opacity: gate.offline ? 0.75 : 1,
+        ...(thread?.gate?.gate_id === gate.gate_id ? { boxShadow: '0 0 0 2px #12354F' } : {}),
+      }}
+    >
       <div className="sensor-card-header">
         <span className="sensor-id">{gate.label} · {gate.berth}</span>
         <HelpTip title={`${gate.label} · ${gate.berth}`} align="right">
@@ -103,7 +117,7 @@ function GateCard({ gate, onCommand, operator }) {
               <div key={v.call_sign}>접안 선박 {v.vessel_name || v.call_sign} · 하역 중 판정 {v.level || '아직 없음'}
                 {v.reasons?.[0] ? ` — ${v.reasons[0]}` : ''}</div>
             )))}
-          {dv && <div>시연 판정 {dv.level}{dv.reason ? ` — ${dv.reason}` : ''} (실측 판정 대신 사용 중)</div>}
+          {dv && showDisclosure() && <div>시연 판정 {dv.level}{dv.reason ? ` — ${dv.reason}` : ''} (실측 판정 대신 사용 중)</div>}
           {st.last_result && <div>장치 마지막 보고 — {st.last_result}</div>}
           <div style={{ marginTop: 6, color: COLORS.textSecondary }}>
             잠그는 근거는 부두별 기상 기준과 그 선석 배의 하역 중 판정(부적합·판정불가)입니다. "주의"는 잠그지 않습니다.
@@ -117,7 +131,13 @@ function GateCard({ gate, onCommand, operator }) {
           <FaPlug /> 연결 끊김
           <span style={{ fontSize: '12px', fontWeight: 400, color: COLORS.textDim }}>전원 · Wi-Fi · 중계 확인</span>
         </div>
-      ) : (
+      ) : null}
+      {gate.offline && sent?.state && (
+        <div style={{ margin: '-6px 0 10px', fontSize: '12.5px', color: sent.state === 'LOCKED' ? COLORS.red : COLORS.textSecondary }}>
+          {sent.state === 'LOCKED' ? `잠금 판정 · ${shortReason(sent) || '잠금'}` : '해제 판정'}
+        </div>
+      )}
+      {gate.offline ? null : (
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', margin: '12px 0 10px' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
             <Lamp on={st.lamp === 'ON'} color={COLORS.red} label="잠금" />
@@ -137,10 +157,18 @@ function GateCard({ gate, onCommand, operator }) {
 
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
         {vessel
-          ? <Chip color={vessel.blocking ? COLORS.red : COLORS.textSecondary}><FaShip size={10} />{vessel.vessel_name || vessel.call_sign} · {vessel.level || '판정 전'}</Chip>
+          ? (
+            <button
+              type="button" onClick={() => trackVessel({ callsgn: vessel.call_sign, vessel_name: vessel.vessel_name })}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}
+            >
+              <Chip color={vessel.blocking ? COLORS.red : COLORS.textSecondary}><FaShip size={10} />{vessel.vessel_name || vessel.call_sign} · {vessel.level || '판정 전'}{moreVessels ? ` 외 ${moreVessels}척` : ''}</Chip>
+            </button>
+          )
           : Array.isArray(gate.vessels) && <Chip color={COLORS.textDim}>접안 선박 없음</Chip>}
-        {dv && <Chip color={['부적합', '판정불가'].includes(dv.level) ? COLORS.red : COLORS.yellow} strong>시연 판정 {dv.level}</Chip>}
-        {st.simulate && <Chip color={COLORS.yellow}>모의 장치</Chip>}
+        {/* [2026-09-30] 시연 판정 · 모의 장치 표식은 ?disclose=1 일 때만(밝히는 것은 발표 말 · 보고서 · 질의응답) */}
+        {dv && showDisclosure() && <Chip color={['부적합', '판정불가'].includes(dv.level) ? COLORS.red : COLORS.yellow} strong>시연 판정 {dv.level}</Chip>}
+        {st.simulate && showDisclosure() && <Chip color={COLORS.yellow}>모의 장치</Chip>}
         {/* 판정으로 잠겼는데 그 판정이 시연용 주입 화물에서 나왔을 수 있으면 밝힌다 */}
         {vessel?.blocking && (() => {
           const d = demo.around(vessel.call_sign, gate.berth);
@@ -162,7 +190,7 @@ function GateCard({ gate, onCommand, operator }) {
 
       {!operator ? (
         <div style={{ fontSize: '12px', color: COLORS.textDim }}>
-          하역 개시 요청 · 중단은 터미널 운영자 화면에서 보냅니다. 이 화면은 장치 상태를 보여줍니다.
+          조작 권한 · 터미널 운영자
         </div>
       ) : (
       <div style={{ display: 'flex', gap: '8px' }}>
@@ -261,9 +289,6 @@ function DemoControl({ demo, demoVerdict, gates, onApply, onClear, onVerdict, on
           </button>
         </span>
       </div>
-      {!open && (
-        <div style={{ fontSize: '12px', color: COLORS.textDim, marginTop: 6 }}>발표장에서 날씨·판정 값을 넣어 잠금 장면을 보여줄 때만 씁니다.</div>
-      )}
       {open && (<>
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '12px' }}>
@@ -326,7 +351,7 @@ export default function HardwarePanel() {
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', margin: '24px 0 14px' }}>
         <h3 style={{ fontSize: '16px', margin: 0, color: 'var(--teal)', display: 'inline-flex', alignItems: 'center' }}>
-          하역 개시 인터락 — 선석 A·B (실물)
+          하역 개시 인터락 — 선석 A·B
           <HelpTip title="하역 개시 인터락">
             <div>선석 A·B 게이트는 실물(라즈베리파이 · 릴레이 · 12V 상시닫힘 밸브)입니다.</div>
             <div style={{ marginTop: 4 }}>관제 서버가 부두별 기상 기준과 그 선석에 붙은 배의 하역 중 판정으로 잠금을 정해 장치에 보냅니다. 잠긴 동안의 하역 개시 요청은 <strong>장치가 거부</strong>하고, 화면은 결과만 보여 줍니다.</div>
@@ -358,7 +383,8 @@ export default function HardwarePanel() {
               onApply={setDemoWeather} onClear={clearDemoWeather}
               onVerdict={setDemoVerdict} onVerdictClear={clearDemoVerdict}
             />
-          ) : (snapshot.demo || snapshot.demo_verdict) ? (
+          ) : (snapshot.demo || snapshot.demo_verdict) && showDisclosure() ? (
+            // [2026-09-30] 화면 출처 문구는 ?disclose=1 일 때만(발표 원칙 — 밝히는 것은 보고서·질의응답)
             <div className="sensor-card" style={{ borderLeft: `3px solid ${COLORS.yellow}`, fontSize: '13px', color: COLORS.textSecondary }}>
               <strong style={{ color: COLORS.yellow }}>시연 입력 중</strong> — 발표용으로 넣은 값입니다. 잠금 규칙은 실제와 같습니다.
             </div>

@@ -456,10 +456,11 @@ export async function fetchAdjacentCargos({ wharf_name, call_sign = null }) {
   }));
 }
 
-export async function fetchAlternativeBerths({ draught_m, chem_id, cas_no, name_hint, hours = 24, extra_cargos = [], exclude_wharf_name = null }) {
+// start — 입항 전 선박은 입항 예정 시각부터의 점유를 본다(없으면 지금부터)
+export async function fetchAlternativeBerths({ draught_m, chem_id, cas_no, name_hint, hours = 24, extra_cargos = [], exclude_wharf_name = null, start = null }) {
   if (draught_m == null) throw new Error('흘수 미수집 — 후보 조회 불가');
   if (!chem_id && !cas_no) throw new Error('화물 미확인 — 후보 조회 불가');
-  const now = new Date();
+  const now = start instanceof Date && !Number.isNaN(start.getTime()) ? start : new Date();
   const res = await fetch(`${BACKEND_BASE}/scheduling/alternatives`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -549,6 +550,15 @@ export async function fetchBerthAssignments() {
   const res = await fetch(`${BACKEND_BASE}/dashboard/berth-assignments`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+/**
+ * 한 부두의 최근 접안 이력 — GET /dashboard/history?facility_like= (출항까지 확정된 입출항 신고).
+ * [2026-09-29 밤] 대시보드 맨 아래 '부두별 접안 이력' 목록 대신 선석 상세 서랍에서 그 부두 것만 본다.
+ */
+export async function fetchBerthHistory(facilityLike, limit = 12) {
+  const qs = new URLSearchParams({ limit: String(limit), facility_like: facilityLike });
+  return getJson(`/dashboard/history?${qs}`);
 }
 
 /**

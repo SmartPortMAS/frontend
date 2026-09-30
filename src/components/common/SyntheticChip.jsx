@@ -1,5 +1,6 @@
 import useDashboardData from '../../hooks/useDashboardData';
 import HelpTip from './HelpTip';
+import { showDisclosure } from '../../utils/disclosure';
 
 // 화물 자료가 합성이라는 표식 (2026-09-29).
 //
@@ -10,7 +11,7 @@ import HelpTip from './HelpTip';
 // 서버가 내려준 화물이 전부 합성일 때만 뜬다 — 실제 신고가 연결되면 저절로 사라진다.
 export default function SyntheticChip({ align = 'left' }) {
   const { data } = useDashboardData();
-  if (!data?.cargo_all_synthetic) return null;
+  if (!showDisclosure() || !data?.cargo_all_synthetic) return null;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, marginLeft: 6, verticalAlign: 'middle' }}>
       <span style={{

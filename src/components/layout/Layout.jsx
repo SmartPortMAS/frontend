@@ -1,8 +1,10 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import PortMisBar from './PortMisBar';
-import { useState } from 'react';
+import VesselTrail from './VesselTrail';
+import useSensorStore from '../../stores/useSensorStore';
+import { useEffect, useRef, useState } from 'react';
 
 // ToastContainer 는 걷어냈다 — useSensorStore.alerts 를 읽는데 그 배열을 채우는
 // addAlert/updateSensorData 를 부르는 곳이 코드베이스에 하나도 없어(WebSocket 경로
@@ -13,6 +15,15 @@ import { useState } from 'react';
 
 export default function Layout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // [2026-09-29] 화면을 옮기면 맨 위부터 — 스크롤 칸이 하나라 앞 화면의 위치가 남아
+  // 선박 판정 → 하역 개시 게이트로 가면 게이트 카드가 아니라 아래 탱크부터 보였다.
+  const { pathname } = useLocation();
+  const contentRef = useRef(null);
+  useEffect(() => { contentRef.current?.scrollTo(0, 0); }, [pathname]);
+  // [2026-09-30] 선박 상세(오른쪽 패널)는 대시보드 것 — 다른 화면으로 가면 닫는다.
+  //   예전엔 열어 둔 채 3D 관제 화면으로 가면 그 위에 그대로 떠 있었다(현우). 띠의 '위치' 칸은 대시보드로 가며 여는 것이라 그대로 된다.
+  const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
+  useEffect(() => { if (pathname !== '/') setSelectedVessel(null); }, [pathname, setSelectedVessel]);
 
   return (
     <div className="app-shell">
@@ -21,7 +32,8 @@ export default function Layout() {
         <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
         <div className="main-area" style={{ marginLeft: sidebarCollapsed ? '72px' : '260px' }}>
           <Header />
-          <main className="page-content">
+          <VesselTrail />
+          <main className="page-content" ref={contentRef}>
             <Outlet />
           </main>
         </div>

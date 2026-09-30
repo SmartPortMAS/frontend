@@ -1,4 +1,4 @@
-import { Html } from '@react-three/drei';
+import { showDisclosure } from '../../utils/disclosure';
 import {
   FaTimes, FaShip, FaDatabase, FaWater, FaAnchor, FaFlask, FaPlay,
 } from 'react-icons/fa';
@@ -26,6 +26,7 @@ function Row({ label, value }) {
  *  센서 데이터 탭에는 이 고지가 있는데 3D 트윈에는 없어서, 같은 값이 한 화면에선
  *  데모, 다른 화면에선 계측값처럼 보였다. */
 function MockNotice() {
+  if (!showDisclosure()) return null;   // [2026-09-30] 출처 표식은 ?disclose=1 일 때만
   return (
     <div style={{
       marginTop: '10px', fontSize: '11px', color: '#f59e0b', lineHeight: 1.5,
@@ -36,6 +37,12 @@ function MockNotice() {
     </div>
   );
 }
+
+// 트윈 상태 어휘 → 화면 말(예전엔 'MOORING' 처럼 영문 대문자가 그대로 나왔다)
+const STATUS_KO = {
+  mooring: '접안', docked: '접안', operating: '하역 중', anchored: '정박지 대기', underway: '항해 중',
+  service: '항내 소형선', approaching: '입항 중', departing: '출항 중', active: '접안 선박 있음', idle: '공석',
+};
 
 export default function InfoPopup({ object, onClose }) {
   const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
@@ -67,17 +74,20 @@ export default function InfoPopup({ object, onClose }) {
     vessel_name: type === 'Ship' ? object.id : null,
     omniOk: omniReady,
   };
-  let outlookNote = '이 선석의 앞으로 72시간을 판정 규칙대로 돌립니다. 이 화면의 선석 색이 시각마다 바뀌어 하역이 언제 막히는지 보입니다.';
-  if (!sceneReady) {
-    outlookNote = type === 'Ship' && !object.berth
-      ? '선석에 붙은 배만 볼 수 있습니다 — 이 배는 항해 중이거나 정박지에서 대기 중입니다.'
-      : '이 선석은 3D 장면에 없습니다 — 장면은 온산 부두만 재현합니다.';
-  }
+  // [2026-09-30] 단추 아래 설명 문장은 뺐다(현우) — 누를 수 없을 때만 짧게 이유를 적는다
+  const outlookNote = sceneReady ? null
+    : type === 'Ship' && !object.berth ? '접안한 배만 — 지금 항해 · 대기 중'
+      : '3D 장면 밖 선석';
 
   return (
-    <Html fullscreen zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
-      {/* Omniverse/2D Map 버튼(top 50~88) 아래에 배치 — 버튼에 가려지지 않음 */}
-      <div style={{ position: 'absolute', top: 100, right: 16, pointerEvents: 'auto', width: '300px' }}>
+    // [2026-09-30] 캔버스 밖 화면 고정 요소다(DigitalTwinPage 가 띄운다). 예전엔 3D 안의 <Html fullscreen> 이라
+    //   카메라가 선석으로 가 있으면 정보창이 3D 원점을 따라 밀려 레이더를 덮거나 위가 잘렸다(현우 지적의 원인).
+    //   레이더 · 선박 목록(z 1000)보다 위, 경고 띠(2000)보다 아래. 길면 안에서 스크롤한다.
+    <>
+      <div style={{
+        position: 'absolute', top: 140, right: 16, zIndex: 1500, width: '300px',
+        maxHeight: 'calc(100% - 160px)', overflowY: 'auto', borderRadius: 12,
+      }}>
         <div className="glass-hud" style={{ width: '100%' }}>
           <div className="hud-header">
             <div className="hud-title">
@@ -95,7 +105,7 @@ export default function InfoPopup({ object, onClose }) {
             {object.status && (
               <div className="hud-status">
                 <span className="status-dot" data-status={object.status}></span>
-                <span className="status-text">{String(object.status).toUpperCase()}</span>
+                <span className="status-text">{STATUS_KO[object.status] || String(object.status)}</span>
               </div>
             )}
 
@@ -107,15 +117,13 @@ export default function InfoPopup({ object, onClose }) {
                 {/* 적재량은 수집 소스가 없다(useLiveTwinShips: cargoAmount=null).
                     예전엔 "0 / 50,000 t" + 0% 진행바를 그렸는데, 50,000 은 근거 없는
                     하드코딩이었고 0 t 는 "빈 배"라는 틀린 정보였다. 모르면 비운다. */}
-                <Row label="적재량" value={object.cargoAmount != null
-                  ? `${object.cargoAmount.toLocaleString()} t`
-                  : '미수집 (적재량 소스 없음)'} />
+                {object.cargoAmount != null && <Row label="적재량" value={`${object.cargoAmount.toLocaleString()} t`} />}
                 {object.callsgn && <Row label="호출부호" value={object.callsgn} />}
                 {object.mmsi && <Row label="MMSI" value={object.mmsi} />}
                 {object.vessel_speed != null && (
                   <Row label="속력 / 침로" value={`${object.vessel_speed} kn / ${object.vessel_heading ?? '-'}°`} />
                 )}
-                {object.is_real && (
+                {object.is_real && showDisclosure() && (
                   <div style={{ marginTop: '8px', fontSize: '11px', color: '#10b981' }}>
                     항만공사 선박위치 수신 — 위치·속력·항해상태는 실측입니다
                   </div>
@@ -163,7 +171,7 @@ export default function InfoPopup({ object, onClose }) {
                 <Row label="기상 임계군" value={ONSAN_WEATHER_GROUP[object.id]} />
                 <Row label="계류 선박" value={object.mooredShip || '없음'} />
                 <div style={{ marginTop: '8px', fontSize: '11px', color: '#8ba3b8' }}>
-                  ADJACENT_TO 인접(혼재 감시):{' '}
+                  이웃 선석(혼재 감시) ·{' '}
                   {adjacents.length > 0
                     ? adjacents.join(', ')
                     : '없음'}
@@ -200,18 +208,13 @@ export default function InfoPopup({ object, onClose }) {
                 >
                   <FaPlay /> 앞으로 72시간 판정 흐름
                 </button>
-                <div style={{ marginTop: '6px', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.5 }}>{outlookNote}</div>
+                {outlookNote && <div style={{ marginTop: '6px', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.5 }}>{outlookNote}</div>}
               </div>
             )}
 
-            {type === 'Ship' && object.is_real && (
-              <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: '#8ba3b8', lineHeight: 1.6 }}>
-                이 배의 판정과 근거(선석 · 기상 · 혼재)는 <strong style={{ color: '#e8f0f2' }}>선박 판정</strong> 화면의 [근거]에서 봅니다.
-              </div>
-            )}
           </div>
         </div>
       </div>
-    </Html>
+    </>
   );
 }

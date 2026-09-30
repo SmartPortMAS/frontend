@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { showDisclosure } from '../../utils/disclosure';
 import { useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import { COLORS, NAV_STATUS, WEATHER_STATUS_COLORS } from '../../utils/constants';
@@ -6,9 +7,9 @@ import { cargoSummary } from '../../utils/cargoText';
 import { ONSAN_BERTHS, ONSAN_WEATHER_GROUP, OMNIVERSE_BERTH_IDS, findBerthIdByName } from '../../utils/geoUtils';
 import useVesselSafety from '../../hooks/useVesselSafety';
 import useDashboardData from '../../hooks/useDashboardData';
-import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs, FaMapMarkerAlt } from 'react-icons/fa';
+import { FaTimes, FaShieldAlt, FaAnchor, FaCloudSun, FaBell, FaCogs, FaMapMarkerAlt, FaShip } from 'react-icons/fa';
 import { simulateMooring } from '../../utils/mooringPhysics';
-import { alertId, typeLabel } from '../../utils/alertUtils';
+import { alertId, ackOf, mergeAlerts, alertParts, levelStyle, SCOPE_LABEL } from '../../utils/alertUtils';
 import AgentChip from '../../utils/AgentChip';
 import ConflictBasisList from '../common/ConflictBasisList';
 import DemoChip from '../common/DemoChip';
@@ -125,7 +126,7 @@ export default function VesselDetailPanel() {
   // 요청형 판정이 아니라 재항 전수 판정에서 나온다) "관련 경고"가 영구히 0건이었다.
   // 지금은 경고가 callsgns 를 실어 보내므로 그걸로 찾는다. 접안 선석이 같은 경고도
   // 이 배와 무관하지 않으므로 함께 본다.
-  const vesselAlerts = (data?.alerts || []).filter((a) => {
+  const vesselAlerts = mergeAlerts(data?.alerts || []).filter((a) => {
     if (vessel.callsgn && (a.callsgns || []).includes(vessel.callsgn)) return true;
     return Boolean(vessel.berth) && a.berth_name === vessel.berth;
   });
@@ -302,9 +303,11 @@ export default function VesselDetailPanel() {
             )}
             {/* 간트차트에는 "진행률은 데모값" 고지가 있는데 여기엔 없어서, 같은
                 데이터가 한 화면에선 데모, 다른 화면에선 실측처럼 보였다. */}
-            <div style={{ fontSize: '11px', color: COLORS.yellow, marginTop: '6px' }}>
-              데모값 — 유량계 미도입으로 실시간 진행률 수집 소스가 없습니다
-            </div>
+            {showDisclosure() && (
+              <div style={{ fontSize: '11px', color: COLORS.yellow, marginTop: '6px' }}>
+                데모값 — 유량계 미도입으로 실시간 진행률 수집 소스가 없습니다
+              </div>
+            )}
           </div>
         );
       })()}
@@ -614,7 +617,7 @@ export default function VesselDetailPanel() {
             </summary>
           <div style={{ fontSize: '11.5px', color: COLORS.textDim, lineHeight: 1.6, marginBottom: '8px' }}>
             OCIMF 계열 준정적 근사식. 판정 권위는 선석 기상 임계표에 있고, 이 값은
-            참고용입니다 (DWT 가정값 기반).
+            참고용입니다{showDisclosure() ? ' (DWT 가정값 기반)' : ''}.
           </div>
           {/* 예전엔 mock-server(:8000)의 /sim/mooring 을 호출했는데, mock-server 를
               걷어낸 뒤로는 그 주소가 죽어 항상 "응답 없음"만 떴다. 같은 상수·같은
@@ -653,7 +656,7 @@ export default function VesselDetailPanel() {
             display: 'flex', alignItems: 'center', gap: '8px',
             fontSize: '11.5px', color: COLORS.textDim, marginTop: '7px',
           }}>
-            DWT 가정값
+            DWT
             <input
               type="number" step="1000" min="1000" value={moorDwt}
               onChange={(e) => { setMoorDwt(Number(e.target.value) || ASSUMED_DWT); setMoorSim(null); }}
@@ -663,7 +666,7 @@ export default function VesselDetailPanel() {
                 padding: '3px 7px', fontSize: '11.5px',
               }}
             />
-            <span>t — 실 DWT 미수집(선박위치·PORT-MIS 모두 없음)</span>
+            <span>t{showDisclosure() ? ' — 실 DWT 미수집(선박위치·PORT-MIS 모두 없음), 가정값' : ''}</span>
           </label>
           {moorSim && !moorSim.error && (
             <div style={{ marginTop: '8px', padding: '10px 12px', background: COLORS.card, borderRadius: '10px', border: `1px solid ${MOOR_VERDICT_COLORS[moorSim.verdict] || COLORS.border}` }}>
@@ -705,25 +708,30 @@ export default function VesselDetailPanel() {
         // `${type}-${created_at_utc}` 라는 두 번째 규칙을 갖고 있어서, 헤더 벨에서
         // 확인한 경고가 여기서는 미확인으로 남았다(게다가 백엔드 경고엔
         // created_at_utc 가 없어 같은 유형이 전부 한 키로 뭉쳤다).
+        // [2026-09-30] 줄글 한 덩어리 대신 경고 벨과 같은 칸으로 — 대상 · 선석 · 화물 · 이유 · 조치 → 받는 곳
         const id = alertId(a);
-        const ack = alertAcks[id];
+        const ack = ackOf(a, alertAcks);
+        const p = alertParts(a, (cs) => (data?.real_traffic || []).find((v) => v.callsgn === cs)?.vessel_name || null);
+        const st = levelStyle(a.level);
         return (
-          <div key={id} style={{
-            border: `1px solid ${a.level === 'DANGER' ? COLORS.red : COLORS.yellow}`,
-            borderRadius: '8px', padding: '10px', fontSize: '12.5px', marginBottom: '8px',
-            opacity: ack ? 0.6 : 1,
-          }}>
-            <div style={{ fontWeight: 700, color: a.level === 'DANGER' ? COLORS.red : COLORS.yellow }}>
-              {a.level === 'DANGER' ? '위험' : '경고'} · {typeLabel(a.type)}
+          <div key={id} className="alert-card vd-alert" title={p.full} style={{ borderLeftColor: st.color, opacity: ack ? 0.6 : 1 }}>
+            <div className="alert-card-top">
+              <span className="alert-row-level" style={{ color: st.color, borderColor: st.color }}>{st.label}</span>
+              {p.scope && (
+                <span className="alert-scope">
+                  {p.scope === 'ship' ? <FaShip aria-hidden="true" /> : <FaAnchor aria-hidden="true" />}{SCOPE_LABEL[p.scope]}
+                </span>
+              )}
+              <strong className="alert-card-title">{p.title}</strong>
+              {p.level && <span className="alert-card-level" style={{ color: st.color }}>{p.level}</span>}
+              <span className="vd-alert-ack" style={{ color: ack ? COLORS.teal : COLORS.textDim }}>{ack ? `✓ ${ack.by}` : '미확인'}</span>
             </div>
-            <div style={{ margin: '4px 0' }}>{a.message}</div>
-            {ack ? (
-              <div style={{ color: COLORS.teal, fontSize: '11.5px' }}>
-                ✓ 확인 — {ack.by} · {formatKST(ack.at)}
-              </div>
-            ) : (
-              <div style={{ color: COLORS.textDim, fontSize: '11.5px' }}>미확인 · 상단 경고 벨에서 확인합니다</div>
-            )}
+            <dl className="alert-card-grid">
+              {p.place && (<><dt>선석</dt><dd>{p.place}{p.stage ? <span className="alert-card-stage">{p.stage}</span> : null}</dd></>)}
+              {p.cargo && (<><dt>화물</dt><dd>{p.cargo}</dd></>)}
+              {p.why && (<><dt>이유</dt><dd>{p.why}</dd></>)}
+              {p.action && (<><dt>조치</dt><dd>{p.action}{p.recipient ? <> → <b>{p.recipient}</b></> : null}</dd></>)}
+            </dl>
           </div>
         );
       })}

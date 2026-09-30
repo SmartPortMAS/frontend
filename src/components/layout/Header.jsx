@@ -68,7 +68,7 @@ export default function Header() {
               ? `풍속 ${w.wind_speed_ms ?? '-'}m/s · 파고 ${w.wave_height_sig_m ?? '-'}m`
               : '기상 로딩 중'}
             {observedKst && (
-              <span style={{ color: w?.is_stale ? '#f59e0b' : '#8ba3b8', marginLeft: 6, fontSize: '11px' }}>
+              <span className="header-sub" style={{ color: w?.is_stale ? '#f59e0b' : '#8ba3b8', marginLeft: 6, fontSize: '11px' }}>
                 {observedKst} 관측{w?.is_stale ? ' (오래됨)' : ''}
               </span>
             )}
@@ -91,11 +91,11 @@ export default function Header() {
           title={connected ? '관제 서버와 연결됨 (3분 주기 갱신)' : `데이터 수신 실패: ${error || '서버 응답 없음'}`}
         >
           <div className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></div>
-          <span>{connected ? '관제 서버 연결됨' : '연결 끊김'}</span>
+          <span>{connected ? '서버 연결' : '연결 끊김'}</span>
         </div>
 
-        <div className="header-badge" style={{ fontFamily: 'monospace' }}>
-          {currentTime.toLocaleTimeString('ko-KR', { hour12: false })}
+        <div className="header-badge header-clock" style={{ fontFamily: 'ui-monospace, Consolas, monospace' }}>
+          {currentTime.toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Seoul' })}
         </div>
       </div>
     </header>

@@ -3,6 +3,7 @@ import { TankModel, PipeModel } from '../components/sensor/EquipmentModels';
 import { COLORS } from '../utils/constants';
 import HardwarePanel from '../components/sensor/HardwarePanel';
 import HelpTip from '../components/common/HelpTip';
+import { showDisclosure } from '../utils/disclosure';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 센서 데이터 — 현장 설비 계측
@@ -22,6 +23,8 @@ import HelpTip from '../components/common/HelpTip';
 
 export default function SensorPage() {
   const { tanks, pipes } = useSensorStore();
+  // [2026-09-29 밤] 시연 화면은 완성된 모습 — 예시값 표식·점선 구역은 ?disclose=1 일 때만
+  const disclose = showDisclosure();
 
   return (
     <div className="page-content" style={{ padding: '0' }}>
@@ -30,13 +33,16 @@ export default function SensorPage() {
           <h2 style={{ fontSize: '20px', marginBottom: '6px', display: 'flex', alignItems: 'center' }}>
             현장 설비
             <HelpTip title="현장 설비">
-              하역 개시 인터락 게이트는 실물(라즈베리파이·밸브)과 연결됩니다. 아래 탱크·배관은 계측기가 없어
-              점선 구역에 예시값으로 둔 연결 예정 화면입니다.
+              {disclose
+                ? '하역 개시 인터락 게이트는 실물(라즈베리파이·밸브)과 연결됩니다. 아래 탱크·배관은 계측기가 없어 점선 구역에 예시값으로 둔 연결 예정 화면입니다.'
+                : '하역 개시 인터락 게이트와 저장탱크 · 이송배관 계측을 봅니다.'}
             </HelpTip>
           </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: 0 }}>
-            하역 개시 게이트 <strong>실물</strong> 2대 · 탱크·배관 <strong>예시값</strong>
-          </p>
+          {disclose && (
+            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', margin: 0 }}>
+              하역 개시 게이트 <strong>실물</strong> 2대 · 탱크·배관 <strong>예시값</strong>
+            </p>
+          )}
         </div>
         {/* '시뮬레이션 모드' 배지도 내렸다(2026-08-23) — 시연 UI 는 도입 후 제품
             모습을 보여준다는 원칙. 이 탭의 값이 하드웨어 부재로 모형이라는 사실은
@@ -52,16 +58,22 @@ export default function SensorPage() {
 
       {/* [2026-09-28] 탱크·배관은 계측기가 없어 예시값이다. 실물 게이트와 섞이지 않게 점선 · 빗금 구역에 두고
           상태 램프(ACTIVE·FLOWING)를 끄고 '예시값' 표식을 붙인다. 판정·게이트에는 쓰지 않는다. */}
-      <section className="virtual-zone" style={{ marginTop: '32px' }} aria-label="연결 예정 계측 (예시값)">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '6px' }}>
-          <h3 style={{ fontSize: '16px', margin: 0, color: COLORS.textSecondary }}>연결 예정 계측 — 탱크 · 배관</h3>
-          <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#5F6F78', border: '1px dashed #9AA8B0', borderRadius: '999px', padding: '2px 10px' }}>
-            가상 · 계측기 미연결
-          </span>
+      <section className={disclose ? 'virtual-zone' : undefined} style={{ marginTop: '32px' }} aria-label="저장탱크 · 이송배관">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: disclose ? '6px' : '14px' }}>
+          <h3 style={{ fontSize: '16px', margin: 0, color: disclose ? COLORS.textSecondary : COLORS.textPrimary }}>
+            {disclose ? '연결 예정 계측 — 탱크 · 배관' : '저장탱크 · 이송배관'}
+          </h3>
+          {disclose && (
+            <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#5F6F78', border: '1px dashed #9AA8B0', borderRadius: '999px', padding: '2px 10px' }}>
+              가상 · 계측기 미연결
+            </span>
+          )}
         </div>
-        <p style={{ fontSize: '12.5px', color: COLORS.textDim, margin: '0 0 14px' }}>
-          터미널 탱크 레벨계 · 유량계를 연결하면 이렇게 보입니다. 지금 숫자는 예시값이며 판정과 게이트에 쓰지 않습니다.
-        </p>
+        {disclose && (
+          <p style={{ fontSize: '12.5px', color: COLORS.textDim, margin: '0 0 14px' }}>
+            터미널 탱크 레벨계 · 유량계를 연결하면 이렇게 보입니다. 지금 숫자는 예시값이며 판정과 게이트에 쓰지 않습니다.
+          </p>
+        )}
         <h4 style={{ fontSize: '13px', margin: '0 0 10px', color: COLORS.textSecondary }}>저장탱크 수위 · 온도 · 압력</h4>
         <div className="sensor-grid">
           {tanks.map((tank) => <TankModel key={tank.id} tank={tank} />)}
