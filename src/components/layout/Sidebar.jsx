@@ -25,7 +25,10 @@ export default function Sidebar({ collapsed, setCollapsed }) {
     >
       <div className="sidebar-logo">
         <div className="logo-icon"><FaWaveSquare /></div>
-        <div className="logo-text">울산항만 관제시스템</div>
+        {/* [2026-09-30] 시스템 이름은 SafeBerth 로고로(현우) — 배경을 뺀 PNG, 접으면 아이콘만 남는다 */}
+        <div className="logo-text logo-img" title="SafeBerth — 울산항 온산 액체화물 하역 안전 관제">
+          <img src="/safeberth-logo.png" alt="SafeBerth" />
+        </div>
       </div>
 
       <nav className="sidebar-nav nav-rail">
