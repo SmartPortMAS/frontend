@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useSensorStore from '../../stores/useSensorStore';
 import useDashboardData from '../../hooks/useDashboardData';
+import useForecastAlerts from '../../hooks/useForecastAlerts';
 import { COLORS } from '../../utils/constants';
 import { alertId, alertIds, ackOf, mergeAlerts, SCOPE_LABEL, LEVEL_STYLE, levelStyle, alertParts } from '../../utils/alertUtils';
 import { FaExclamationTriangle, FaCheck, FaTimes, FaChevronRight, FaShip, FaAnchor } from 'react-icons/fa';
@@ -35,7 +36,8 @@ export default function AlertBell() {
   const wrapRef = useRef(null);
 
   // 같은 두 부두의 인접 혼재 경고는 한 건으로 묶는다(화물쌍은 카드 안 목록으로)
-  const alerts = mergeAlerts(data?.alerts ?? []);
+  const ahead = useForecastAlerts();   // 72시간 시뮬레이션의 '앞으로' 경고 — 기상 중단 · 정박지 대기 · 조위 대기
+  const alerts = [...mergeAlerts(data?.alerts ?? []), ...ahead];
   const vessels = data?.real_traffic ?? [];
   const nameOf = (cs) => vessels.find((v) => v.callsgn === cs)?.vessel_name || null;
   // 배지 숫자는 참고(INFO)를 뺀 실제 경고만 센다. 참고 항목도 목록에는 남는다.
@@ -65,6 +67,12 @@ export default function AlertBell() {
 
   // 경고를 처리하는 화면으로 — 그 배를 추적하고 선박 판정으로. 화물 경고는 그 배의 화물 혼재 카드까지 내려간다.
   const openAlert = (a, parts) => {
+    // '앞으로' 경고는 3D 관제 화면의 앞으로 72시간을 그 시각으로 연다
+    if (a.forecast) {
+      navigate(`/twin?outlook=${encodeURIComponent(a.forecast.open || 'all')}&at=${a.forecast.at}`);
+      setOpen(false);
+      return;
+    }
     const cs = (a.callsgns || [])[0];
     const cargo = !(parts.kind === 'verdict' || parts.kind === 'draught');
     if (cs) trackVessel({ callsgn: cs, vessel_name: cargo ? nameOf(cs) : parts.title });
@@ -136,7 +144,7 @@ export default function AlertBell() {
               const ack = ackOf(a, alertAcks);
               const style = levelStyle(a.level);
               const p = alertParts(a, nameOf);
-              const canOpen = Boolean((a.callsgns || [])[0]) || p.kind === 'verdict' || p.kind === 'draught';
+              const canOpen = Boolean((a.callsgns || [])[0]) || p.kind === 'verdict' || p.kind === 'draught' || p.kind === 'forecast';
               const head = byBerth && (i === 0 || (ordered[i - 1].berth_name || '') !== (a.berth_name || ''))
                 ? (a.berth_name || '선석 없음') : null;
               return (
@@ -166,6 +174,7 @@ export default function AlertBell() {
                     )}
                     <strong className="alert-card-title">{p.title}</strong>
                     {p.level && <span className="alert-card-level" style={{ color: LEVEL_TONE[p.level] || style.color }}>{p.level}</span>}
+                    {p.ahead && <span className="alert-ahead">앞으로</span>}
                     {canOpen && <FaChevronRight className="alert-card-go" aria-hidden="true" />}
                   </div>
                   <dl className="alert-card-grid">

@@ -79,7 +79,9 @@ export function shipsAt(plans, t, liveShips = [], wide = false) {
       waitIdx: ['waiting', 'heldOut', 'toAnchor', 'shifting'].includes(st.phase) ? waitIdx++ : 0,
       phase: st.phase,
       // 하역 중에는 글 대신 진행 막대를 그린다(Ship 이름표) — 글이 길면 이웃 배 이름표와 겹친다
-      simLabel: st.phase === 'work' ? '' : st.phase === 'berthed' ? '' : (PHASE_TEXT[st.phase] || '').replace(' · 기상', ''),
+      simLabel: st.phase === 'work' ? '' : st.phase === 'berthed' ? ''
+        : st.phase === 'waiting' && p.waitReason === 'tide' ? '조위 대기'
+          : (PHASE_TEXT[st.phase] || '').replace(' · 기상', ''),
       simColor: PHASE_COLOR[st.phase] || '#8ba3b8',
       simProgress: working ? Math.round(st.progress * 100) : null,
       // 온산 전체를 멀리서 볼 때 — 72시간 안에 들어오거나 나가는 배만 이름표를 세우고(크기 고정), 머무는 배는 뺀다

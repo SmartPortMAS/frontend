@@ -175,6 +175,11 @@ function shortWhy(why) {
 
 export function alertParts(alert, nameOf = () => null) {
   const msg = alert?.message || '';
+  // '앞으로' 경고(useForecastAlerts) — 구조화된 값이 이미 있다
+  if (alert?.forecast) {
+    const f = alert.forecast;
+    return { kind: 'forecast', scope: f.scope, title: f.title, place: f.place, stage: f.stage, level: null, why: f.why, action: f.action, recipient: f.recipient, ahead: true, full: msg };
+  }
   let m = msg.match(/^\[(입항전|접안직전|하역중)\]\s*(.+?)\s*@\s*(.+?):\s*(부적합|주의|판정불가)\s*—\s*(.+)$/);
   if (m) {
     const [, stage, vessel, berth, level, rest] = m;

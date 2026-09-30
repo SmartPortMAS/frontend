@@ -3,6 +3,7 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 import PortMisBar from './PortMisBar';
 import VesselTrail from './VesselTrail';
+import useSensorStore from '../../stores/useSensorStore';
 import { useEffect, useRef, useState } from 'react';
 
 // ToastContainer 는 걷어냈다 — useSensorStore.alerts 를 읽는데 그 배열을 채우는
@@ -19,6 +20,10 @@ export default function Layout() {
   const { pathname } = useLocation();
   const contentRef = useRef(null);
   useEffect(() => { contentRef.current?.scrollTo(0, 0); }, [pathname]);
+  // [2026-09-30] 선박 상세(오른쪽 패널)는 대시보드 것 — 다른 화면으로 가면 닫는다.
+  //   예전엔 열어 둔 채 3D 관제 화면으로 가면 그 위에 그대로 떠 있었다(현우). 띠의 '위치' 칸은 대시보드로 가며 여는 것이라 그대로 된다.
+  const setSelectedVessel = useSensorStore((s) => s.setSelectedVessel);
+  useEffect(() => { if (pathname !== '/') setSelectedVessel(null); }, [pathname, setSelectedVessel]);
 
   return (
     <div className="app-shell">

@@ -16,6 +16,9 @@
 //       입항 예정 선박: 접안하지 않고 정박지에서 기다린다(접안 직전 부적합 → 입항 보류 권고, VTS)
 //       접안한 선박  : 하역이 진행되지 않는다(하역 중 부적합 → 게이트 잠김, 터미널)
 //     대체 선석이나 화물 조정이 정해져 판정이 바뀌면 시뮬레이션도 달라진다. 언제 풀릴지는 지어내지 않는다.
+//   · [고도화] 조위 창 — 흘수 신고가 있는 입항 예정 선박은 조석예보로 접안 시각의 흘수 여유를 본다.
+//       필요 여유 max(1.0 m, 흘수×10%)(판정 규칙과 같음)보다 작으면 조위가 오르는 시각까지 정박지에서 '조위 대기'
+//   · [고도화] 출항 추정 범위 — 출항 예정 신고가 없어 재항 중앙값으로 잡은 배는 그 부두 재항 시간 90% 까지를 범위로 보인다
 // 그리지 않는 것: 실제 항적(도선 · 예선 일정이 없다). 입출항 기동은 만 안쪽 항로를 따라가는 정해진 경로다.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,8 @@ export const PHASE_TEXT = {
   prep: '하역 준비', work: '하역 중', stopped: '하역 중단 · 기상', finish: '하역 종료',
   outbound: '출항 중', berthed: '접안', heldOut: '입항 보류', held: '하역 보류',
 };
+export const WAIT_TEXT = { full: '정박지 대기', tide: '조위 대기' };
+export const ukcNeed = (draught) => Math.max(1.0, draught * 0.1);
 export const PHASE_COLOR = {
   inbound: '#60a5fa', toAnchor: '#60a5fa', waiting: '#fbbf24', shifting: '#60a5fa',
   prep: '#a5b4fc', work: '#34d399', stopped: '#f87171', finish: '#a5b4fc', outbound: '#c4b5fd', berthed: '#ffd166',
@@ -53,10 +58,12 @@ const norm = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
  *   current    [{ callsgn, name, berthId, slot, arrivedAt, etd, level, fixedWhy, cargo }]   지금 접안
  *   arrivals   [{ callsgn, name, berthId, eta, etd, level, fixedWhy, cargo, atAnchor }]      입항 예정(신고)
  *   dwellH     Map(berthId → 재항 시간 중앙값, 시간)
+ *   dwellP90   Map(berthId → 재항 시간 90%, 시간)                  출항 추정 범위
  *   stops      Map(group → boolean[hours])                       그 시각에 기상으로 하역이 멈추나
+ *   tides      Map(group → number[hours])                        그 시각 조위(m, 조석예보) — 조위 창
  * @returns {{ plans: object[], events: object[], t0: number, t1: number }}
  */
-export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH, stops }) {
+export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH, dwellP90, stops, tides }) {
   const t0 = now;
   const t1 = now + hours * H;
   const byId = new Map(berths.map((b) => [b.id, b]));
@@ -65,6 +72,23 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
     if (!arr) return false;
     const i = Math.floor((t - t0) / H);
     return i >= 0 && i < arr.length ? Boolean(arr[i]) : false;
+  };
+  const tideAt = (group, t) => {
+    const arr = tides?.get(group);
+    if (!arr) return null;
+    const i = Math.floor((t - t0) / H);
+    return i >= 0 && i < arr.length && arr[i] != null ? Number(arr[i]) : null;
+  };
+  // 조위 창 — from 이후 흘수 여유가 필요 여유 이상인 첫 시각. 조위 예보가 없으면 그대로 from
+  const tideOk = (group, from, draught, depth) => {
+    if (!(draught > 0) || !(depth > 0) || !tides?.get(group)) return { at: from, waitH: 0 };
+    const need = ukcNeed(draught);
+    for (let t = from; t < t1; t += H / 2) {
+      const tide = tideAt(group, t);
+      if (tide == null) return { at: t, waitH: Math.round((t - from) / H) };
+      if (depth + tide - draught >= need) return { at: t, waitH: Math.round((t - from) / H), ukc: depth + tide - draught };
+    }
+    return { at: null, waitH: Math.round((t1 - from) / H) };
   };
   // 하역 구간을 한 시간씩 밟아 기상 중단만큼 뒤로 민다. 돌려주는 것: 끝나는 시각과 중단 구간
   const runWork = (group, from, needH) => {
@@ -101,9 +125,14 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
     const med = dwellH?.get(c.berthId);
     let schedEnd = c.etd && c.etd > now ? c.etd : null;
     let endBasis = schedEnd ? '신고' : null;
+    let estHi = null;
     if (!schedEnd && c.arrivedAt && med) {
       const est = c.arrivedAt + med * H;
-      if (est > now + H) { schedEnd = est; endBasis = '추정'; }
+      if (est > now + H) {
+        schedEnd = est; endBasis = '추정';
+        const p90 = dwellP90?.get(c.berthId);
+        if (p90 > med) estHi = c.arrivedAt + p90 * H;
+      }
     }
     const slots = freeAt.get(b.id);
     let slot = Number.isInteger(c.slot) && c.slot >= 1 && c.slot <= slots.length ? c.slot - 1 : slots.findIndex((x) => x === 0);
@@ -117,7 +146,7 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
       eta: c.arrivedAt || null, etd: schedEnd, endBasis: held ? null : endBasis,
       appearAt: t0, berthAt: c.arrivedAt && c.arrivedAt < now ? c.arrivedAt : t0, waitFrom: null,
       workStart: null, workEnd: null, leaveAt: null, goneAt: null, halts: [], delayH: 0,
-      hold: held ? 'work' : null,
+      hold: held ? 'work' : null, estHi,
     };
     if (held) {
       slots[slot] = Infinity;   // 하역 보류 — 언제 풀릴지 모른다. 그 자리는 계속 차 있다
@@ -172,11 +201,17 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
     let slot = 0;
     slots.forEach((v, i) => { if (v < slots[slot]) slot = i; });
     const free = slots[slot];
-    const canAt = free === Infinity ? null : Math.max(eta, free ? free + 0.5 * H : 0, a.atAnchor ? t0 + SIM.SHIFT_H * H : 0);
+    const slotAt = free === Infinity ? null : Math.max(eta, free ? free + 0.5 * H : 0, a.atAnchor ? t0 + SIM.SHIFT_H * H : 0);
+    // 조위 창 — 자리가 나도 흘수 여유가 모자라면 조위가 오를 때까지 기다린다
+    const tw = slotAt == null ? { at: null, waitH: 0 } : tideOk(b.group, slotAt, a.draught, a.depth);
+    const canAt = tw.at;
     const waits = canAt == null || canAt > eta + 1;
+    const waitReason = !waits ? null : (slotAt != null && slotAt <= eta + 1 && tw.waitH > 0) ? 'tide'
+      : (slotAt != null && tw.waitH > 0) ? 'full+tide' : 'full';
     const med = dwellH?.get(b.id);
     const stayH = a.etd && a.etd > a.eta ? (a.etd - a.eta) / H : (med || SIM.FALLBACK_STAY_H);
     const endBasis = a.etd && a.etd > a.eta ? '신고' : med ? '추정' : '가정';
+    const p90 = dwellP90?.get(b.id);
 
     const plan = {
       key: `s-${a.callsgn}-${a.eta}`, callsgn: a.callsgn, name: a.name, berthId: b.id, berthName: b.name, slot,
@@ -185,6 +220,7 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
       appearAt: a.atAnchor ? t0 : Math.max(t0, eta - SIM.APPROACH_H * H),
       waitFrom: waits ? eta : null, berthAt: canAt, halts: [], delayH: 0,
       workStart: null, workEnd: null, leaveAt: null, goneAt: null, workTotalH: null,
+      waitReason, tideWaitH: tw.waitH || 0, draught: a.draught || null, depth: a.depth || null, estHi: null,
     };
     if (canAt != null) {
       const need = Math.max(1, stayH - SIM.PREP_H - SIM.FINISH_H);
@@ -196,6 +232,7 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
       const schedLeave = eta + stayH * H;
       plan.delayH = Math.max(0, Math.round((plan.leaveAt - schedLeave) / H));
       plan.waitH = waits ? Math.round((canAt - eta) / H) : 0;
+      if (endBasis === '추정' && p90 > med) plan.estHi = plan.leaveAt + (p90 - med) * H;
       slots[slot] = plan.leaveAt;
     } else {
       plan.waitH = Math.round((t1 - eta) / H);
@@ -206,7 +243,9 @@ export function buildPlans({ now, hours = 72, berths, current, arrivals, dwellH,
   // 3) 사건 — 시간축 아래 한 줄씩 읽는다
   const events = [];
   for (const p of plans) {
-    if (p.kind === 'plan' && p.eta >= t0 && p.eta < t1) events.push({ at: p.eta, type: p.hold === 'entry' ? 'hold' : p.waitFrom ? 'wait' : 'arrive', plan: p });
+    if (p.kind === 'plan' && p.eta >= t0 && p.eta < t1) {
+      events.push({ at: p.eta, type: p.hold === 'entry' ? 'hold' : p.waitReason === 'tide' ? 'tide' : p.waitFrom ? 'wait' : 'arrive', plan: p });
+    }
     if (p.kind === 'plan' && p.waitFrom && p.berthAt && p.berthAt < t1) events.push({ at: p.berthAt, type: 'berth', plan: p });
     for (const h of p.halts) if (h.from < t1) events.push({ at: h.from, to: h.to, type: 'halt', plan: p });
     if (p.leaveAt && p.leaveAt < t1) events.push({ at: p.leaveAt, type: 'leave', plan: p });

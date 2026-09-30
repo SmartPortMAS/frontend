@@ -4,7 +4,6 @@ import Scene from '../components/three/Scene';
 import { findBerthIdByName, ONSAN_BERTHS, ONSAN_BERTHS_3D, OMNIVERSE_BERTH_IDS } from '../utils/geoUtils';
 import HelpTip from '../components/common/HelpTip';
 import PortMap from '../components/dashboard/PortMap';
-import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import RadarMap from '../components/three/hud/RadarMap';
 import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
@@ -51,6 +50,8 @@ export default function DigitalTwinPage() {
   //   ?outlook=OTK 1부두   → 그 선석의 "앞으로 72시간"을 바로 연다 (시연 영상·캡처용)
   //   ?outlook=all         → 온산항 전체의 72시간
   const wantOutlook = searchParams.get('outlook') || null;
+  //   &at=<시각 ms>          → 그 시각부터(경고 벨의 '앞으로' 경고)
+  const wantAt = Number(searchParams.get('at')) || null;
 
   // 상단 띠에 세울 실경고 — 심각한 것부터 전부 돈다.
   // [2026-09-30] 예전엔 앞 6건만 돌며 '위험 16 · 표시 4/6'이라 적어, 16건 중 왜 6건인지 알 수 없었고
@@ -173,13 +174,13 @@ export default function DigitalTwinPage() {
   }, [selectedObject]);
   useEffect(() => {
     if (!wantOutlook) return;
-    if (wantOutlook === 'all') { setOutlookFocus(WIDE_FOCUS); requestTwinHome('wide'); return; }
+    if (wantOutlook === 'all') { setOutlookFocus({ ...WIDE_FOCUS, jumpAt: wantAt }); requestTwinHome('wide'); return; }
     const id = findBerthIdByName(wantOutlook);
     if (id && ONSAN_BERTHS_3D[id]) {
-      setOutlookFocus({ berth: ONSAN_BERTHS[id].name, berthId: id, call_sign: null, vessel_name: null, omniOk: OMNIVERSE_BERTH_IDS.has(id) });
+      setOutlookFocus({ berth: ONSAN_BERTHS[id].name, berthId: id, call_sign: null, vessel_name: null, omniOk: OMNIVERSE_BERTH_IDS.has(id), jumpAt: wantAt });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wantOutlook]);
+  }, [wantOutlook, wantAt]);
 
   
 
@@ -531,8 +532,7 @@ export default function DigitalTwinPage() {
         </div>
       )}
 
-      {/* 선박 상세 패널 (2D 지도 마커 클릭 시) */}
-      <VesselDetailPanel />
+      {/* [2026-09-30] 선박 상세 패널은 대시보드 몫 — 2D 지도를 뺀 뒤 여기 남아 있어 대시보드에서 연 선박이 3D 까지 따라왔다(현우) */}
 
       {/* 앞으로 72시간 — 이 화면 안의 판정 흐름. 2D 지도·Omniverse 위에는 띄우지 않는다 */}
       {outlookFocus && !showOmniverseStream && !showMap && (
