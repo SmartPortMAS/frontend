@@ -124,6 +124,8 @@ export default function useLiveTwinShips() {
           type: 'Ship',
           status: 'mooring',
           berth: sl.id3d,
+          // 같은 부두의 몇 번째 배인가 — 둘 이상이면 바깥쪽으로 나란히 세운다(겹쳐 그려지던 것)
+          slot: slots.filter((x) => x.id3d === sl.id3d).indexOf(sl),
           anchorage: null,
           vessel_lat: null,
           vessel_lon: null,

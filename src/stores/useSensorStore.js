@@ -65,7 +65,21 @@ const useSensorStore = create((set, get) => ({
   // 표시하도록 되어 있다.
   setShips: (ships) => set(Array.isArray(ships) ? { ships } : {}),
 
-  setSelectedObject: (obj) => set({ selectedObject: obj }),
+  // 3D 에서 배를 고르면 그 배를 추적한다(선박 추적 띠)
+  setSelectedObject: (obj) => set(() => ({
+    selectedObject: obj,
+    ...(obj?.type === 'Ship' && obj.callsgn ? { trackedVessel: { callsgn: String(obj.callsgn).trim(), vessel_name: obj.id || null } } : {}),
+  })),
+
+  // [2026-09-29] 추적 선박 — 어느 화면에서든 배를 고르면 여기 담기고, 선박 추적 띠·메뉴·각 화면이 같은 배를 비춘다.
+  //   threadFocus: 띠·경고에서 넘어와 그 화면이 그 배 자리로 가야 할 때({ target, at })
+  trackedVessel: null,
+  trackVessel: (v) => set(() => {
+    const cs = v && String(v.callsgn || v.call_sign || '').trim();
+    return { trackedVessel: cs ? { callsgn: cs, vessel_name: v.vessel_name || v.name || null } : null };
+  }),
+  threadFocus: null,
+  requestThreadFocus: (target) => set({ threadFocus: { target, at: Date.now() } }),
 
   // 온산 MVP 에이전트 패널 상태 (/api/v1/*)
   berthGroups: [],
@@ -74,21 +88,33 @@ const useSensorStore = create((set, get) => ({
   orchestration: null,
   selectedBerthGroup: null, // 지도에서 선석 클릭 시 기상 판정 패널과 연동
   setSelectedBerthGroup: (v) => set({ selectedBerthGroup: v }),
+  // [2026-09-29 밤] 선석 상세 서랍 — 지도의 선석 원·선석 현황판에서 연다(선석 이름).
+  //   접안 선박 · 부두 기상 · 최근 접안 · 재항 시간을 한 서랍에서 본다. 선박 상세와 같은 자리라 서로 닫는다.
+  selectedBerth: null,
+  // [2026-09-30] 선박 찾기 창(선석 현황 포함) — 추적 띠 단추와 대시보드 '온산 선석 점유' 타일이 연다
+  pickerOpen: false,
+  setPickerOpen: (v) => set({ pickerOpen: Boolean(v) }),
+  setSelectedBerth: (name) => set(() => (name ? { selectedBerth: name, selectedVessel: null } : { selectedBerth: null })),
 
   // 트윈 HUD 접기 상태 — CCTV 를 접으면 그 아래 선박 목록이 따라 올라가야 한다.
   // 두 패널이 각자 접힘을 들고 있으면 위치가 어긋나므로 여기서 공유한다.
   // [2026-09-28] CCTV·레이더는 접힌 상태가 기본 — 펼쳐 두면 3D 장면의 절반을 덮었다(현우 D11)
-  hudCctvCollapsed: true,
+  // [2026-09-29] 다시 펼친 채 시작(현우) — 실제 관제실이 늘 띄워 두는 감시 화면이라 흐름의 첫 장면이다.
+  hudCctvCollapsed: false,
   setHudCctvCollapsed: (v) => set({ hudCctvCollapsed: Boolean(v) }),
   // 3D 가벼운 모드(그림자 끔 · 해상도 1배) — Scene 의 PerfProbe 가 켜거나 ?lite=1
   twinLite: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('lite') === '1',
   setTwinLite: (v) => set({ twinLite: Boolean(v) }),
-  hudRadarCollapsed: true,
+  hudRadarCollapsed: false,
   setHudRadarCollapsed: (v) => set({ hudRadarCollapsed: Boolean(v) }),
 
   // 선박 상세 패널 (지도 마커/입항 목록 클릭 → 선박 여정 뷰)
   selectedVessel: null,
-  setSelectedVessel: (v) => set({ selectedVessel: v }),
+  setSelectedVessel: (v) => set(() => ({
+    selectedVessel: v,
+    ...(v ? { selectedBerth: null } : {}),
+    ...(v?.callsgn ? { trackedVessel: { callsgn: String(v.callsgn).trim(), vessel_name: v.vessel_name || null } } : {}),
+  })),
   // 다른 화면(배정현황 등)에서 "이 배를 협상 콘솔에서 처리해 달라"는 요청.
   // 콘솔이 소비하면 clear 한다 — 값이 남아 있으면 라우팅 때마다 다시 열린다.
   consoleRequest: null,
@@ -111,7 +137,10 @@ const useSensorStore = create((set, get) => ({
   // [2026-09-28] extra = { subject, record } — subject 는 판정에 쓴 선석·흘수·화물(표의 행 그대로),
   // record 는 이력에 남은 판정. 판단 과정 창은 이 둘로 '근거'를 보여준다(실행 버튼 없음).
   requestConsole: (callsgn, cargo = null, extra = {}) =>
-    set({ consoleRequest: { callsgn, cargo, ...extra, at: Date.now() } }),
+    set({
+      consoleRequest: { callsgn, cargo, ...extra, at: Date.now() },
+      ...(callsgn ? { trackedVessel: { callsgn: String(callsgn).trim(), vessel_name: extra?.subject?.vessel_name || null } } : {}),
+    }),
   clearConsoleRequest: () => set({ consoleRequest: null }),
 
   // 3D 관제 화면 → 정밀 검토(Omniverse) 지목. 3D 정보창(캔버스 안)에서 누르고,
@@ -133,6 +162,13 @@ const useSensorStore = create((set, get) => ({
   // 시간축 커서가 가리키는 시각의 판정 — Port 가 그 선석의 색·라벨을 이 값으로 바꾼다.
   outlookPreview: null,
   setOutlookPreview: (v) => set({ outlookPreview: v }),
+  // [2026-09-30] 3D 처음 화면(조감)으로 — 72시간을 닫으면 카메라가 첫 위치로 돌아간다(현우)
+  // 72시간 패널이 3D 아래쪽을 덮는 만큼 장면을 위로 미는 픽셀 수(Scene ViewShift)
+  twinViewShift: 0,
+  setTwinViewShift: (v) => set({ twinViewShift: Math.max(0, Number(v) || 0) }),
+  twinHomeAt: 0,
+  twinHomeKind: 'home',   // 'home' = 처음 화면(조감) · 'wide' = 항로와 정박지까지(72시간 온산 전체)
+  requestTwinHome: (kind) => set({ twinHomeAt: Date.now(), twinHomeKind: kind === 'wide' ? 'wide' : 'home' }),
 
   // 경고 → 안전 심사 연결. 경고 카드에서 선석을 고르면 그 경고의 내용이 여기 담기고,
   // 안전 심사 폼(SafetyGatesPanel)이 받아서 폼을 채운다.

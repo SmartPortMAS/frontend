@@ -1,33 +1,116 @@
-import { useEffect, useState } from 'react';
-import { FaTimes } from 'react-icons/fa';
+import { useEffect, useRef, useState } from 'react';
+import { FaTimes, FaPlay, FaPause } from 'react-icons/fa';
 import useSensorStore from '../../stores/useSensorStore';
 
 // ─────────────────────────────────────────────
-// Omniverse 정밀 검토 미리보기 (2026-09-28)
+// Omniverse 정밀 검토 (2026-09-28 · 2026-09-29 밤 다시)
 //
-// 시연 PC 에서는 Omniverse(Isaac Sim)를 켜지 않는다(발열로 꺼짐, 9/27). 그래도 "같은 배가 정밀
-// 검토 장면에서 어떻게 바뀌는가"는 보여 줘야 해서, 9/17 고사양 PC 에서 실측 조위로 재생한 장면의
-// **캡처 두 장**을 나란히 비교한다 — 가운데 손잡이를 끌면 접안 직전(적합)과 저조(주의)가 겹쳐 보인다.
-//
-// 만든 장면이 아니라 기록 캡처다. 시연장에서 실시간으로 도는 것처럼 보이면 안 되므로
-// "캡처 · 2026-09-17" 을 화면에 적는다.
+// 시연 PC 에서는 Omniverse(Isaac Sim)를 실시간으로 켜지 않는다(고사양 · 발열). 대신 Omniverse 에서
+// 녹화한 영상을 재생한다 — public/omniverse/precision_review.mp4 가 있으면 그것을 튼다.
+// 영상이 아직 없으면 같은 장면의 두 시점(접안 직전 → 저조)을 시간축으로 이어 재생한다.
+// 글은 줄였다: 어느 배 · 어느 선석인지와 그 시각의 판정 · 흘수 여유만 보인다(현우 — 글이 많아 장면이 안 보였다).
 // ─────────────────────────────────────────────
 
-const SCENES = [
-  {
-    id: 'ginga',
-    title: 'GINGA MARGAY → OTK1부두 · 2026-08-18 실측 조위 재생',
-    before: { src: '/omniverse/ginga_margay_1000_fit.jpg', label: '접안 직전 10:00 · 적합 · 흘수 여유 +1.08 m', tone: '#2dd4bf' },
-    after: { src: '/omniverse/ginga_margay_1640_caution.jpg', label: '하역 중 16:40 저조 · 주의 · 흘수 여유 +0.75 m', tone: '#fbbf24' },
-    note: '같은 배·같은 선석. 조위가 +0.78 m 에서 +0.45 m 로 내려가자 흘수 여유 게이지(세로 막대, 1 m = 8 유닛)와 선석·게이트 램프 색이 바뀌고 정보판에 조치안(저조 전후 흘수·하역량 확인)과 받는 곳(터미널 안전관리자 → 하역 개시 게이트)이 붙는다.',
-  },
-];
+const VIDEO_SRC = '/omniverse/precision_review.mp4';
+
+// [2026-09-30] 온산 전체 선석(조감)부터 — 현우: "어떤 선석을 보여주나? 전체 선석을 보여줘야 하지 않나"
+//   Omniverse 장면은 온산 선석 11곳 전체를 재현하고, 정밀 검토는 그중 지목한 선석으로 내려가 계류 · 조위 · 흘수 여유를 본다.
+//   녹화 전이라 지금은 조감 한 장(9/17 캡처, 선석 판정 색) → OTK1부두 사례 두 시점(9/28 캡처)을 잇는다.
+const SCENE = {
+  frames: [
+    { src: '/omniverse/onsan_overview.jpg', time: '조감', stage: '온산 선석 11곳', caption: '온산 전체 선석 · 선석 판정 색', level: null, margin: null, tone: '#38bdf8' },
+    { src: '/omniverse/ginga_scene_1000.jpg', time: '10:00', stage: '접안 직전', caption: 'GINGA MARGAY · OTK1부두', level: '적합', margin: '+1.08 m', tone: '#2dd4bf' },
+    { src: '/omniverse/ginga_scene_1640.jpg', time: '16:40', stage: '하역 중 · 저조', caption: 'GINGA MARGAY · OTK1부두', level: '주의', margin: '+0.75 m', tone: '#fbbf24' },
+  ],
+};
+const FRAME_MS = 4200;
+
+function Stills() {
+  const [idx, setIdx] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [tick, setTick] = useState(0);   // 0~1, 지금 시점 안에서의 진행
+  const started = useRef(performance.now());
+
+  useEffect(() => {
+    if (!playing) return undefined;
+    started.current = performance.now() - tick * FRAME_MS;
+    let raf;
+    const loop = (now) => {
+      const t = (now - started.current) / FRAME_MS;
+      if (t >= 1) {
+        started.current = now;
+        setTick(0);
+        setIdx((i) => (i + 1) % SCENE.frames.length);
+      } else {
+        setTick(t);
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing]);
+
+  const cur = SCENE.frames[idx];
+  return (
+    <>
+      <div style={{ position: 'relative', aspectRatio: '1280 / 440', background: '#000', overflow: 'hidden' }}>
+        {SCENE.frames.map((f, i) => (
+          <img
+            key={f.src} src={f.src} alt={`${f.time} ${f.level}`}
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+              opacity: i === idx ? 1 : 0, transition: 'opacity 0.9s ease',
+            }}
+          />
+        ))}
+        <div style={{
+          position: 'absolute', left: 18, top: 16, padding: '4px 12px', borderRadius: 999,
+          background: 'rgba(2, 8, 20, 0.66)', color: '#e8f0f2', fontSize: 13, fontWeight: 700,
+        }}>{cur.caption}</div>
+        <div style={{
+          position: 'absolute', left: 18, bottom: 18, display: 'flex', alignItems: 'baseline', gap: 12,
+          padding: '10px 18px', borderRadius: 10, background: 'rgba(2, 8, 20, 0.72)', backdropFilter: 'blur(6px)',
+        }}>
+          <span style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 26, fontWeight: 700, color: '#e8f0f2' }}>{cur.time}</span>
+          <span style={{ fontSize: 13, color: '#cbd5e1' }}>{cur.stage}</span>
+          {cur.level && <span style={{ fontSize: 22, fontWeight: 800, color: cur.tone }}>{cur.level}</span>}
+          {cur.margin && <span style={{ fontSize: 15, color: '#e8f0f2' }}>흘수 여유 <b style={{ color: cur.tone }}>{cur.margin}</b></span>}
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
+        <button
+          type="button" onClick={() => setPlaying((p) => !p)} aria-label={playing ? '멈춤' : '재생'}
+          style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid rgba(232,240,242,0.3)', background: 'rgba(232,240,242,0.08)', color: '#e8f0f2', cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+        >
+          {playing ? <FaPause size={12} /> : <FaPlay size={12} />}
+        </button>
+        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: `repeat(${SCENE.frames.length}, 1fr)`, gap: 6 }}>
+          {SCENE.frames.map((f, i) => (
+            <button
+              key={f.time} type="button"
+              onClick={() => { setIdx(i); setTick(0); started.current = performance.now(); }}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', color: 'inherit', font: 'inherit' }}
+            >
+              <div style={{ height: 4, borderRadius: 2, background: 'rgba(232,240,242,0.16)', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${i < idx ? 100 : i === idx ? tick * 100 : 0}%`, background: f.tone }} />
+              </div>
+              <div style={{ marginTop: 5, fontSize: 12, color: i === idx ? '#e8f0f2' : '#94a3b8', fontWeight: i === idx ? 700 : 500 }}>
+                {f.time} · {f.stage}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
 
 export default function OmniversePreview() {
   const open = useSensorStore((s) => s.omniPreviewOpen);
   const setOpen = useSensorStore((s) => s.setOmniPreviewOpen);
-  const [pos, setPos] = useState(50);
-  const scene = SCENES[0];
+  // 'checking' | 'video' | 'stills'
+  const [mode, setMode] = useState('checking');
 
   useEffect(() => {
     if (!open) return undefined;
@@ -36,11 +119,19 @@ export default function OmniversePreview() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, setOpen]);
 
+  // 녹화 영상이 배포돼 있는지 — 없으면(404 · SPA 가 html 을 돌려줌) 두 시점 재생으로 간다
+  useEffect(() => {
+    if (!open || mode !== 'checking') return;
+    fetch(VIDEO_SRC, { method: 'HEAD' })
+      .then((r) => setMode(r.ok && /video/.test(r.headers.get('content-type') || '') ? 'video' : 'stills'))
+      .catch(() => setMode('stills'));
+  }, [open, mode]);
+
   if (!open) return null;
 
   return (
     <div
-      role="dialog" aria-modal="true" aria-label="Omniverse 정밀 검토 미리보기"
+      role="dialog" aria-modal="true" aria-label="Omniverse 정밀 검토"
       onClick={() => setOpen(false)}
       style={{
         position: 'fixed', inset: 0, zIndex: 6000, background: 'rgba(2, 8, 20, 0.82)',
@@ -54,37 +145,27 @@ export default function OmniversePreview() {
           border: '1px solid rgba(56,189,248,0.4)', boxShadow: '0 24px 64px rgba(0,0,0,0.6)', overflow: 'hidden',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-          <strong style={{ fontSize: 14 }}>Omniverse 정밀 검토 — 같은 배가 어떻게 바뀌나</strong>
-          <span style={{ fontSize: 11.5, color: '#94a3b8' }}>Isaac Sim 캡처 · 2026-09-17 · 고사양 PC 에서 재생한 장면. 시연 PC 에서는 켜지 않습니다.</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px' }}>
+          <strong style={{ fontSize: 15 }}>정밀 검토</strong>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8', border: '1px solid rgba(56,189,248,0.5)', borderRadius: 999, padding: '1px 9px' }}>Omniverse</span>
+          <span style={{ fontSize: 13, color: '#cbd5e1' }}>온산 선석 전체 → 지목 선석</span>
           <button
-            type="button" onClick={() => setOpen(false)} title="닫기 (Esc)"
+            type="button" onClick={() => setOpen(false)} title="닫기 (Esc)" aria-label="닫기"
             style={{ marginLeft: 'auto', background: 'rgba(232,240,242,0.08)', color: '#e8f0f2', border: '1px solid rgba(232,240,242,0.25)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
           >
             <FaTimes />
           </button>
         </div>
 
-        <div style={{ padding: '10px 16px 0', fontSize: 12.5, color: '#cbd5e1' }}>{scene.title}</div>
-
-        {/* 비교 슬라이더 — 왼쪽이 접안 직전(적합), 오른쪽이 저조(주의) */}
-        <div style={{ position: 'relative', margin: '8px 16px 0', aspectRatio: '1280 / 768', background: '#000', borderRadius: 8, overflow: 'hidden', userSelect: 'none' }}>
-          <img src={scene.after.src} alt={scene.after.label} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-          <div style={{ position: 'absolute', inset: 0, width: `${pos}%`, overflow: 'hidden' }}>
-            <img src={scene.before.src} alt={scene.before.label} style={{ width: `${10000 / pos}%`, maxWidth: 'none', height: '100%', objectFit: 'cover' }} />
-          </div>
-          <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${pos}%`, width: 2, background: '#38bdf8', transform: 'translateX(-1px)', pointerEvents: 'none' }} />
-          <div style={{ position: 'absolute', top: 10, left: 10, padding: '4px 8px', borderRadius: 6, background: 'rgba(2,8,20,0.7)', fontSize: 12, fontWeight: 700, color: scene.before.tone }}>{scene.before.label}</div>
-          <div style={{ position: 'absolute', top: 10, right: 10, padding: '4px 8px', borderRadius: 6, background: 'rgba(2,8,20,0.7)', fontSize: 12, fontWeight: 700, color: scene.after.tone }}>{scene.after.label}</div>
-          <input
-            type="range" min="0" max="100" value={pos} onChange={(e) => setPos(Number(e.target.value))}
-            aria-label="접안 직전과 저조 장면 비교"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', margin: 0 }}
+        {mode === 'video' && (
+          <video
+            src={VIDEO_SRC} autoPlay loop muted playsInline controls
+            onError={() => setMode('stills')}
+            style={{ display: 'block', width: '100%', aspectRatio: '16 / 9', background: '#000' }}
           />
-        </div>
-        <div style={{ padding: '8px 16px 14px', fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
-          가운데를 좌우로 끌어 두 시점을 겹쳐 보세요. {scene.note}
-        </div>
+        )}
+        {mode === 'stills' && <Stills />}
+        {mode === 'checking' && <div style={{ aspectRatio: '16 / 9', background: '#000' }} />}
       </div>
     </div>
   );

@@ -96,7 +96,12 @@ export default function RadarMap() {
 
   return (
     <>
-    <div style={{ position: 'absolute', bottom: 248, right: 20, zIndex: 1001 }}>
+    <div style={{ position: 'absolute', bottom: 248, right: 20, zIndex: 1001, display: 'flex', gap: 6, alignItems: 'center' }}>
+      {lite && (
+        <span className="hud-chip" title="이 PC 에서 3D 가 느려 그림자를 끄고 해상도를 낮췄습니다. 자료와 판정은 그대로입니다." style={{ opacity: 0.8, cursor: 'default' }}>
+          가벼운 모드
+        </span>
+      )}
       <button type="button" className="hud-chip" onClick={() => setRadarCollapsed(true)} title="레이더 접기">레이더 접기</button>
     </div>
     <div className="radar-container" style={{

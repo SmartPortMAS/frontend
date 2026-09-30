@@ -1,22 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Scene from '../components/three/Scene';
 import { findBerthIdByName, ONSAN_BERTHS, ONSAN_BERTHS_3D, OMNIVERSE_BERTH_IDS } from '../utils/geoUtils';
 import HelpTip from '../components/common/HelpTip';
 import PortMap from '../components/dashboard/PortMap';
-import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
 import RadarMap from '../components/three/hud/RadarMap';
 import CCTVPanel from '../components/three/hud/CCTVPanel';
 import VesselTrafficList from '../components/three/hud/VesselTrafficList';
 import BerthStatusBar from '../components/three/hud/BerthStatusBar';
 import OutlookTimeline from '../components/three/hud/OutlookTimeline';
 import OmniversePreview from '../components/three/OmniversePreview';
+import InfoPopup from '../components/three/InfoPopup';
 import useSensorStore from '../stores/useSensorStore';
 import useLiveTwinShips from '../hooks/useLiveTwinShips';
 import useDashboardData from '../hooks/useDashboardData';
 import { BACKEND_BASE, postTwinFocus } from '../api/backendAdapter';
-import { FaMap, FaPlay, FaExclamationTriangle, FaArrowRight } from 'react-icons/fa';
-import { alertSubject, levelStyle, typeLabel } from '../utils/alertUtils';
+import { FaPlay, FaExclamationTriangle, FaFastForward } from 'react-icons/fa';
+import { levelStyle, alertParts, mergeAlerts } from '../utils/alertUtils';
 
 // Isaac Sim 6 WebRTC 스트리밍은 웹 뷰어(web-viewer-sample)를 통해 표시된다.
 // 실행: D:\omniverse\start_twin_stream.bat (Isaac Sim 스트리밍 + 웹 뷰어 동시 기동)
@@ -25,6 +25,9 @@ import { alertSubject, levelStyle, typeLabel } from '../utils/alertUtils';
 // 5173 하나만 보고 있으면 "떠 있는데 못 찾는" 상황이 생기므로 후보를 순차 탐색한다.
 const OMNIVERSE_PORTS = [5173, 5174, 5175, 5176];
 const omniverseUrl = (port) => `http://localhost:${port}`;
+
+// 온산항 전체의 72시간 — 선석을 지목하지 않는다
+const WIDE_FOCUS = { wide: true, berth: null, berthId: null, call_sign: null, vessel_name: null, omniOk: false };
 
 // 경고 한 건이 화면에 머무는 시간. 결론만 보여주므로 5초면 충분히 읽힌다.
 const TICKER_ROTATE_MS = 5000;
@@ -37,32 +40,37 @@ export default function DigitalTwinPage() {
   //   ?berth=S-Oil 2부두  → 그 선석으로 카메라 이동 + 인접 선석 강조 (안전/환경 관제에서)
   //   ?omniverse=1        → 정밀 검토 스트림을 바로 켠다 (선박 상세 계류 검증에서)
   // 화면끼리 역할이 나뉘어 있어도 흐름이 끊기면 사용자는 매번 처음부터 찾아야 한다.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const focusBerth = searchParams.get('berth') || null;
   // 3D 장면에는 온산 11개 선석만 있다. 안전/환경 관제는 울산 전역(SK·가스부두 등)을
   // 다루므로, 장면 밖 선석으로 넘어오는 경우가 실제로 생긴다(2026-09-03 실측: SK3부두).
   // 그때 "빨간 링이 대상 선석"이라고 안내하면 있지도 않은 링을 찾게 만든다.
   const focusInScene = focusBerth ? Boolean(findBerthIdByName(focusBerth)) : false;
   const wantOmniverse = searchParams.get('omniverse') === '1';
-  //   ?outlook=OTK 1부두   → 그 선석의 "앞으로 72시간" 판정 흐름을 바로 연다 (시연 영상·캡처용)
+  //   ?outlook=OTK 1부두   → 그 선석의 "앞으로 72시간"을 바로 연다 (시연 영상·캡처용)
+  //   ?outlook=all         → 온산항 전체의 72시간
   const wantOutlook = searchParams.get('outlook') || null;
+  //   &at=<시각 ms>          → 그 시각부터(경고 벨의 '앞으로' 경고)
+  const wantAt = Number(searchParams.get('at')) || null;
 
-  // 상단 띠에 흘릴 실경고 — 심각한 것부터 최대 6건. 화면 폭이 한정돼 있어
-  // 전부 흘리면 한 바퀴가 너무 길어진다(현재 36건).
+  // 상단 띠에 세울 실경고 — 심각한 것부터 전부 돈다.
+  // [2026-09-30] 예전엔 앞 6건만 돌며 '위험 16 · 표시 4/6'이라 적어, 16건 중 왜 6건인지 알 수 없었고
+  //   5초마다 글이 툭 바뀌었다(현우). 전부 돌리고, 새 건은 아래에서 올라오며, 띠 아래 선이 다음 건까지 남은 시간을
+  //   채운다. 마우스를 올리면 멈추고 ‹ › 로 넘긴다.
   const { data: dashForTicker } = useDashboardData();
-  const allAlerts = dashForTicker?.alerts ?? [];
-  const tickerItems = allAlerts.slice(0, 6);
+  const allAlerts = useMemo(() => mergeAlerts(dashForTicker?.alerts ?? []), [dashForTicker?.alerts]);
+  // [2026-09-30] 위험만 돈다 — 주의 · 참고까지 51건을 돌리면 볼 수 없다(현우). 나머지는 경고 벨에서 본다.
+  const tickerItems = useMemo(() => allAlerts.filter((x) => x.level === 'DANGER'), [allAlerts]);
   const dangerCount = allAlerts.filter((a) => a.level === 'DANGER').length;
-  // 한 건씩 세워서 보여주고 자동으로 넘긴다(아래 배너 주석 참고)
   const [tickerIdx, setTickerIdx] = useState(0);
+  const [tickerHold, setTickerHold] = useState(false);
+  const [tickerTick, setTickerTick] = useState(0);   // 멈춤을 풀면 진행 선을 처음부터
   useEffect(() => {
-    if (tickerItems.length < 2) return undefined;
-    const id = setInterval(
-      () => setTickerIdx((i) => (i + 1) % tickerItems.length),
-      TICKER_ROTATE_MS,
-    );
-    return () => clearInterval(id);
-  }, [tickerItems.length]);
+    if (tickerItems.length < 2 || tickerHold) return undefined;
+    const id = setTimeout(() => setTickerIdx((i) => (i + 1) % tickerItems.length), TICKER_ROTATE_MS);
+    return () => clearTimeout(id);
+  }, [tickerItems.length, tickerHold, tickerIdx, tickerTick]);
+  const stepTicker = (d) => setTickerIdx((i) => (i + d + tickerItems.length) % tickerItems.length);
   const [showMap, setShowMap] = useState(false);
   const [showOmniverseStream, setShowOmniverseStream] = useState(false);
   // 'checking' | 'ok' | 'unreachable'
@@ -114,9 +122,9 @@ export default function DigitalTwinPage() {
   const selectionLabel = selectedObject
     ? (selectedObject.type === 'Ship' ? selectedObject.id : ONSAN_BERTHS[selectedObject.id]?.name || selectedObject.id)
     : null;
-  const requestOmniverse = useSensorStore((s) => s.requestOmniverse);
   const setOmniPreviewOpen = useSensorStore((s) => s.setOmniPreviewOpen);
   const setSelectedObject = useSensorStore((s) => s.setSelectedObject);
+  const requestTwinHome = useSensorStore((s) => s.requestTwinHome);
 
   // ── 앞으로 72시간 — 이 화면 안의 판정 흐름 (2026-09-27) ────────────────────
   // 정보창·연결 바·?outlook= 에서 요청한다. 열리면 카메라가 그 선석으로 가고(BerthFocus, 링은 끔),
@@ -135,14 +143,44 @@ export default function DigitalTwinPage() {
     clearOutlookRequest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outlookRequest?.at]);
+  // [2026-09-30] 72시간을 닫으면 처음 화면으로 — 선택 해제 · 주소 인자(?berth · ?outlook) 해제 · 카메라 조감(현우)
+  const closeOutlook = () => {
+    setOutlookFocus(null);
+    setSelectedObject(null);
+    if (searchParams.get('berth') || searchParams.get('outlook')) setSearchParams({}, { replace: true });
+    requestTwinHome();
+  };
+  // [2026-09-30] 머리 단추 — 선석을 고르지 않고 온산항 전체의 72시간을 돌려 본다(조감 시점)
+  const openPortOutlook = () => {
+    setShowOmniverseStream(false);
+    setShowMap(false);
+    setSelectedObject(null);
+    setOutlookFocus(WIDE_FOCUS);
+    requestTwinHome('wide');
+  };
+  // [2026-09-30] 72시간을 보는 동안 배 · 선석을 누르면(3D · 선석 현황 띠) 정보창 대신 그 선석의 72시간으로 넘어간다.
+  //   시각은 패널이 이어 간다(OutlookTimeline keepT) — 온산 전체와 선석 하나는 같은 시뮬레이션의 두 배율이다.
+  const focusBerthOutlook = (berthId) => {
+    if (!ONSAN_BERTHS_3D[berthId] || !ONSAN_BERTHS[berthId]) return;
+    setOutlookFocus({ berth: ONSAN_BERTHS[berthId].name, berthId, call_sign: null, vessel_name: null, omniOk: OMNIVERSE_BERTH_IDS.has(berthId) });
+  };
+  const widenOutlook = () => { setOutlookFocus(WIDE_FOCUS); requestTwinHome('wide'); };
+  useEffect(() => {
+    if (!outlookFocus || !selectedObject) return;
+    const f = focusFromSelection(selectedObject);
+    setSelectedObject(null);
+    if (f && (f.berthId !== outlookFocus.berthId || (f.call_sign || null) !== (outlookFocus.call_sign || null))) setOutlookFocus(f);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedObject]);
   useEffect(() => {
     if (!wantOutlook) return;
+    if (wantOutlook === 'all') { setOutlookFocus({ ...WIDE_FOCUS, jumpAt: wantAt }); requestTwinHome('wide'); return; }
     const id = findBerthIdByName(wantOutlook);
     if (id && ONSAN_BERTHS_3D[id]) {
-      setOutlookFocus({ berth: ONSAN_BERTHS[id].name, berthId: id, call_sign: null, vessel_name: null, omniOk: OMNIVERSE_BERTH_IDS.has(id) });
+      setOutlookFocus({ berth: ONSAN_BERTHS[id].name, berthId: id, call_sign: null, vessel_name: null, omniOk: OMNIVERSE_BERTH_IDS.has(id), jumpAt: wantAt });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wantOutlook]);
+  }, [wantOutlook, wantAt]);
 
   
 
@@ -214,20 +252,24 @@ export default function DigitalTwinPage() {
           카메라만 옮기면 사용자는 '왜 여기가 비춰지는지' 모른다. */}
       {focusBerth && !showOmniverseStream && !outlookFocus && (
         <div style={{
-          position: 'absolute', top: 46, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 840, display: 'flex', alignItems: 'center', gap: '10px',
+          // CCTV(왼쪽 440) 와 머리 단추(오른쪽 230) 사이 — 좁은 화면에서도 둘을 덮지 않게
+          position: 'absolute', top: 90, left: 440, right: 390,
+          zIndex: 840, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', whiteSpace: 'nowrap',
           background: 'rgba(15, 23, 42, 0.88)', backdropFilter: 'blur(10px)',
           border: `1px solid ${focusInScene ? 'rgba(255, 75, 110, 0.55)' : 'rgba(245, 158, 11, 0.55)'}`,
           borderRadius: '10px', padding: '8px 14px', color: '#fff',
-          fontSize: '12.5px', fontWeight: 700, maxWidth: '78%',
+          fontSize: '12.5px', fontWeight: 700, width: 'fit-content', margin: '0 auto',
         }}>
           <span style={{ color: focusInScene ? '#ff4b6e' : '#f59e0b' }}>●</span>
           {focusBerth}
-          <span style={{ color: '#94a3b8', fontWeight: 500 }}>
-            {focusInScene
-              ? '빨간 링이 대상 선석, 주황 링이 혼재 판정에 쓰인 인접 선석입니다'
-              : '이 선석은 3차원 장면에 없습니다 — 장면은 온산 부두 11개 선석만 재현합니다'}
-          </span>
+          {focusInScene ? (
+            <span style={{ display: 'inline-flex', gap: 10, color: '#cbd5e1', fontWeight: 600 }}>
+              <span><span style={{ color: '#ff4b6e' }}>●</span> 대상 선석</span>
+              <span><span style={{ color: '#f59e0b' }}>●</span> 이웃 선석</span>
+            </span>
+          ) : (
+            <span style={{ color: '#94a3b8', fontWeight: 500 }}>장면 밖 선석</span>
+          )}
         </div>
       )}
       
@@ -237,50 +279,53 @@ export default function DigitalTwinPage() {
           결론만 남기고 대상·유형을 따로 세운다 — 상세는 안전/환경 관제에서 본다. */}
       {tickerItems.length > 0 && (() => {
         const a = tickerItems[Math.min(tickerIdx, tickerItems.length - 1)];
-        const { subject, verdict } = alertSubject(a);
+        const p = alertParts(a);
         const st = levelStyle(a.level);
         return (
-          <div style={{
-            position: 'absolute', top: 0, left: 0, width: '100%', height: 38,
-            background: 'rgba(11,18,32,0.94)', borderBottom: `2px solid ${st.color}`,
-            zIndex: 2000, display: 'flex', alignItems: 'center', gap: 10,
-            padding: '0 14px', color: '#e8eef7', fontSize: 13, boxSizing: 'border-box',
-          }}>
+          <div
+            className="twin-ticker"
+            onMouseEnter={() => setTickerHold(true)}
+            onMouseLeave={() => { setTickerHold(false); setTickerTick((t) => t + 1); }}
+            style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: 38,
+              background: 'rgba(11,18,32,0.94)', borderBottom: '2px solid rgba(232,238,247,0.12)',
+              zIndex: 2000, display: 'flex', alignItems: 'center', gap: 10,
+              padding: '0 14px', color: '#e8eef7', fontSize: 13, boxSizing: 'border-box', overflow: 'hidden',
+            }}
+          >
             <FaExclamationTriangle color={st.color} style={{ flexShrink: 0 }} />
             <span style={{
               flexShrink: 0, background: st.color, color: '#0b1220', fontWeight: 800,
               fontSize: 11, padding: '2px 7px', borderRadius: 4, letterSpacing: '0.02em',
             }}>{st.label}</span>
-            <span style={{
-              flexShrink: 0, border: '1px solid rgba(232,238,247,0.28)', color: '#c3cede',
-              fontSize: 11, padding: '1px 7px', borderRadius: 4,
-            }}>{typeLabel(a.type)}</span>
-            {subject && (
-              <span style={{ flexShrink: 0, fontWeight: 700 }}>{subject}</span>
+            {/* 문장 대신 칸 — 대상 · 선석 · 등급 · 이유 · 조치(관제 경고 벨과 같은 규칙). 새 건은 아래에서 올라온다 */}
+            <div className="tk-slide" key={`${tickerIdx}-${a.type}`}>
+              <span style={{ flexShrink: 0, fontWeight: 800 }}>{p.title}</span>
+              {p.place && <span style={{ flexShrink: 0, color: '#c3cede' }}>{p.place}{p.stage ? ` · ${p.stage}` : ''}</span>}
+              {p.level && <span style={{ flexShrink: 0, fontWeight: 800, color: st.color }}>{p.level}</span>}
+              <span style={{
+                flex: 1, minWidth: 0, color: '#b8c4d6',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }} title={p.full}>
+                {[p.cargo, p.why].filter(Boolean).join(' · ')}{p.action ? `  →  ${p.action}${p.recipient ? ` (${p.recipient})` : ''}` : ''}
+              </span>
+            </div>
+            <span style={{ flexShrink: 0, color: '#ff8a80', fontSize: 11.5, fontWeight: 700 }}>위험 {dangerCount}</span>
+            {tickerItems.length > 1 && (
+              <span className="tk-nav">
+                <button type="button" onClick={() => stepTicker(-1)} aria-label="이전 경고">‹</button>
+                <span>{tickerIdx + 1}/{tickerItems.length}</span>
+                <button type="button" onClick={() => stepTicker(1)} aria-label="다음 경고">›</button>
+              </span>
             )}
-            {/* 결론만 — 넘치면 자르되, 잘렸다는 것이 보이게 말줄임으로 둔다 */}
-            <span style={{
-              flex: 1, minWidth: 0, color: '#b8c4d6',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>{verdict}</span>
-            <span style={{ flexShrink: 0, color: '#8b98ab', fontSize: 11 }}>
-              위험 {dangerCount} · 표시 {tickerIdx + 1}/{tickerItems.length}
-            </span>
-            {/* 어느 건을 보고 있는지 — 자동으로 넘어가므로 위치 표시가 필요하다 */}
-            <span style={{ flexShrink: 0, display: 'flex', gap: 4 }}>
-              {tickerItems.map((it, i) => (
-                <button
-                  key={`${it.type}-${i}`}
-                  onClick={() => setTickerIdx(i)}
-                  aria-label={`경고 ${i + 1}번 보기`}
-                  style={{
-                    width: 7, height: 7, padding: 0, borderRadius: '50%', border: 'none',
-                    cursor: 'pointer',
-                    background: i === tickerIdx ? st.color : 'rgba(232,238,247,0.3)',
-                  }}
-                />
-              ))}
-            </span>
+            {/* 다음 경고까지 남은 시간 — 띠 아래 선이 차오른다(멈추면 선도 멈춘다) */}
+            {tickerItems.length > 1 && (
+              <span
+                key={`p-${tickerIdx}-${tickerTick}`}
+                className="tk-progress"
+                style={{ background: st.color, animationDuration: `${TICKER_ROTATE_MS}ms`, animationPlayState: tickerHold ? 'paused' : 'running' }}
+              />
+            )}
           </div>
         );
       })()}
@@ -288,16 +333,21 @@ export default function DigitalTwinPage() {
       {/* HUD Overlays — 2D 지도/스트리밍 중에는 숨김 */}
       {!showMap && !showOmniverseStream && (
         <>
-          <RadarMap />
-          <CCTVPanel />
-          <VesselTrafficList />
+          {/* 72시간을 보는 동안 레이더 · 선박 목록은 접는다 — 아래 72시간 패널과 겹쳤다(현우) */}
+          {!outlookFocus && <RadarMap />}
+          {/* 카메라 창도 접는다 — 지금의 현장을 비추는 창이라 72시간 뒤 장면과 섞이고, 움직이는 배를 가린다 */}
+          {!outlookFocus && <CCTVPanel />}
+          {!outlookFocus && <VesselTrafficList />}
           <BerthStatusBar />
+          {selectedObject && !outlookFocus && (
+            <InfoPopup object={selectedObject} onClose={() => setSelectedObject(null)} />
+          )}
         </>
       )}
 
       {/* [2026-09-28] 머리 단추는 하나(현우 D4·D7). Omniverse 는 시연 PC 에서 켜지 않으므로 촬영한 정밀 검토 장면을 연다.
           실시간 스트림은 촬영용 주소(?omniverse=1)로만 켠다. 2D 지도는 대시보드 지도와 같아 뺐다. */}
-      <div style={{ position: 'absolute', top: 50, right: 20, zIndex: 1000, display: 'flex', gap: '10px' }}>
+      <div style={{ position: 'absolute', top: 90, right: 20, zIndex: 1000, display: 'flex', gap: '10px' }}>
         {showOmniverseStream ? (
           <button
             className="action-btn"
@@ -310,6 +360,21 @@ export default function DigitalTwinPage() {
             Omniverse 닫기
           </button>
         ) : (
+          <>
+          {!outlookFocus && (
+            <button
+              className="action-btn"
+              onClick={openPortOutlook}
+              title="온산항 전체의 앞으로 72시간 — 접안한 배가 떠나고 입항 예정 선박이 들어오는 흐름을 돌려 봅니다"
+              style={{
+                padding: '10px 16px', background: 'rgba(14, 116, 144, 0.85)', backdropFilter: 'blur(10px)', color: '#fff',
+                border: '1px solid rgba(56, 189, 248, 0.6)', borderRadius: '8px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', whiteSpace: 'nowrap',
+              }}
+            >
+              <FaFastForward /> 앞으로 72시간
+            </button>
+          )}
           <button
             className="action-btn"
             onClick={() => setOmniPreviewOpen(true)}
@@ -320,8 +385,9 @@ export default function DigitalTwinPage() {
               display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold',
             }}
           >
-            <FaPlay /> 정밀 검토 영상 (Omniverse)
+            <FaPlay /> 정밀 검토 · Omniverse
           </button>
+          </>
         )}
       </div>
 
@@ -348,8 +414,8 @@ export default function DigitalTwinPage() {
             </span>
             <HelpTip title="정밀 검토">
               <div>지목한 선석의 <strong>앞으로 72시간</strong>을 기상청 단기예보 · 국립해양조사원 조석예보로 한 시각씩 판정합니다. 판정 규칙은 관제 화면과 같습니다.</div>
-              <div style={{ marginTop: 4 }}>지목이 없으면 조감 → 과거 사례를 순환합니다. 3D 관제 화면에서 배나 선석을 누르고 [Omniverse 로 보기]를 누르면 그곳을 봅니다. 시연 PC 에서는 발열 때문에 이 화면 안의 [앞으로 72시간 판정 흐름]을 씁니다.</div>
-              <div style={{ marginTop: 4 }}>선박 이동·하역 진행은 예측 근거(유량계·소요시간 모델)가 없어 재현하지 않습니다.</div>
+              <div style={{ marginTop: 4 }}>지목이 없으면 조감 → 과거 사례를 순환합니다. 3D 관제 화면에서 배나 선석을 누르고 [Omniverse 로 보기]를 누르면 그곳을 봅니다. 평소에는 이 화면 안의 [앞으로 72시간 판정 흐름]으로 봅니다.</div>
+              <div style={{ marginTop: 4 }}>항만 전체의 입출항 흐름은 3D 관제 화면의 [앞으로 72시간]에서 돌려 봅니다. 여기는 지목한 선석 하나를 고화질로 봅니다.</div>
             </HelpTip>
             {replayCases.map((r) => (
               <button
@@ -466,15 +532,15 @@ export default function DigitalTwinPage() {
         </div>
       )}
 
-      {/* 선박 상세 패널 (2D 지도 마커 클릭 시) */}
-      <VesselDetailPanel />
+      {/* [2026-09-30] 선박 상세 패널은 대시보드 몫 — 2D 지도를 뺀 뒤 여기 남아 있어 대시보드에서 연 선박이 3D 까지 따라왔다(현우) */}
 
       {/* 앞으로 72시간 — 이 화면 안의 판정 흐름. 2D 지도·Omniverse 위에는 띄우지 않는다 */}
       {outlookFocus && !showOmniverseStream && !showMap && (
         <OutlookTimeline
           focus={outlookFocus}
-          onClose={() => setOutlookFocus(null)}
-          onOmniverse={outlookFocus.omniOk ? () => requestOmniverse(outlookFocus) : null}
+          onClose={closeOutlook}
+          onBerth={focusBerthOutlook}
+          onWide={widenOutlook}
         />
       )}
 

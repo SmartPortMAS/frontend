@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { Html } from '@react-three/drei';
+import { Html, Line } from '@react-three/drei';
 import useSensorStore from '../../stores/useSensorStore';
+import { shipsAt, FAIRWAY_LINE, FAIRWAY_ENTRANCE } from '../../utils/simClock';
+import SceneLabel from './SceneLabel';
 import Tank from './Tank';
 import Ship from './Ship';
 import Pipe from './Pipe';
-import InfoPopup from './InfoPopup';
 import {
   ONSAN_BERTHS_3D,
   ONSAN_SHORE_PATH,
@@ -38,7 +39,6 @@ function MooringLine({ from, to }) {
 }
 
 import { makePath } from './Vehicles';
-import ScheduledShips from './ScheduledShips';
 import { VTSTower, DistillationPlant, Lighthouse, Windsock, RailSiding, FireBoat } from './Facilities';
 import { MOOR_HEADING, ONSAN_WEATHER_GROUP } from '../../utils/geoUtils';
 import { WEATHER_STATUS_COLORS } from '../../utils/constants';
@@ -174,6 +174,14 @@ export default function Port() {
   const berthWeather = useSensorStore((s) => s.berthWeather);
   // "앞으로 72시간" 시간축(OutlookTimeline)이 가리키는 시각의 판정 — 그 선석만 이 값으로 그린다
   const outlookPreview = useSensorStore((s) => s.outlookPreview);
+  // [2026-09-30] 시뮬레이션이 돌면 그 시각의 배(계획에 든 배 + 계획 밖 정박지 대기선)를 그린다.
+  //   자리는 배마다 매 프레임 시계로 잡고(Ship), 여기서는 시각이 바뀔 때 누가 있고 어떤 단계인지만 다시 센다.
+  const simPlans = outlookPreview?.simOn ? outlookPreview.plans : null;
+  const drawShips = useMemo(
+    () => (simPlans ? shipsAt(simPlans, outlookPreview.at_ms, ships, !outlookPreview.berthId) : ships),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [simPlans, outlookPreview?.at_ms, ships],
+  );
 
   // 육지: 해안선 경로에서 내륙(-N) 방향으로 420유닛 확장한 폴리곤
   const landShape = useMemo(() => {
@@ -364,9 +372,9 @@ export default function Port() {
       {Object.entries(ONSAN_BERTHS_3D).map(([id, berth]) => {
         const [x, z] = berth.pos;
         // 이 선석에 계류 중인 선박 (로딩암 연결 표시용)
-        const mooredShip = ships.find(
-          (s) => s.berth === id && ['operating', 'mooring', 'docked'].includes(s.status)
-        );
+        const mooredShip = drawShips.find(
+          (s) => s.berth === id && (s.slot || 0) === 0 && ['operating', 'mooring', 'docked'].includes(s.status)
+        ) || drawShips.find((s) => s.berth === id && ['operating', 'mooring', 'docked'].includes(s.status));
         // 기상 판정 역연동: 이 선석의 임계군에 대한 최근 판정
         const liveVerdict =
           berthWeather && ONSAN_WEATHER_GROUP[id] === berthWeather.berth_group
@@ -374,13 +382,17 @@ export default function Port() {
             : null;
         // 시간축 미리보기(2026-09-27): 이 선석을 가리키면 그 시각의 예보 판정으로 색·라벨을 바꾼다.
         // 등급(적합/주의/부적합)이 색, 머리말(정상/하역중단/흘수 여유 부족…)이 글이다.
-        const preview = outlookPreview && outlookPreview.berthId === id ? outlookPreview : null;
+        const wide = outlookPreview?.berthLevels?.[id];
+        const preview = outlookPreview && outlookPreview.berthId === id ? outlookPreview
+          : wide ? { ...wide, offsetH: outlookPreview.offsetH } : null;
         const verdict = preview ? (preview.headline || preview.status || '정상') : liveVerdict;
         const escalated = preview ? Boolean(preview.level) && preview.level !== '적합' : Boolean(verdict) && verdict !== '정상';
         const stripeColor = preview
           ? (OUTLOOK_LEVEL_COLOR[preview.level] || '#94a3b8')
           : escalated ? (WEATHER_STATUS_COLORS[verdict] || '#eab308') : '#eab308';
-        const labelSuffix = preview
+        // 지목한 선석은 늘 그 시각을 적고, 나머지 선석(preview.wide)은 나빠졌을 때만 한 낱말을 붙인다
+        const marked = preview ? (preview.wide ? escalated : true) : escalated;
+        const labelSuffix = preview && !preview.wide
           ? ` · ${preview.offsetH === 0 ? '지금' : `+${preview.offsetH}h`} ${verdict}`
           : escalated ? ` · ${verdict}` : '';
 
@@ -401,18 +413,22 @@ export default function Port() {
             }}
           >
             {/* 선석명 라벨 (판정 시 상태 표시) */}
-            <Html position={[10, 22, 0]} center zIndexRange={[20, 0]} distanceFactor={320}>
+            {/* 온산 전체를 멀리서 볼 때 나빠진 선석의 이름표는 크기를 고정한다 — 거리에 맞춰 줄이면 읽히지 않는다 */}
+            <SceneLabel position={[10, 22, 0]} fixed={Boolean(preview?.wide && marked && !outlookPreview?.berthId)}>
               <div style={{
                 ...berthLabelStyle,
-                ...(escalated || preview ? { border: `1px solid ${stripeColor}`, color: stripeColor } : {}),
+                ...(marked ? { border: `1px solid ${stripeColor}`, color: stripeColor } : {}),
+                // 크기를 고정한 이름표는 이웃 선석과 높이를 엇갈린다(부두군 전체가 막히면 네 개가 나란히 선다)
+                ...(preview?.wide && marked && !outlookPreview?.berthId
+                  ? { transform: `translateY(${-(Object.keys(ONSAN_BERTHS_3D).indexOf(id) % 3) * 22}px)`, fontSize: '11px', padding: '2px 6px' } : {}),
               }}>
-                {berth.name}
+                {preview?.wide && !outlookPreview?.berthId ? berth.name.replace(/\s*부두$/, '').replace(/\s+/g, '') : berth.name}
                 {labelSuffix}
               </div>
-            </Html>
+            </SceneLabel>
 
             {/* 판정 경보 링: 하역중단/이안/호스분리 시 잔교 주위 발광 링. 시간축 미리보기 중엔 등급 색으로 늘 켠다 */}
-            {(escalated || preview) && (
+            {marked && (
               <mesh position={[5, 0.7, 0]} rotation={[-Math.PI / 2, 0, 0]}>
                 <ringGeometry args={[38, 40.5, 40]} />
                 <meshBasicMaterial color={stripeColor} transparent opacity={0.55} depthWrite={false} />
@@ -431,7 +447,7 @@ export default function Port() {
               <meshStandardMaterial
                 color={stripeColor}
                 emissive={stripeColor}
-                emissiveIntensity={escalated || preview ? 1.2 : 0.4}
+                emissiveIntensity={marked ? 1.2 : 0.4}
               />
             </mesh>
 
@@ -760,16 +776,27 @@ export default function Port() {
       </group>
 
       {/* ===== SHIPS ===== */}
-      {/* 72시간 흐름에서 출항 예정(신고) 시각이 지난 선박은 뺀다 */}
-      {ships.filter((ship) => !(outlookPreview?.departed || []).includes(ship.callsgn)).map((ship) => (
+      {/* 시뮬레이션 중에는 배가 다니는 항로를 옅게 그린다 — 배가 어디서 들어와 어디로 나가는지 */}
+      {simPlans && (
+        <group>
+          <Line
+            points={FAIRWAY_LINE.map(([x, z]) => [x, 0.9, z])}
+            color="#7dd3fc" lineWidth={1.4} dashed dashSize={10} gapSize={9} transparent opacity={0.5}
+          />
+          <SceneLabel position={[FAIRWAY_ENTRANCE[0], 10, FAIRWAY_ENTRANCE[1]]} fixed>
+            <div style={{ ...berthLabelStyle, border: '1px solid rgba(125, 211, 252, 0.5)', color: '#bae6fd', fontSize: '11px' }}>항로 입구</div>
+          </SceneLabel>
+        </group>
+      )}
+
+      {/* 시뮬레이션 중이면 그 시각의 배, 아니면 지금의 배 */}
+      {drawShips.map((ship) => (
         <Ship
           key={ship.id}
           ship={ship}
           onClick={() => setSelectedObject(ship)}
         />
       ))}
-      {/* 72시간 흐름의 입항 예정(신고) 선박 — 반투명 */}
-      <ScheduledShips />
 
       {/* [2026-09-28] 움직이는 장식(탱크로리 왕복 · 순찰정 · SPM 원유선)을 뺐다 — 데이터와 무관하게
           돌아다녀 실제 작업처럼 보였다("가상을 실제처럼 꾸미지 않기"). 정적인 건물·시설만 배경으로 남긴다. */}
@@ -790,13 +817,7 @@ export default function Port() {
         );
       })}
 
-      {/* ===== INFO POPUP (HTML Overlay) ===== */}
-      {selectedObject && (
-        <InfoPopup
-          object={selectedObject}
-          onClose={() => setSelectedObject(null)}
-        />
-      )}
+      {/* 정보창은 캔버스 밖(DigitalTwinPage)에서 띄운다 — 3D 안에 두면 카메라를 따라 밀렸다(2026-09-30) */}
     </group>
   );
 }

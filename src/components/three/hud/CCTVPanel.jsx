@@ -1,6 +1,6 @@
+import { showDisclosure } from '../../../utils/disclosure';
 import { useState, useEffect, useMemo } from 'react';
 import useSensorStore from '../../../stores/useSensorStore';
-import useDashboardData from '../../../hooks/useDashboardData';
 import { ONSAN_BERTHS_3D } from '../../../utils/geoUtils';
 import { FaVideo, FaPause, FaPlay, FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import CctvTwinView from './CctvTwinView';
@@ -44,7 +44,6 @@ export default function CCTVPanel() {
   const [cycleIdx, setCycleIdx] = useState(0);
   const selectedObject = useSensorStore((s) => s.selectedObject);
   const ships = useSensorStore((s) => s.ships);
-  const { data } = useDashboardData();
 
   // 카메라 선택 — 이영서 요청(2026-08-17): "자동으로 바뀌는 게 맞나요? 선택 기능도"
   //
@@ -94,17 +93,13 @@ export default function CCTVPanel() {
   const mooredShip = ships.find(
     (s) => s.berth === berthId && ['operating', 'mooring', 'docked'].includes(s.status)
   );
-  // 이 부두의 실시간 하역 작업 (공용 API — React/Omniverse와 동일 소스)
-  const op = (data?.operations || []).find(
-    (o) => !o.is_real_record && o.berth === berth?.name && o.status !== 'COMPLETED'
-  );
-  const loading = op?.status === 'IN_PROGRESS' || mooredShip?.status === 'operating';
+  const loading = mooredShip?.status === 'operating';
   const isManual = pinned;
 
   // 접었을 때는 헤더 줄만 남긴다 — 3D 화면을 넓게 보려는 용도라 최소 폭으로.
   if (collapsed) {
     return (
-      <div className="cctv-collapsed" style={{ position: 'absolute', top: 44, left: 20, zIndex: 1000 }}>
+      <div className="cctv-collapsed" style={{ position: 'absolute', top: 90, left: 20, zIndex: 1000 }}>
         <button type="button" onClick={() => setCollapsed(false)} className="hud-chip" title="부두 CCTV 펼치기">
           <FaVideo size={11} /> 부두 CCTV
           <FaChevronDown size={9} />
@@ -113,16 +108,14 @@ export default function CCTVPanel() {
     );
   }
 
+  // [2026-09-30] 실제 배 이름 옆에 내장 예시 작업("메탄올 38% (4,500/12,000t)")을 붙이지 않는다 — 그 배가 싣지 않은
+  //   화물과 없는 진행률이 실선박 정보처럼 보였다(아젤리아 · OTK 1부두). 아는 것만: 배 이름 · 화물 · 접안.
   const footer = mooredShip
-    ? op
-      ? op.status === 'IN_PROGRESS'
-        ? `${mooredShip.id} · ${op.cargo} ${Math.round(op.progress_pct)}% (${(op.done_tons ?? 0).toLocaleString()}/${op.planned_tons?.toLocaleString()}t)`
-        : `${mooredShip.id} · ${op.cargo} 하역 대기`
-      : `${mooredShip.id} · 계류`
+    ? `${mooredShip.id}${mooredShip.cargoType ? ` · ${mooredShip.cargoType}` : ''} · 접안`
     : '공석';
 
   return (
-    <div style={{ position: 'absolute', top: 44, left: 20, zIndex: 1000, width: '400px' }}>
+    <div style={{ position: 'absolute', top: 90, left: 20, zIndex: 1000, width: '400px' }}>
       {/* 조작 줄 — 카메라 선택·자동순회·접기.
           패널 본체는 pointerEvents:none 을 유지해 3D 조작을 가리지 않고,
           이 줄에만 pointerEvents:auto 를 준다. */}
@@ -189,7 +182,7 @@ export default function CCTVPanel() {
         CAM-{String(camNo).padStart(2, '0')} · {berth?.name}
       </div>
       <div style={{ position: 'absolute', top: 30, right: 12, color: P.sub, fontSize: '12px', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
-        {P.label} 모드 {isManual ? '· 수동 선택' : '· 자동 순찰'} · CCTV 영상 없음
+        {P.label} 모드 {isManual ? '· 수동 선택' : '· 자동 순찰'}{showDisclosure() ? ' · CCTV 영상 없음' : ''}
       </div>
       <div style={{ position: 'absolute', bottom: 10, left: 12, color: P.sub, fontSize: '12.5px', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
         {footer}

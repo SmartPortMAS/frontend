@@ -1,3 +1,4 @@
+import { showDisclosure } from '../../utils/disclosure';
 import { FaShip, FaChevronDown } from 'react-icons/fa';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,7 +54,7 @@ export default function PortMisBar() {
 
       <div className="portmis-right">
         {/* 통합된 척하지 않는다 — 구상임을 화면에 늘 적어 둔다 */}
-        <span className="portmis-demo">연계 구상 (데모)</span>
+        {showDisclosure() && <span className="portmis-demo">연계 구상 (데모)</span>}
       </div>
     </div>
   );

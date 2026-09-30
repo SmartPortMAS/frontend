@@ -16,6 +16,18 @@ export function cargoNames(list) {
   return out.sort((a, b) => a.localeCompare(b, 'ko'));
 }
 
+/** 칸 폭에 맞는 요약 — 이름을 3 · 2 · 1개로 줄여 가며 maxChars 안에 드는 첫 표기를 고른다.
+ *  [2026-09-30] 'A, B 외 2종'이 칸을 넘겨 '…'로 잘리던 것을 막는다(현우: 잘리는 글자). 전체 목록은 title 로 준다. */
+export function cargoFit(list, maxChars = 16) {
+  const names = cargoNames(list);
+  for (const max of [3, 2, 1]) {
+    const t = names.length <= max ? names.join(', ') : `${names.slice(0, max).join(', ')} 외 ${names.length - max}종`;
+    if (t.length <= maxChars) return t;
+  }
+  if (!names.length) return '';
+  return names.length === 1 ? names[0] : `${names[0]} 외 ${names.length - 1}종`;
+}
+
 /** 'A' · 'A, B' · 'A, B 외 3종' — 좁은 칸용 요약. 전체 목록은 title 로 준다. */
 export function cargoSummary(list, max = 2) {
   const names = cargoNames(list);

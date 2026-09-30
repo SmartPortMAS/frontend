@@ -66,12 +66,16 @@ export default function useHardwareData() {
       if (!closed && !wsOpen) pollTimer = setTimeout(poll, POLL_MS);
     };
 
+    // [2026-09-30] 한 번도 열린 적 없이 두 번 실패하면(Vercel 처럼 WebSocket 을 못 넘기는 배포) 다시 시도하지 않고
+    //   1초 조회만 쓴다 — 몇 초마다 실패한 연결이 쌓여 콘솔이 오류로 찼다(흐름 점검 9/30).
+    let everOpen = false;
+    let fails = 0;
     const connect = () => {
       if (closed) return;
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const ws = new WebSocket(`${proto}://${window.location.host}${WS_PATH}`);
       wsRef.current = ws;
-      ws.onopen = () => { wsOpen = true; stopPolling(); setWsState('open'); };
+      ws.onopen = () => { wsOpen = true; everOpen = true; fails = 0; stopPolling(); setWsState('open'); };
       ws.onmessage = (ev) => {
         try { setSnapshot(JSON.parse(ev.data)); } catch { /* 깨진 한 장은 버린다 */ }
       };
@@ -80,6 +84,8 @@ export default function useHardwareData() {
         if (closed) return;
         // WebSocket 이 없어도 화면은 멈추지 않는다 — 폴링으로 이어 받고, WebSocket 은 계속 다시 시도
         if (!pollTimer) poll();
+        fails += 1;
+        if (!everOpen && fails >= 2) return;
         timer = setTimeout(connect, RECONNECT_MS);
       };
       ws.onerror = () => { /* onclose 가 뒤따른다 */ };

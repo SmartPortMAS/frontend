@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import DigitalTwinPage from './pages/DigitalTwinPage';
 import DashboardPage from './pages/DashboardPage';
-import SafetyPage from './pages/SafetyPage';
 import SensorPage from './pages/SensorPage';
 import ArrivalVerificationPage from './pages/ArrivalVerificationPage';
 import AgentConsole from './components/dashboard/AgentConsole';
@@ -21,7 +20,8 @@ export default function App() {
         {/* 선석 현황은 선박 판정 화면 안으로 합쳤다(2026-09-27) — 예전 링크는 그 자리로 보낸다 */}
         <Route path="/berth-assignments" element={<Navigate to="/arrivals#berthed" replace />} />
         <Route path="/twin" element={<DigitalTwinPage />} />
-        <Route path="/safety" element={<SafetyPage />} />
+        {/* 화물 혼재 심사는 선박 판정 화면 안으로 합쳤다(2026-09-30) — 예전 링크는 그 자리로 보낸다 */}
+        <Route path="/safety" element={<Navigate to="/arrivals" replace />} />
         <Route path="/sensors" element={<SensorPage />} />
         {/* 예전에 트윈이 / 였던 시절 공유된 링크를 살려 둔다 */}
         <Route path="/dashboard" element={<Navigate to="/" replace />} />

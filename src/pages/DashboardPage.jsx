@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import KPICard from '../components/dashboard/KPICard';
 import WeatherPanel from '../components/dashboard/WeatherPanel';
-import BerthWeatherPanel from '../components/dashboard/BerthWeatherPanel';
 import PortMap from '../components/dashboard/PortMap';
 import PortCallTable from '../components/dashboard/PortCallTable';
-import GanttChart from '../components/dashboard/GanttChart';
 import VesselDetailPanel from '../components/dashboard/VesselDetailPanel';
+import BerthDetailPanel from '../components/dashboard/BerthDetailPanel';
 import useDashboardData from '../hooks/useDashboardData';
+import useSensorStore from '../stores/useSensorStore';
 import { fetchPendingApprovals, fetchBerthAssignments } from '../api/backendAdapter';
 import { FaShip, FaWarehouse, FaAnchor, FaShieldAlt } from 'react-icons/fa';
 
@@ -85,21 +85,25 @@ export default function DashboardPage() {
     return () => { alive = false; clearInterval(t); };
   }, []);
   const onsanBerthRows = (berthRows ?? []).filter((b) => b.port_name === '온산항');
+  // [2026-09-30] 선석 현황판은 추적 띠의 '선박 찾기' 창 안으로 옮겼다(현우) — 타일이 그 창을 연다
+  const setPickerOpen = useSensorStore((s) => s.setPickerOpen);
+  const showBerthBoard = () => setPickerOpen(true);
   const occupiedBerths = onsanBerthRows.filter((b) => (b.slots || []).some((s) => s.call_sign)).length;
 
   return (
     <div className="dashboard-page">
       <div className="kpi-grid">
-        <KPICard title="관제 선박" value={vesselTotal} unit="척" icon={<FaShip />} change={`액체화물선 ${liquidCount}척 · 선종 미확인 ${unknownCount}척`} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
-        <KPICard title="접안 중" value={mooredCount} unit="척" icon={<FaAnchor />} change={`정박지 대기 ${anchorCount}척 · 항내 소형선 ${unknownNavCount}척`} trend="neutral" />
+        {/* 자료가 오기 전에는 0 이 아니라 '—' — 0척으로 보이면 항만이 빈 것처럼 읽힌다 */}
+        <KPICard title="관제 선박" value={data ? vesselTotal : '—'} unit={data ? '척' : ''} icon={<FaShip />} change={data ? `액체화물선 ${liquidCount} · 선종 미확인 ${unknownCount}` : '불러오는 중'} trend={liquidCount > 0 ? 'negative' : 'neutral'} />
+        <KPICard title="접안 중" value={data ? mooredCount : '—'} unit={data ? '척' : ''} icon={<FaAnchor />} change={data ? `정박지 대기 ${anchorCount} · 소형선 ${unknownNavCount}` : '불러오는 중'} trend="neutral" />
         <KPICard
           title="온산 선석 점유"
           value={berthRows ? occupiedBerths : '—'}
           unit={berthRows ? '개' : ''}
           icon={<FaWarehouse />}
-          change={berthRows ? `온산 부두 ${onsanBerthRows.length}곳 중 · 선박 판정 화면과 같은 기준` : '선석 점유를 불러오지 못했습니다'}
+          change={berthRows ? `온산 부두 ${onsanBerthRows.length}곳 중` : '불러오지 못함'}
           trend="neutral"
-          to="/arrivals#berthed"
+          onClick={showBerthBoard}
         />
         <KPICard
           title="확인 대기 판정"
@@ -107,10 +111,10 @@ export default function DashboardPage() {
           unit={pending ? '척' : ''}
           icon={<FaShieldAlt />}
           change={pending
-            ? `부적합 ${unfitCount}${cautionCount ? ` · 주의 ${cautionCount}` : ''} · 판정불가 ${unknownCount2}${unknownWhyText ? ` — ${unknownWhyText}` : ''}`
-            : '판정 이력을 불러오지 못했습니다'}
+            ? `부적합 ${unfitCount}${cautionCount ? ` · 주의 ${cautionCount}` : ''} · 판정불가 ${unknownCount2}`
+            : '불러오지 못함'}
           trend={!pending ? 'neutral' : unfitCount > 0 ? 'negative' : 'positive'}
-          to="/arrivals"
+          to="/arrivals?view=pending"
         />
       </div>
 
@@ -118,13 +122,16 @@ export default function DashboardPage() {
           36건까지 늘면서 첫 화면을 통째로 덮어, 지도·기상·선석 판정이 스크롤 아래로
           밀렸기 때문. 미확인 건수는 벨 배지에 항상 떠 있어 놓치지 않는다. */}
 
-      {/* 온산 관제 지도 — 이 화면에서 가장 많이 들여다보는 패널이라 크게 잡는다.
-          뷰포트에 맞춰 늘리되(62vh) 작은 화면에서도 지도 구실을 하도록 하한을 둔다. */}
-      <div className="glass-card dash-section">
+      {/* 온산 관제 지도 — 첫 화면에서 "어디에 어떤 배가, 어떤 판정으로" 보인다(배 색 = 선종, 고리 = 판정).
+          [2026-09-29 밤] 선석 점유 타일은 선석 현황판으로, 확인 대기 판정 타일은 선박 판정의 확인 대기로 간다 —
+          예전엔 둘 다 선박 판정 화면으로 가서 두 타일의 차이가 보이지 않았다(현우).
+          [2026-09-30] 선석 현황판은 '선박 찾기' 창 안으로 옮기고 지도를 넓혔다(현우). 부두 기상 · 최근 접안 ·
+          재항 시간은 선석 상세 서랍(지도의 선석 원 · 이름표, 선석 현황판의 부두 이름)에서 본다. */}
+      <div className="dash-section glass-card">
         <div className="glass-card-header">
           <h3 className="glass-card-title">온산항 관제 지도</h3>
         </div>
-        <div style={{ height: 'clamp(460px, 62vh, 760px)' }}>
+        <div style={{ height: 'clamp(520px, 72vh, 900px)' }}>
           <PortMap />
         </div>
       </div>
@@ -134,27 +141,12 @@ export default function DashboardPage() {
         <WeatherPanel />
       </div>
 
-      {/* 선석별 하역 판정 (온산 MVP, Full Width) */}
-      <div className="dash-section">
-        <BerthWeatherPanel />
-      </div>
-
-      {/* 선석 배정 시뮬레이션 패널은 내렸다(2026-08-21) — 협상 로그(우하단 콘솔)의
-          스케줄링 발화가 같은 배정 경로(전용/대체/정박지)를 이미 보여준다. 같은
-          판정을 두 곳에 그리면 어느 쪽이 정본인지 화면만 봐서는 알 수 없다.
-          판정 실행과 결과 표시는 협상 로그 하나로 단일화. */}
-      {/* 접안 이력 간트는 선박 판정 화면(선석 점유 아래)으로 옮겼다(2026-09-27) — 선석이 축인
-          정보라 그 화면 몫이다. 같이 있던 "진행 중/예정 작업" 모형 진행률 목록은 뺐다(유량계 없음). */}
-
       {/* 입항 선박 목록 (Full Width) */}
       <div className="dash-section">
         <PortCallTable />
       </div>
 
-      {/* [2026-09-28] 부두별 접안 이력 — 판정에 쓰지 않는 참고 정보라 판정 화면이 아니라 대시보드 맨 아래에 둔다(현우) */}
-      <div className="dash-section">
-        <GanttChart />
-      </div>
+      {/* 다차원 안전 평가 지수는 사이드바로 옮겼다(2026-09-30) — 맨 아래 두면 찾기 어려웠다. 누르면 차트와 축별 근거 */}
 
       {/* 화면에서 내린 것들 —
           · 탱크 저장 현황: 센서 데이터 탭의 탱크 센서와 같은 값을 두 번 그리고 있었다.
@@ -165,6 +157,8 @@ export default function DashboardPage() {
 
       {/* 선박 상세 패널 (지도 마커/입항 목록/경고 벨에서 선박 클릭 시) */}
       <VesselDetailPanel />
+      {/* 선석 상세 서랍 (선석 현황판 칸 · 지도 선석 원) */}
+      <BerthDetailPanel />
 
       {/* 협상 콘솔은 App 전역 마운트로 올렸다(2026-08-22) — 배정현황·안전 탭에서도
           승인·판정에 닿아야 해서. 여기서 또 그리면 두 개가 겹친다. */}

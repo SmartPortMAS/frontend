@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { ONSAN_BERTHS_3D, findBerthIdByName, onsanAdjacentBerthNames } from '../../utils/geoUtils';
+import { ONSAN_BERTHS_3D, SHORE_N, SHORE_T, findBerthIdByName, onsanAdjacentBerthNames } from '../../utils/geoUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 특정 선석으로 카메라를 옮기고, 그 선석과 인접 선석을 링으로 표시한다.
@@ -16,8 +16,8 @@ import { ONSAN_BERTHS_3D, findBerthIdByName, onsanAdjacentBerthNames } from '../
 // 좌표계: ONSAN_BERTHS_3D 의 pos 는 Three.js 씬 좌표([x, z])다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const FOCUS_HEIGHT = 95;      // 카메라 높이 — 부두를 비스듬히 내려다보는 각
-const FOCUS_BACK = 120;       // 선석에서 물러나는 거리
+const FOCUS_HEIGHT = 105;     // 카메라 높이 — 부두를 비스듬히 내려다보는 각
+const FOCUS_BACK = 150;       // 선석에서 물러나는 거리
 const EASE = 0.06;            // 카메라 이동 감쇠 (1에 가까울수록 즉시)
 const SNAP_DIST = 1.2;        // 이만큼 가까워지면 이동을 끝낸다
 
@@ -50,10 +50,10 @@ export default function BerthFocus({ berthName, showRings = true }) {
       ...adjacent.map((b) => ({ pos: b.pos, color: '#f59e0b', radius: 20, self: false })),
     ];
 
-    // 바다 쪽에서 부두를 본다. 선석 배치가 해안선을 따라 늘어서 있으므로
-    // 원점(육지 중심) 반대편으로 물러나면 부두 앞면이 보인다.
-    const away = focus.clone().normalize();
-    if (away.lengthSq() < 1e-6) away.set(0, 0, 1);
+    // 만(바다) 쪽에서 부두를 본다 — 해안선에 수직인 방향으로 물러나고, 배가 들어오는 남동쪽으로 조금 비킨다.
+    // [2026-09-30] 예전엔 원점 반대편으로 물러났는데, 끝 쪽 선석(UTK · 정일)은 그 방향이 해안선과 나란해
+    //   잔교를 옆에서 길게 보게 됐다.
+    const away = new THREE.Vector3(SHORE_N[0] + SHORE_T[0] * 0.25, 0, SHORE_N[1] + SHORE_T[1] * 0.25).normalize();
     target.current = {
       camPos: focus.clone().add(away.multiplyScalar(FOCUS_BACK)).setY(FOCUS_HEIGHT),
       lookAt: focus,

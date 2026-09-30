@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   FaCloudSun, FaRoute, FaShieldAlt, FaRobot, FaComments, FaTimes, FaPlay, FaSpinner,
   FaSearch, FaPaperPlane, FaBookOpen, FaUser,
@@ -13,9 +13,11 @@ import { ONSAN_WEATHER_GROUP, findBerthIdByName } from '../../utils/geoUtils';
 import { cargoSummary } from '../../utils/cargoText';
 import DemoChip from '../common/DemoChip';
 import { useDemoCargo } from '../../utils/demoCargo';
+import { showDisclosure } from '../../utils/disclosure';
 
 // 기록된 판정 카드 — 표와 같은 색·같은 말
-const LEVEL_COLOR = { '적합': COLORS.teal, '주의': COLORS.yellow, '부적합': COLORS.red, '판정불가': COLORS.yellow };
+// 화면 공용 판정 색(utils/verdict) — 판정불가는 보라
+const LEVEL_COLOR = { '적합': COLORS.teal, '주의': COLORS.yellow, '부적합': COLORS.red, '판정불가': COLORS.purple };
 // 서버 종합 판정값(내부 이름)을 화면 말로. '적합선석없음'은 선석을 확인 못 한 판정불가, 나머지 둘은 원인이 붙은 부적합.
 const DECISION_KO = {
   '적합': '적합', '승인가능': '적합',
@@ -26,6 +28,13 @@ const DECISION_KO = {
 const decisionKo = (d) => DECISION_KO[d] || d || '';
 const decisionLevel = (d) => (DECISION_KO[d] || '').split(' ·')[0];
 const STAGE_TEXT = { '입항전': '입항 전', '접안직전': '접안 직전', '하역중': '하역 중' };
+// 실물 하역 개시 게이트가 있는 부두 — 현장 설비 화면의 게이트 A·B
+const gateOfBerth = (name) => {
+  const n = String(name || '').replace(/\s/g, '');
+  if (n.startsWith('OTK1')) return 'A';
+  if (n.startsWith('정일1')) return 'B';
+  return null;
+};
 const kstShort = (iso) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
@@ -60,7 +69,7 @@ const RISK_COLOR = (lv) => ({
 
 const VERDICT_COLOR = {
   APPROVED: COLORS.teal, CAUTION: COLORS.yellow,
-  REJECTED: COLORS.red, UNKNOWN: COLORS.textDim, PENDING: COLORS.info,
+  REJECTED: COLORS.red, UNKNOWN: COLORS.purple, PENDING: COLORS.info,   // 판정불가 = 보라(화면 공용 판정 색)
 };
 
 // 도구 의견(백엔드 opinions) 중 한 축. 옛 응답(스냅샷)에는 없다 — 그때는 옛 근거로 대신한다.
@@ -376,6 +385,8 @@ export default function AgentConsole({ mode = 'qa' }) {
   const [localTarget, setLocalTarget] = useState(null);
   const consoleRequest = useSensorStore((st) => st.consoleRequest);
   const clearConsoleRequest = useSensorStore((st) => st.clearConsoleRequest);
+  // [2026-09-29 밤] 혼재 단계 → 화물 혼재 심사 화면(같은 혼재 에이전트, 같은 입력)으로 이어 준다
+  const requestThreadFocus = useSensorStore((st) => st.requestThreadFocus);
 
   // 판정 대상: 실AIS + berth-cargo(실 신고 위험물) 조인 결과를 우선 쓰고,
   // DB에 재항 위험물 신고가 하나도 없을 때만(로컬 mock-server 등) 데모 시나리오로 대체한다.
@@ -399,6 +410,7 @@ export default function AgentConsole({ mode = 'qa' }) {
   const target = localTarget;
   // 이력에 남은 판정 — 표의 행이 실어 보낸다. 창 맨 위에 그대로 보인다.
   const [recorded, setRecorded] = useState(null);
+  const navigate = useNavigate();
 
   // 배정현황의 "협상 로그 →" 클릭을 받는다 — 그 배를 대상으로 콘솔을 연다.
   // 실제 판정 대상 목록(vessels)에서 호출부호로 찾은 실선박만 지정한다.
@@ -719,7 +731,7 @@ export default function AgentConsole({ mode = 'qa' }) {
                 {berthNow || '선석 미확인'} · {cargoSummary(target.cargos?.length ? target.cargos : [target.cargo].filter(Boolean)) || '화물 미확인'}
                 {target.draught_m ? ` · 흘수 ${target.draught_m} m` : ''}
               </div>
-              {demoAround.any && (
+              {showDisclosure() && demoAround.any && (
                 <div style={{ fontSize: 11, color: COLORS.textSecondary, marginTop: 4, display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
                   <DemoChip derived={!demoAround.own.length} entries={[...demoAround.own, ...demoAround.near]} />
                   <span>
@@ -744,6 +756,16 @@ export default function AgentConsole({ mode = 'qa' }) {
                 {recorded.assessed_at_utc && <span style={{ color: COLORS.textDim }}>· {kstShort(recorded.assessed_at_utc)}</span>}
                 {recorded.acknowledged_by && <span style={{ color: COLORS.teal, fontWeight: 700 }}>· 확인 {recorded.acknowledged_by}</span>}
               </div>
+              {gateOfBerth(berthNow) && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/sensors')}
+                  title="이 부두에는 실물 하역 개시 게이트가 있습니다. 하역 중 판정이 부적합·판정불가이거나 부두 기상이 정상이 아니면 잠깁니다."
+                  style={{ marginTop: 5, background: 'none', border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 11.5, color: COLORS.navy, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  하역 개시 게이트 {gateOfBerth(berthNow)} 보기 →
+                </button>
+              )}
               {recorded.action && recorded.level !== '적합' && (
                 <div style={{ marginTop: 3, color: COLORS.textSecondary }}>
                   조치안 {recorded.action}{recorded.recipient ? <> → <strong>{recorded.recipient}</strong></> : null}
@@ -927,6 +949,16 @@ export default function AgentConsole({ mode = 'qa' }) {
                       <summary style={{ cursor: 'pointer', fontSize: 11.5, color: COLORS.info, fontWeight: 600 }}>{m.longTextLabel || '판단 사유 전문'}</summary>
                       <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{m.longText}</div>
                     </details>
+                  )}
+                  {/* 혼재 단계의 자세한 근거(화물쌍 · 규정 그래프)는 이 화면 아래 '화물 혼재' 카드가 같은 입력으로 펼친다 */}
+                  {mode === 'reasoning' && m.agent === 'safety' && !/생략/.test(String(m.text)) && (
+                    <button
+                      type="button"
+                      className="console-link"
+                      onClick={() => { requestThreadFocus('cargo'); setOpen(false); }}
+                    >
+                      혼재 근거 자세히 →
+                    </button>
                   )}
                 </div>
               </div>
