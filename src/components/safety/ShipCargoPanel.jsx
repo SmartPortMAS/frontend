@@ -69,6 +69,8 @@ const reqOf = (subj, berth, adjacent) => ({
   call_sign: subj.callsgn,
 });
 
+const signedM = (m) => `${m >= 0 ? '+' : ''}${m.toFixed(1)} m`;
+
 function RiskPill({ level }) {
   const c = RISK_STYLE[level]?.color || COLORS.textDim;
   return <span className="sc-pill" style={{ color: c, borderColor: c }}>{level || '—'}</span>;
@@ -168,7 +170,12 @@ export default function ShipCargoPanel() {
   if (!subject) return null;
 
   const hereRow = berths.find((b) => berthKey(b.wharf_name) === berthKey(subject.berth));
-  const hereMargin = hereRow?.depth_m != null && subject.draught ? Number(hereRow.depth_m) - subject.draught : null;
+  // 대체 후보 줄과 같은 잣대(해도 + 체류 중 최저 조위)의 여유는 판정이 흘수로 걸렸을 때만 이유 문장에 있다.
+  // 없으면 해도수심만으로 계산하고 '해도 기준'이라고 밝힌다.
+  const judged = (thread?.reasons || []).map((r) => r.match(/선석 '([^']+)' 가용수심.*흘수여유가 (-?[\d.]+)m/))
+    .find((m) => m && berthKey(m[1]) === berthKey(subject.berth));
+  const hereMargin = judged ? Number(judged[2])
+    : hereRow?.depth_m != null && subject.draught ? Number(hereRow.depth_m) - subject.draught : null;
   const pickedRow = alts.state === 'ready' ? alts.rows.find((r) => r.wharf_name === picked) : null;
   const noCargo = !subject.cargos.length;
 
@@ -237,7 +244,7 @@ export default function ShipCargoPanel() {
                     <tr className={`base${picked == null ? ' on' : ''}`} onClick={() => setPicked(null)}>
                       <td><strong>{subject.berth || '—'}</strong></td>
                       <td>{subject.berthSource || '—'}</td>
-                      <td className="num">{hereMargin != null ? `${hereMargin >= 0 ? '+' : ''}${hereMargin.toFixed(1)} m` : '—'}</td>
+                      <td className="num">{hereMargin != null ? <>{signedM(hereMargin)}{!judged && <span className="sc-dim"> 해도 기준</span>}</> : '—'}</td>
                       <td>이 선박</td>
                       <td className="num">{basis.state === 'ready' ? `${(basis.adjacent || []).length}건` : '—'}</td>
                       <td><RiskPill level={basis.result?.risk_level} /></td>
@@ -246,7 +253,7 @@ export default function ShipCargoPanel() {
                       <tr key={r.wharf_name} className={picked === r.wharf_name ? 'on' : ''} onClick={() => setPicked(r.wharf_name)}>
                         <td><strong>{r.wharf_name}</strong></td>
                         <td>대체 후보 {r.rank}</td>
-                        <td className="num">{r.draught_margin_m != null ? `+${Number(r.draught_margin_m).toFixed(1)} m` : '—'}</td>
+                        <td className="num">{r.draught_margin_m != null ? signedM(Number(r.draught_margin_m)) : '—'}</td>
                         <td>{r.occupancy_status || '—'}{r.conflicting_port_calls?.length ? ` · 겹침 ${r.conflicting_port_calls.length}` : ''}</td>
                         <td className="num">{r.adjacent ? `${r.adjacent.length}건` : '—'}</td>
                         <td><RiskPill level={r.verdict?.risk_level} /></td>
