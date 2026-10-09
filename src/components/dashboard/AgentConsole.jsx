@@ -1125,13 +1125,11 @@ function CitationList({ citations, onOpen }) {
             <strong style={{ color: c.is_exact ? COLORS.teal : COLORS.info }}>{c.chem_name}</strong> · {c.section_name}
             {c.cas_no && ` (CAS ${c.cas_no})`}
           </span>
-          {c.is_exact ? (
+          {c.is_exact && (
             <span style={{
               flexShrink: 0, padding: '1px 6px', borderRadius: 5, fontSize: 10,
               background: `${COLORS.teal}2e`, color: COLORS.teal, fontWeight: 700,
             }}>확정값</span>
-          ) : (
-            <span style={{ flexShrink: 0, color: COLORS.textDim }}>유사도 {c.score.toFixed(2)}</span>
           )}
         </button>
       ))}
@@ -1363,8 +1361,8 @@ function QaPanel({ log, loading, question, setQuestion, ask, endRef, cargoHint, 
                 {activeCitation.chem_name} · {activeCitation.section_name}
               </div>
               <div style={{ fontSize: 11, color: COLORS.textDim, marginTop: 2 }}>
-                {activeCitation.cas_no && `CAS ${activeCitation.cas_no} · `}
-                {activeCitation.is_exact ? '확정값' : `유사도 ${activeCitation.score.toFixed(2)}`}
+                {[activeCitation.cas_no && `CAS ${activeCitation.cas_no}`, activeCitation.is_exact && '확정값']
+                  .filter(Boolean).join(' · ')}
               </div>
             </div>
             <button onClick={() => setActiveCitation(null)} style={{
