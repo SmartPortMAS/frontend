@@ -279,7 +279,7 @@ const POLL_MS = 30_000;
 // 참고 선석(배정 범위 밖) — 작은 회색 사각 라벨. 배정 마커와 형태부터 다르게.
 const refIcon = L.divIcon({
   className: 'ref-berth-icon',
-  html: '<div style="width:9px;height:9px;border-radius:2px;background:#9AA7AE;border:1px solid #7A8A92;"></div>',
+  html: '<div style="width:9px;height:9px;border-radius:2px;background:#9AA7AE;border:1px solid #6D7882;"></div>',
   iconSize: [9, 9], iconAnchor: [4, 4],
 });
 

@@ -138,7 +138,7 @@ export default function VesselDetailPanel() {
     <div className="vessel-detail-panel" style={{
       position: 'fixed', top: 0, right: 0, height: '100vh', width: '390px', zIndex: 2500,
       background: 'rgba(255, 255, 255, 0.98)', backdropFilter: 'blur(12px)',
-      borderLeft: `1px solid ${COLORS.borderHover}`, boxShadow: '-12px 0 40px rgba(18, 53, 79, 0.16)',
+      borderLeft: `1px solid ${COLORS.borderHover}`, boxShadow: '-12px 0 40px rgba(19, 20, 22, 0.16)',
       padding: '20px', overflowY: 'auto', color: COLORS.textPrimary,
     }}>
       {/* 헤더 */}

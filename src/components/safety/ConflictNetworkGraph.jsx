@@ -90,7 +90,7 @@ export default function ConflictNetworkGraph({ targetBerth, targetCargo, hits })
   const midY = (top + viewH - 10 - boxH) / 2;
   const tgY = new Map(targetGroups.map(([no], i) => [no, midY + (i - (targetGroups.length - 1) / 2) * (boxH + rowGap)]));
 
-  const font = { fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' };
+  const font = { fontFamily: 'var(--font-sans)' };
   const Box = ({ x, yy, caption, value, color, fill = COLORS.card, tag }) => (
     <g style={font}>
       <rect x={x} y={yy} width={boxW} height={boxH} rx="9" fill={fill} stroke={color} strokeWidth="1.5" />
@@ -162,13 +162,13 @@ export default function ConflictNetworkGraph({ targetBerth, targetCargo, hits })
       {zoomed && createPortal(
         <div role="dialog" aria-modal="true" aria-label="추론 그래프 크게 보기" onClick={() => setZoomed(false)}
           style={{
-            position: 'fixed', inset: 0, background: 'rgba(18, 53, 79, 0.55)', zIndex: 3000,
+            position: 'fixed', inset: 0, background: 'rgba(19, 20, 22, 0.55)', zIndex: 3000,
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px',
           }}>
           <div onClick={(e) => e.stopPropagation()} style={{
             position: 'relative', background: COLORS.card, borderRadius: '16px', padding: '28px 32px 20px',
             width: '100%', maxWidth: 'min(1200px, 94vw)', maxHeight: '90vh', overflowY: 'auto',
-            boxShadow: '0 24px 64px rgba(18, 53, 79, 0.35)',
+            boxShadow: '0 24px 64px rgba(19, 20, 22, 0.35)',
           }}>
             <button type="button" onClick={() => setZoomed(false)} aria-label="닫기" style={{
               position: 'absolute', top: 14, right: 14, background: 'none', border: 'none',

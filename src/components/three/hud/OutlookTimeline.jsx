@@ -797,7 +797,7 @@ export default function OutlookTimeline({ focus, onClose, onBerth, onWide }) {
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span
             ref={clockRef}
-            style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12, color: live ? '#94a3b8' : '#e8f0f2', whiteSpace: 'nowrap', minWidth: 186, textAlign: 'right' }}
+            style={{ fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums', fontSize: 12, color: live ? '#94a3b8' : '#e8f0f2', whiteSpace: 'nowrap', minWidth: 186, textAlign: 'right' }}
           >
             {live ? '지금 · 실측' : clockText(tNow, t0)}
           </span>
@@ -987,7 +987,7 @@ export default function OutlookTimeline({ focus, onClose, onBerth, onWide }) {
                     }}
                   >
                     <span style={{ color: mk.color }}>{mk.mark}</span>
-                    <span style={{ fontFamily: 'ui-monospace, Consolas, monospace', color: '#c3cede' }}>{dayHm(e.at)}</span>
+                    <span style={{ fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums', color: '#c3cede' }}>{dayHm(e.at)}</span>
                     {mk.word} {e.plan.name}
                     {showAll && <span style={{ color: '#94a3b8' }}>{shortBerthName(e.plan.berthId)}</span>}
                   </button>

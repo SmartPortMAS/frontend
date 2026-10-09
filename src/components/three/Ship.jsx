@@ -263,7 +263,7 @@ export default function Ship({ ship, onClick }) {
               <span style={{ width: '34px', height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.18)', overflow: 'hidden', display: 'inline-block' }}>
                 <span style={{ display: 'block', width: `${ship.simProgress}%`, height: '100%', background: meta.color }} />
               </span>
-              <span style={{ color: meta.color, fontWeight: 700, fontFamily: 'ui-monospace, Consolas, monospace' }}>{ship.simProgress}%</span>
+              <span style={{ color: meta.color, fontWeight: 700, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums' }}>{ship.simProgress}%</span>
             </span>
           )}
         </div>

@@ -11,9 +11,9 @@ export const VERDICT_COLOR = {
   판정불가: COLORS.purple,
 };
 export const VERDICT_BG = {
-  적합: '#E2F1ED',
-  주의: '#FBEFD9',
-  부적합: '#F8E2E1',
+  적합: '#E4F0E9',
+  주의: '#F9EEDF',
+  부적합: '#FCE9E9',
   판정불가: '#ECE6F6',
 };
 export const VERDICT_RANK = { 부적합: 0, 판정불가: 1, 주의: 2, 적합: 3 };

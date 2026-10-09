@@ -58,7 +58,7 @@ function HistoryGantt({ records }) {
           {/* 한 줄 = 한 부두. 그 부두의 접안 구간을 모두 이 트랙 위에 얹는다. */}
           <div style={{
             flex: 1, position: 'relative', height: '18px',
-            background: 'rgba(11, 74, 143, 0.05)', borderRadius: '4px',
+            background: 'rgba(37, 110, 244, 0.05)', borderRadius: '4px',
           }}>
             {g.rows.map((r) => {
               const b = new Date(r.begin_utc).getTime();

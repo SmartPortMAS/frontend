@@ -133,7 +133,7 @@ export default function ReasoningGraph({ targetBerth, targetCargo, gate }) {
   const viewW = 920 * SCALE;
   const viewH = verdictY + verdictH + 30 * SCALE;
 
-  const textStyle = { fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' };
+  const textStyle = { fontFamily: 'var(--font-sans)' };
 
   const Node = ({ x, y, caption, value, color }) => (
     <g style={textStyle}>
@@ -253,7 +253,7 @@ export default function ReasoningGraph({ targetBerth, targetCargo, gate }) {
         {/* 판정 노드 */}
         <rect
           x={midX - verdictW / 2} y={verdictY} width={verdictW} height={verdictH} rx="9"
-          fill={anyHit ? 'rgba(196, 50, 46, 0.06)' : anyUnknown ? 'rgba(178, 106, 0, 0.06)' : 'rgba(14, 124, 107, 0.06)'}
+          fill={anyHit ? 'rgba(196, 50, 46, 0.06)' : anyUnknown ? 'rgba(178, 106, 0, 0.06)' : 'rgba(31, 122, 71, 0.06)'}
           stroke={verdictColor} strokeWidth="1.8"
         />
         {/* [2026-08-23] 판정 노드를 한 줄로 줄였다.
@@ -300,7 +300,7 @@ export default function ReasoningGraph({ targetBerth, targetCargo, gate }) {
           aria-label={`${gate.rule} 추론 그래프 크게 보기`}
           onClick={() => setZoomed(false)}
           style={{
-            position: 'fixed', inset: 0, background: 'rgba(18, 53, 79, 0.55)', zIndex: 3000,
+            position: 'fixed', inset: 0, background: 'rgba(19, 20, 22, 0.55)', zIndex: 3000,
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px',
           }}
         >
@@ -308,7 +308,7 @@ export default function ReasoningGraph({ targetBerth, targetCargo, gate }) {
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'relative', background: COLORS.card, borderRadius: '16px', padding: '28px 32px 20px',
-              width: '100%', maxWidth: 'min(1100px, 92vw)', boxShadow: '0 24px 64px rgba(18, 53, 79, 0.35)',
+              width: '100%', maxWidth: 'min(1100px, 92vw)', boxShadow: '0 24px 64px rgba(19, 20, 22, 0.35)',
             }}
           >
             <button

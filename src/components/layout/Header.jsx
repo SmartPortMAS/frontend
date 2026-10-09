@@ -94,7 +94,7 @@ export default function Header() {
           <span>{connected ? '서버 연결' : '연결 끊김'}</span>
         </div>
 
-        <div className="header-badge header-clock" style={{ fontFamily: 'ui-monospace, Consolas, monospace' }}>
+        <div className="header-badge header-clock" style={{ fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums' }}>
           {currentTime.toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Seoul' })}
         </div>
       </div>

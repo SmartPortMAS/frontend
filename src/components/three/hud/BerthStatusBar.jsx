@@ -84,7 +84,7 @@ export default function BerthStatusBar() {
             }} />
             {b.name.replace(/\s*부두$/, '').replace('터미널', '').replace(/\s+/g, '')}
             {/* 기상으로 막힌 선석은 척수 대신 판정을 적는다 — 둘 다 적으면 칸을 넘쳐 옆 칸을 덮었다 */}
-            {ships.length > 0 && !escalated && <span style={{ fontSize: '10px', color: '#8FA3B0', fontFamily: 'ui-monospace, Consolas, monospace' }}>{ships.length}/{cap}</span>}
+            {ships.length > 0 && !escalated && <span style={{ fontSize: '10px', color: '#8FA3B0', fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums' }}>{ships.length}/{cap}</span>}
             {escalated && (
               <span style={{ color: WEATHER_STATUS_COLORS[verdict], fontWeight: 800 }}>{SHORT_WX[verdict] || verdict}</span>
             )}

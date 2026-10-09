@@ -55,9 +55,9 @@ const kstShort = (iso) => {
 // ─────────────────────────────────────────────
 
 const AGENTS = {
-  weather: { name: '기상 분석 에이전트', short: '기상 분석', icon: FaCloudSun, color: '#1E6FA8', role: '부두 기준 풍속·파고 실측과 체류 중 예보' },
+  weather: { name: '기상 분석 에이전트', short: '기상 분석', icon: FaCloudSun, color: '#0B78CB', role: '부두 기준 풍속·파고 실측과 체류 중 예보' },
   scheduling: { name: '선석 검증 에이전트', short: '선석 검증', icon: FaRoute, color: '#5B3E9B', role: '선석 수심·조위와 흘수, 이웃 선석 화물' },
-  safety: { name: '혼재 심사 에이전트', short: '혼재 심사', icon: FaShieldAlt, color: '#B26A00', role: '화물 MSDS·호환성 그룹과 이웃 화물 조합' },
+  safety: { name: '혼재 심사 에이전트', short: '혼재 심사', icon: FaShieldAlt, color: '#C26900', role: '화물 MSDS·호환성 그룹과 이웃 화물 조합' },
   orchestrator: { name: '종합 판정 (오케스트레이터)', short: '종합', icon: FaRobot, color: COLORS.teal, role: '세 의견을 모아 등급·조치안' },
 };
 

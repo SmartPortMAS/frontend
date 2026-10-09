@@ -100,7 +100,7 @@ function GateCard({ gate, onCommand, operator }) {
       className="sensor-card"
       style={{
         borderLeft: `3px solid ${edge}`, opacity: gate.offline ? 0.75 : 1,
-        ...(thread?.gate?.gate_id === gate.gate_id ? { boxShadow: '0 0 0 2px #12354F' } : {}),
+        ...(thread?.gate?.gate_id === gate.gate_id ? { boxShadow: '0 0 0 2px #063A74' } : {}),
       }}
     >
       <div className="sensor-card-header">

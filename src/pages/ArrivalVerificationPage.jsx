@@ -36,9 +36,9 @@ import { VERDICT_COLOR, VERDICT_RANK } from '../utils/verdict';
 // ─────────────────────────────────────────────
 
 const LEVEL_STYLE = {
-  적합: { color: COLORS.teal, bg: '#E2F1ED' },
-  주의: { color: COLORS.yellow, bg: '#FBEFD9' },
-  부적합: { color: COLORS.red, bg: '#F8E2E1' },
+  적합: { color: COLORS.teal, bg: '#E4F0E9' },
+  주의: { color: COLORS.yellow, bg: '#F9EEDF' },
+  부적합: { color: COLORS.red, bg: '#FCE9E9' },
   판정불가: { color: COLORS.purple, bg: '#ECE6F6' },
   확인요청: { color: COLORS.purple, bg: '#ECE6F6' },
 };
@@ -368,7 +368,7 @@ function UpcomingSection({ initialTab }) {
                   className={['row-pick', tracked && normKey(tracked.callsgn) === normKey(r.call_sign) ? 'row-track' : ''].join(' ').trim()}
                   style={{ borderBottom: `1px solid ${COLORS.border}` }}
                 >
-                  <td style={{ ...td, fontFamily: 'ui-monospace, Consolas, monospace', whiteSpace: 'nowrap' }}>{kst(r.assessed_at_utc)}</td>
+                  <td style={{ ...td, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{kst(r.assessed_at_utc)}</td>
                   <td style={td}>
                     <div style={{ fontWeight: 600 }}>{r.vessel_name || '(선명 미상)'}</div>
                     <div style={{ fontSize: 11, color: COLORS.textDim }}>{r.call_sign}</div>
@@ -446,7 +446,7 @@ function UpcomingSection({ initialTab }) {
                     ].join(' ').trim() || undefined}
                     style={{ borderBottom: `1px solid ${COLORS.border}` }}
                   >
-                    <td style={{ ...td, fontFamily: 'ui-monospace, Consolas, monospace', whiteSpace: 'nowrap' }}>{kst(r.arrival_at_utc)}</td>
+                    <td style={{ ...td, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{kst(r.arrival_at_utc)}</td>
                     <td style={td}>
                       <div style={{ fontWeight: 600 }}>{r.vessel_name || '(선명 미상)'}</div>
                       <div style={{ fontSize: 11, color: COLORS.textDim }}>{r.ship_kind} · {r.call_sign}</div>
@@ -465,12 +465,12 @@ function UpcomingSection({ initialTab }) {
                         <div style={{ fontSize: 11, color: COLORS.textDim }}>신고 표기 {r.facility_name}</div>
                       )}
                     </td>
-                    <td style={{ ...td, fontFamily: 'ui-monospace, Consolas, monospace' }}>{r.depth_m != null ? `${r.depth_m} m` : '-'}</td>
+                    <td style={{ ...td, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums' }}>{r.depth_m != null ? `${r.depth_m} m` : '-'}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                      <span style={{ fontFamily: 'ui-monospace, Consolas, monospace' }}>{r.draught_m != null ? `${r.draught_m} m` : '없음'}</span>
+                      <span style={{ fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums' }}>{r.draught_m != null ? `${r.draught_m} m` : '없음'}</span>
                       <div style={{ fontSize: 11, color: COLORS.textDim }}>{r.draught_basis || '미신고'}</div>
                     </td>
-                    <td style={{ ...td, fontFamily: 'ui-monospace, Consolas, monospace', color: COLORS.textSecondary }}>
+                    <td style={{ ...td, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums', color: COLORS.textSecondary }}>
                       {/부이/.test(r.wharf_name || r.facility_name || '')
                         ? <span style={{ fontFamily: 'inherit', color: COLORS.textDim }}>해당 없음(부이)</span>
                         : r.chart_margin_m != null ? `${r.chart_margin_m >= 0 ? '+' : ''}${r.chart_margin_m.toFixed(2)} m` : '-'}
@@ -561,7 +561,7 @@ function StageCard({ stage }) {
       <header style={{ padding: '10px 12px', borderBottom: `1px solid ${COLORS.border}`, background: COLORS.cardHover, display: 'flex', alignItems: 'center', gap: 8 }}>
         <div>
           <div style={{ fontWeight: 700 }}>{stage.label}</div>
-          {stage.at && <div style={{ fontSize: 11, color: COLORS.textDim, fontFamily: 'ui-monospace, Consolas, monospace' }}>{kst(stage.at)}</div>}
+          {stage.at && <div style={{ fontSize: 11, color: COLORS.textDim, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums' }}>{kst(stage.at)}</div>}
         </div>
         <span style={{ marginLeft: 'auto' }}><LevelPill level={stage.level} /></span>
       </header>
@@ -656,7 +656,7 @@ function SwellReplay({ replay }) {
         ].map(([label, value, sub, color]) => (
           <div key={label} style={{ borderTop: `2px solid ${color}`, padding: '8px 2px' }}>
             <div style={{ fontSize: 12, color: COLORS.textDim }}>{label}</div>
-            <div style={{ fontSize: 26, fontWeight: 700, color, fontFamily: 'ui-monospace, Consolas, monospace' }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums' }}>
               {value}<span style={{ fontSize: 13, color: COLORS.textDim, marginLeft: 4 }}>척</span>
             </div>
             <div style={{ fontSize: 11, color: COLORS.textDim }}>{sub}</div>
@@ -678,7 +678,7 @@ function SwellReplay({ replay }) {
               <ReferenceLine yAxisId="w" y={replay.threshold_m} stroke={COLORS.yellow} strokeDasharray="6 4" />
               <Bar yAxisId="n" dataKey="arrivals" isAnimationActive={false}>
                 {data.map((d) => (
-                  <Cell key={d.date} fill={d.swell ? COLORS.yellow : d.date === summary.peak_date ? COLORS.red : '#9CC3DE'} />
+                  <Cell key={d.date} fill={d.swell ? COLORS.yellow : d.date === summary.peak_date ? COLORS.red : '#8A949E'} />
                 ))}
               </Bar>
               <Line yAxisId="w" type="monotone" dataKey="wave_avg_m" stroke={COLORS.navy} strokeWidth={2} dot={false} isAnimationActive={false} />

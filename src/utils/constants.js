@@ -20,28 +20,31 @@ export const OPERATOR_NAME = '관제사 함현우';
 // 라이트 배경에서는 형광 계열(#00d4aa·#ffd166)이 흰 바탕에 묻혀 판정 색으로
 // 못 쓴다. 명도를 낮춰 흰 배경에서 대비가 서는 값으로 바꿨다.
 // ─────────────────────────────────────────────────────────────────────────────
+// [2026-10-09] KRDS 색 단계 — 등급 색은 semantic(success·warning·danger), 판정불가 보라는 유지
 export const COLORS = {
-  bg: '#EEF2F5',          // 페이지 바탕 (PORT-MIS 지도 여백 톤)
+  primary: '#256EF4',     // KRDS primary-50 — 주 버튼 · 포커스
+  primaryBg: '#ECF2FE',   // KRDS primary-10 — 선택 바탕
+  bg: '#F4F5F6',          // 페이지 바탕 (KRDS gray-10)
   panel: '#FFFFFF',       // 헤더·사이드바
   card: '#FFFFFF',        // 카드
-  cardHover: '#F4F8FA',
-  border: '#DCE4EA',
-  borderHover: '#9CC3DE',
-  navy: '#12354F',        // PORT-MIS 짙은 남색 (활성 탭·툴바)
-  teal: '#0E7C6B',        // 정상·안전
-  tealDark: '#0A5F52',
-  red: '#C4322E',         // 위험
-  yellow: '#B26A00',      // 주의 (라이트 배경용 앰버)
-  amber: '#E8A317',       // 강조 버튼 채움 (PORT-MIS 전자해도 버튼 톤)
-  info: '#1E6FA8',        // 정보·링크
-  blue: '#0B4A8F',        // UPA 기본 파랑
+  cardHover: '#F4F5F6',
+  border: '#CDD1D5',      // KRDS gray-30 — 1px 기본 보더
+  borderHover: '#8A949E', // KRDS gray-50
+  navy: '#063A74',        // KRDS primary-70 (활성 탭·툴바)
+  teal: '#1F7A47',        // 정상·적합 (KRDS success)
+  tealDark: '#16603A',
+  red: '#D6322F',         // 부적합·위험 (KRDS danger)
+  yellow: '#C26900',      // 주의 (KRDS warning)
+  amber: '#256EF4',       // 강조 버튼 채움 (KRDS primary-50)
+  info: '#0B78CB',        // 정보 (KRDS info)
+  blue: '#0B50D0',        // 링크 (KRDS primary-60)
   purple: '#5B3E9B',
   white: '#FFFFFF',
-  textPrimary: '#16232B',
-  textSecondary: '#4A5A63',
-  textDim: '#7A8A92',
+  textPrimary: '#131416',
+  textSecondary: '#464C53',
+  textDim: '#6D7882',
   glass: 'rgba(255, 255, 255, 0.92)',
-  glassBorder: '#DCE4EA',
+  glassBorder: '#CDD1D5',
 };
 
 // 3D 트윈 HUD 전용 — 씬 위에 뜨는 오버레이는 계속 어둡게 간다.
@@ -74,11 +77,11 @@ export const MAP_DEFAULT_ZOOM = 11;
 // 선석별 하역 판정 4단계 → 색상 (지도/3D 역연동 하이라이트용)
 // 라이트 배경에서 4단계가 서로 구분되도록 명도를 계단식으로 벌렸다.
 export const WEATHER_STATUS_COLORS = {
-  '정상': '#0E7C6B',
-  '하역중단': '#B26A00',
+  '정상': '#1F7A47',
+  '하역중단': '#C26900',
   '이안': '#D2601A',
-  '호스분리': '#C4322E',
-  '판단불가': '#7A8A92',
+  '호스분리': '#D6322F',
+  '판단불가': '#6D7882',
 };
 
 // AIS 항해 상태 → 한글 라벨/색상
@@ -87,8 +90,8 @@ export const WEATHER_STATUS_COLORS = {
 // 작업선(예선·급유선·통선·시운전선)이라, '묘박'이나 '정박지 대기'로 세면 선석을
 // 기다리는 본선 수가 부풀려진다(backendAdapter.navCategory 주석 참고).
 export const NAV_STATUS = {
-  UNDER_WAY: { label: '항해 중', color: '#0B4A8F' },
-  AT_ANCHOR: { label: '정박지 대기', color: '#B26A00' },
-  MOORED: { label: '접안 중', color: '#0E7C6B' },
-  UNKNOWN: { label: '항내 소형선', color: '#7A8A92' },
+  UNDER_WAY: { label: '항해 중', color: '#0B50D0' },
+  AT_ANCHOR: { label: '정박지 대기', color: '#C26900' },
+  MOORED: { label: '접안 중', color: '#1F7A47' },
+  UNKNOWN: { label: '항내 소형선', color: '#6D7882' },
 };

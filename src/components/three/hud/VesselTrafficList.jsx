@@ -101,7 +101,7 @@ export default function VesselTrafficList() {
       border: '1px solid var(--hud-border)',
       borderRadius: '8px',
       color: 'var(--hud-text)',
-      fontFamily: 'ui-monospace, Consolas, monospace',
+      fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums',
       overflow: 'hidden',
     }}>
       <div style={{

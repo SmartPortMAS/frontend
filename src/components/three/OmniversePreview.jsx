@@ -72,7 +72,7 @@ function Stills() {
           position: 'absolute', left: 18, bottom: 18, display: 'flex', alignItems: 'baseline', gap: 12,
           padding: '10px 18px', borderRadius: 10, background: 'rgba(2, 8, 20, 0.72)', backdropFilter: 'blur(6px)',
         }}>
-          <span style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 26, fontWeight: 700, color: '#e8f0f2' }}>{cur.time}</span>
+          <span style={{ fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums', fontSize: 26, fontWeight: 700, color: '#e8f0f2' }}>{cur.time}</span>
           <span style={{ fontSize: 13, color: '#cbd5e1' }}>{cur.stage}</span>
           {cur.level && <span style={{ fontSize: 22, fontWeight: 800, color: cur.tone }}>{cur.level}</span>}
           {cur.margin && <span style={{ fontSize: 15, color: '#e8f0f2' }}>흘수 여유 <b style={{ color: cur.tone }}>{cur.margin}</b></span>}
