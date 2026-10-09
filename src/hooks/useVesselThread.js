@@ -64,16 +64,25 @@ function cargoStep(reasons, level) {
   return null;
 }
 
-/** 벗어난 판정의 원인 축 — 선석 · 기상 · 혼재 · 흘수 (판정 이유 문장에서) */
-function causeOf(reasons, level) {
-  if (!level || level === '적합') return null;
-  const text = (reasons || []).join(' ');
+function causeIn(text) {
   if (/혼재|호환성|격리/.test(text)) return '혼재';
   if (/풍속|파고|기상|강수/.test(text)) return '기상';
-  if (/흘수 여유|여유 -|수심이|흘수가/.test(text)) return '흘수';
+  if (/흘수 ?여유|여유 -|수심이|흘수가/.test(text)) return '흘수';
   if (/화물을 식별|화물 미확인/.test(text)) return '화물 미확인';
   if (/흘수 없음|흘수 미신고|흘수를 알 수/.test(text)) return '흘수 없음';
   return null;
+}
+
+// 판정 원인이 아닌 줄 — 정상인 기상 관측, 참고값, 제안·신고 안내
+const NOT_CAUSE = /- 정상|참고값|대체 선석|PORT-MIS 신고/;
+
+/** 벗어난 판정의 원인 축 — 선석 · 기상 · 혼재 · 흘수 (판정 이유 문장에서)
+ *  백엔드는 판정을 낸 원인을 첫 줄에 둔다. 나머지 줄은 정상인 기상 관측까지 늘 들어 있어
+ *  한데 묶어 찾으면 흘수로 걸린 배도 '기상'이 된다 — 첫 줄을 먼저 보고, 못 찾을 때만 원인 줄을 본다. */
+function causeOf(reasons, level) {
+  if (!level || level === '적합') return null;
+  const [head = '', ...rest] = reasons || [];
+  return causeIn(head) || causeIn(rest.filter((r) => !NOT_CAUSE.test(r)).join(' '));
 }
 
 function slotsOf(berths) {
