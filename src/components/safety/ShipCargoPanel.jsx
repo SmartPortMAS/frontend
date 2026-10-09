@@ -171,7 +171,7 @@ export default function ShipCargoPanel() {
 
   const hereRow = berths.find((b) => berthKey(b.wharf_name) === berthKey(subject.berth));
   // 대체 후보 줄과 같은 잣대(해도 + 체류 중 최저 조위)의 여유는 판정이 흘수로 걸렸을 때만 이유 문장에 있다.
-  // 없으면 해도수심만으로 계산하고 '해도 기준'이라고 밝힌다.
+  // 없으면 해도수심만으로 계산한다 — 조위가 빠져 실제보다 조금 작게(보수적으로) 나온다.
   const judged = (thread?.reasons || []).map((r) => r.match(/선석 '([^']+)' 가용수심.*흘수여유가 (-?[\d.]+)m/))
     .find((m) => m && berthKey(m[1]) === berthKey(subject.berth));
   const hereMargin = judged ? Number(judged[2])
@@ -244,7 +244,7 @@ export default function ShipCargoPanel() {
                     <tr className={`base${picked == null ? ' on' : ''}`} onClick={() => setPicked(null)}>
                       <td><strong>{subject.berth || '—'}</strong></td>
                       <td>{subject.berthSource || '—'}</td>
-                      <td className="num">{hereMargin != null ? <>{signedM(hereMargin)}{!judged && <span className="sc-dim"> 해도 기준</span>}</> : '—'}</td>
+                      <td className="num">{hereMargin != null ? signedM(hereMargin) : '—'}</td>
                       <td>이 선박</td>
                       <td className="num">{basis.state === 'ready' ? `${(basis.adjacent || []).length}건` : '—'}</td>
                       <td><RiskPill level={basis.result?.risk_level} /></td>
