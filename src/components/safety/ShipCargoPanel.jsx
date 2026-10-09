@@ -69,7 +69,7 @@ const reqOf = (subj, berth, adjacent) => ({
   call_sign: subj.callsgn,
 });
 
-const signedM = (m) => `${m >= 0 ? '+' : ''}${m.toFixed(1)} m`;
+const signedM = (m) => `${m >= 0 ? '+' : ''}${m.toFixed(2)} m`;   // 둘째 자리까지 — 첫째 자리 반올림은 여유를 부풀린다(0.25 → 0.3)
 
 function RiskPill({ level }) {
   const c = RISK_STYLE[level]?.color || COLORS.textDim;
